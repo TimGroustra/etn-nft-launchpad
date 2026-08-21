@@ -1,0 +1,9 @@
+{
+  "name": "My NFT #1",
+  "description": "Short description shown in wallets and marketplaces.",
+  "image": "https://example.com/my-collection/1.png",
+  "attributes": [
+    { "trait_type": "Background", "value": "Blue" },
+    { "trait_type": "Rarity", "value": "Common" }
+  ]
+}

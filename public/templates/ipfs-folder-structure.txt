@@ -1,0 +1,25 @@
+IPFS folder layout (for custom metadata after publish)
+======================================================
+
+If you migrate off Supabase, name files by token ID (1-based):
+
+my-collection/
+  1.json          <- metadata for token #1
+  2.json
+  3.json
+  images/
+    1.png         <- image referenced inside each JSON "image" field
+    2.png
+    3.png
+
+Public mint collections use a base URI ending in /, so token #1 resolves to:
+  {baseURI}1.json
+
+Example base URI:
+  ipfs://bafy.../my-collection/
+
+Example image field inside 1.json:
+  ipfs://bafy.../my-collection/images/1.png
+
+Do NOT include royalty fields in JSON (fee_recipient, seller_fee_basis_points, etc.).
+Royalties are enforced on-chain via EIP-2981 on your collection contract.

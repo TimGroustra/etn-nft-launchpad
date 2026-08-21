@@ -10,6 +10,7 @@ import { Input, Label, Textarea } from '@/components/ui/input'
 import { getPublicImageUrl } from '@/lib/supabase'
 import { updateToken, syncTokenUri, uploadImage } from '@/lib/api'
 import { CollectionWithdraw } from '@/components/CollectionWithdraw'
+import { MetadataGuidancePanel } from '@/components/MetadataGuidancePanel'
 import { NFT_ABI } from '@/lib/blockchain'
 
 export function EditPage() {
@@ -101,6 +102,7 @@ export function EditPage() {
           Images and metadata JSON are hosted in Supabase by default. To use your own IPFS or storage,
           paste your metadata URL below and sync on-chain.
         </p>
+        <MetadataGuidancePanel compact showIpfs />
         {collection.contract_address && (
           <CollectionWithdraw contractAddress={collection.contract_address} />
         )}

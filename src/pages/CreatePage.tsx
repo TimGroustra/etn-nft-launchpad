@@ -23,6 +23,7 @@ import {
   type MintMode,
 } from '@/lib/create-collection-validation'
 import { IMAGE_RULES, validateImageFileAsync } from '@/lib/validate-upload-image'
+import { MetadataGuidancePanel } from '@/components/MetadataGuidancePanel'
 import { NftPreviewCarousel, type NftPreviewItem } from '@/components/NftPreviewCarousel'
 import { RoyaltyInfoPanel } from '@/components/RoyaltyInfoPanel'
 import { buildDraftMetadataPreview } from '@/lib/nft-metadata'
@@ -531,7 +532,9 @@ export function CreatePage() {
       )}
 
       {step === 3 && (
-        <Card className="space-y-4">
+        <div className="space-y-4">
+          <MetadataGuidancePanel />
+          <Card className="space-y-4">
           <div>
             <CardTitle>{isBatch ? 'Upload your full collection' : 'Upload artwork'}</CardTitle>
             <FieldHint>
@@ -601,6 +604,7 @@ export function CreatePage() {
 
           <FieldError message={fieldErrors.tokens || stepError} />
         </Card>
+        </div>
       )}
 
       {step === 4 && (

@@ -8,3 +8,6 @@ coverage
 coverage.json
 cache
 supabase/.temp
+
+.vercel
+.env*

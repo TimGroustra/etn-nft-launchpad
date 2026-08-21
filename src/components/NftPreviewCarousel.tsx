@@ -111,7 +111,16 @@ export function NftPreviewCarousel({ tokens, collectionName }: NftPreviewCarouse
           <div className="rounded-xl border border-slate-800 p-4">
             <div className="flex items-center justify-between gap-2">
               <h4 className="font-medium text-white">Metadata JSON</h4>
-              <span className="text-xs text-slate-500">Exact file written at publish</span>
+              <div className="flex items-center gap-2">
+                <a
+                  href="/templates/token-metadata.template.json"
+                  download="token-metadata.template.json"
+                  className="text-xs text-blue-400 hover:text-blue-300"
+                >
+                  Download template
+                </a>
+                <span className="text-xs text-slate-500">Exact file at publish</span>
+              </div>
             </div>
             <p className="mt-2 text-xs leading-relaxed text-slate-500">
               No royalty wallet fields are included — marketplaces read EIP-2981 from your contract instead.

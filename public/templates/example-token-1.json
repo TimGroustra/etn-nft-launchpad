@@ -1,0 +1,6 @@
+{
+  "name": "Ninja Jar #1",
+  "description": "First jar in the collection. Metadata hosted on Supabase or your own storage.",
+  "image": "https://YOUR-PROJECT.supabase.co/storage/v1/object/public/collection-images/YOUR-COLLECTION-ID/1.png",
+  "attributes": []
+}

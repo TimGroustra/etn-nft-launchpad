@@ -7,6 +7,8 @@ Launch editable NFT collections on the Electroneum blockchain. Creators upload i
 - **Default:** Images and metadata JSON live in Supabase Storage (`collection-images`, `collection-metadata`).
 - **Custom storage:** Creators can paste their own metadata URL (`ipfs://`, `https://`, etc.) in the editor and sync it on-chain via `setTokenURI`. The platform does not pin or host IPFS.
 
+See **[docs/metadata-guide.md](docs/metadata-guide.md)** for image specs, JSON schema, templates, and IPFS folder layout. Templates are also in `public/templates/`.
+
 ## Features
 
 - Wallet connect (Reown AppKit + wagmi) on Electroneum mainnet and testnet
