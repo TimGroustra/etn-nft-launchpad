@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env.local
+artifacts
+typechain-types
+coverage
+coverage.json
+cache
+supabase/.temp

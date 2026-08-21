@@ -1,0 +1,12 @@
+{
+  "electroneum": {
+    "LaunchpadFactory": "0x0000000000000000000000000000000000000000",
+    "note": "Run `npm run deploy:mainnet` with DEPLOYER_PRIVATE_KEY set, then update VITE_FACTORY_ADDRESS"
+  },
+  "electroneumTestnet": {
+    "LaunchpadFactory": "0xC760c0c8cA9D2fC6967488f4c4CB783D8b05BE0c",
+    "deployedAt": "2026-08-21T15:30:00.000Z",
+    "deployer": "0x126aa663BdeDd6Ae477fd28a7d0b624b8109D15d",
+    "txHash": "0x6b92da42ddb40b8f0ac9b9fbd9722cabfa07e81eb283df9f7105236ddfdeede3"
+  }
+}
