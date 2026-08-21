@@ -10,6 +10,7 @@ interface ImportMetaEnv {
   readonly VITE_PUBLISH_FEE_WEI_MAINNET: string
   readonly VITE_PUBLISH_FEE_WEI_TESTNET: string
   readonly VITE_WALLETCONNECT_PROJECT_ID: string
+  readonly VITE_APP_URL: string
 }
 
 interface ImportMeta {

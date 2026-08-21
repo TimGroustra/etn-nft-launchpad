@@ -8,6 +8,17 @@ import { NetworkProvider } from '@/context/NetworkContext'
 
 const projectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID ?? '6bf6982c9ea6494b0917646e22c1c358'
 
+const DEFAULT_APP_URL = 'https://etn-nft-launchpad.vercel.app'
+
+/** Must match the page origin for WalletConnect Verify (anti-phishing). */
+function getAppUrl(): string {
+  if (typeof window !== 'undefined') return window.location.origin
+  const fromEnv = import.meta.env.VITE_APP_URL?.trim()
+  return (fromEnv || DEFAULT_APP_URL).replace(/\/$/, '')
+}
+
+const appUrl = getAppUrl()
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { retry: 1, refetchOnWindowFocus: false },
@@ -25,8 +36,8 @@ createAppKit({
   metadata: {
     name: 'ETN NFT Launchpad',
     description: 'Launch editable NFT collections on Electroneum',
-    url: 'https://launchpad.electroneum.com',
-    icons: ['https://electroneum.com/favicon.ico'],
+    url: appUrl,
+    icons: [`${appUrl}/vite.svg`],
   },
   features: { analytics: false, onramp: false, email: false, socials: false },
   enableInjected: true,
