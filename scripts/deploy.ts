@@ -15,7 +15,7 @@ async function main() {
   console.log('Deploying with:', deployer.address, 'on chain', chainId, 'publish fee:', ethers.formatEther(publishFee), 'ETN')
 
   const Factory = await ethers.getContractFactory('LaunchpadFactory')
-  const factory = await Factory.deploy(deployer.address, deployer.address, CLUB_TOKEN, wetn, swapRouter, publishFee)
+  const factory = await Factory.deploy(deployer.address, deployer.address, CLUB_TOKEN, wetn, swapRouter, publishFee, 500)
   await factory.waitForDeployment()
 
   console.log('LaunchpadFactory deployed to:', await factory.getAddress())

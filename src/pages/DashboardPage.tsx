@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useAccount } from 'wagmi'
-import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi'
 import { createPublicClient, decodeEventLog, http, type TransactionReceipt } from 'viem'
 import { toast } from 'sonner'
 import { useState } from 'react'
@@ -10,7 +10,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
 import { CollectionWithdraw } from '@/components/CollectionWithdraw'
 import { useNetwork } from '@/context/NetworkContext'
-import { FACTORY_ABI, formatPublishFeeEtn, getChainId, getPublishFeeWei } from '@/lib/blockchain'
+import { formatEther } from 'viem'
+import { FACTORY_ABI, getChainId, getPublishFeeWei } from '@/lib/blockchain'
 import { usePlatformConfig, resolveFactoryAddress } from '@/hooks/usePlatformConfig'
 import { parseClubAmount } from '@/lib/utils'
 import { updateCollection, verifyPublishPayment } from '@/lib/api'
@@ -29,7 +30,16 @@ export function DashboardPage() {
 
   const { data: platformConfig } = usePlatformConfig()
   const factoryAddress = resolveFactoryAddress(network, platformConfig)
-  const publishFee = getPublishFeeWei(network)
+  const zeroAddress = '0x0000000000000000000000000000000000000000' as const
+  const { data: onChainPublishFee } = useReadContract({
+    address: factoryAddress as `0x${string}`,
+    abi: FACTORY_ABI,
+    functionName: 'publishFee',
+    chainId: chain.id,
+    query: { enabled: Boolean(factoryAddress && factoryAddress !== zeroAddress) },
+  })
+  const publishFee = onChainPublishFee ?? getPublishFeeWei(network)
+  const publishFeeLabel = formatEther(publishFee)
 
   const publish = async (collection: (typeof collections)[0]) => {
     if (!address) return
@@ -167,7 +177,7 @@ export function DashboardPage() {
                     >
                       {publishingId === collection.id
                         ? 'Publishing...'
-                        : `Publish (${formatPublishFeeEtn(network)} ETN)`}
+                        : `Publish (${publishFeeLabel} ETN)`}
                     </Button>
                   )}
                   {collection.contract_address && (

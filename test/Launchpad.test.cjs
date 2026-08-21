@@ -4,22 +4,32 @@ const { ethers } = require('hardhat')
 const CLUB_TOKEN = '0xC9FC4AB00911793D99b5c7Bd01f01203C21D4131'
 const DEAD = '0x000000000000000000000000000000000000dEaD'
 
+async function waitDeployed(contract) {
+  const tx = contract.deploymentTransaction()
+  if (!tx) throw new Error('Missing deployment transaction')
+  await tx.wait()
+  return contract
+}
+
 async function deploySwapMocks() {
   const MockWETN = await ethers.getContractFactory('MockWETN')
-  const wetn = await MockWETN.deploy()
-  await wetn.waitForDeployment()
+  const wetn = await waitDeployed(await MockWETN.deploy())
 
   const MockClub = await ethers.getContractFactory('MockClub')
-  const club = await MockClub.deploy()
-  await club.waitForDeployment()
+  const club = await waitDeployed(await MockClub.deploy())
 
   const MockSwapRouterV3 = await ethers.getContractFactory('MockSwapRouterV3')
-  const router = await MockSwapRouterV3.deploy(await club.getAddress(), await wetn.getAddress(), DEAD)
-  await router.waitForDeployment()
+  const router = await waitDeployed(
+    await MockSwapRouterV3.deploy(await club.getAddress(), await wetn.getAddress(), DEAD),
+  )
 
   await club.transfer(await router.getAddress(), ethers.parseEther('1000000'))
 
   return { wetn, club, router }
+}
+
+async function deployFactory(Factory, args) {
+  return waitDeployed(await Factory.deploy(...args))
 }
 
 describe('LaunchpadFactory', function () {
@@ -28,15 +38,15 @@ describe('LaunchpadFactory', function () {
     const { wetn, router } = await deploySwapMocks()
     const Factory = await ethers.getContractFactory('LaunchpadFactory')
     const publishFee = ethers.parseEther('1')
-    const factory = await Factory.deploy(
+    const factory = await deployFactory(Factory, [
       owner.address,
       owner.address,
       CLUB_TOKEN,
       await wetn.getAddress(),
       await router.getAddress(),
       publishFee,
-    )
-    await factory.waitForDeployment()
+      500,
+    ])
 
     const burnConfig = {
       clubBurnAmount: 0n,
@@ -59,15 +69,15 @@ describe('LaunchpadFactory', function () {
     const { wetn, router } = await deploySwapMocks()
     const Factory = await ethers.getContractFactory('LaunchpadFactory')
     const publishFee = ethers.parseEther('1')
-    const factory = await Factory.deploy(
+    const factory = await deployFactory(Factory, [
       owner.address,
       owner.address,
       CLUB_TOKEN,
       await wetn.getAddress(),
       await router.getAddress(),
       publishFee,
-    )
-    await factory.waitForDeployment()
+      500,
+    ])
 
     const burnConfig = { clubBurnAmount: 0n, burnOnMint: false, royaltyBurnBps: 0 }
     const tx = await factory.connect(creator).deployCollection('Owned', 'OWN', burnConfig, 10, {
@@ -80,23 +90,95 @@ describe('LaunchpadFactory', function () {
     const nft = await ethers.getContractAt('EditableERC721', collectionAddress)
     expect(await nft.owner()).to.equal(creator.address)
   })
+
+  it('uses updated factory deployment config for new collections only', async function () {
+    const [owner, creator] = await ethers.getSigners()
+    const { wetn, club, router } = await deploySwapMocks()
+    const Factory = await ethers.getContractFactory('LaunchpadFactory')
+    const publishFee = ethers.parseEther('1')
+    const factory = await deployFactory(Factory, [
+      owner.address,
+      owner.address,
+      await club.getAddress(),
+      await wetn.getAddress(),
+      await router.getAddress(),
+      publishFee,
+      500,
+    ])
+
+    const burnConfig = { clubBurnAmount: 0n, burnOnMint: false, royaltyBurnBps: 0 }
+    const tx1 = await factory.connect(creator).deployCollection('First', 'ONE', burnConfig, 5, {
+      value: publishFee,
+    })
+    const receipt1 = await tx1.wait()
+    const first = receipt1.logs.find((log) => log.fragment?.name === 'CollectionDeployed').args.collection
+    const nft1 = await ethers.getContractAt('EditableERC721', first)
+    expect(await nft1.clubToken()).to.equal(await club.getAddress())
+
+    const MockClub2 = await ethers.getContractFactory('MockClub')
+    const club2 = await waitDeployed(await MockClub2.deploy())
+    await factory.connect(owner).setDeploymentConfig(
+      await club2.getAddress(),
+      await wetn.getAddress(),
+      await router.getAddress(),
+      750,
+    )
+
+    const tx2 = await factory.connect(creator).deployCollection('Second', 'TWO', burnConfig, 5, {
+      value: publishFee,
+    })
+    const receipt2 = await tx2.wait()
+    const second = receipt2.logs.find((log) => log.fragment?.name === 'CollectionDeployed').args.collection
+    const nft2 = await ethers.getContractAt('EditableERC721', second)
+
+    expect(await nft1.clubToken()).to.equal(await club.getAddress())
+    expect(await nft2.clubToken()).to.equal(await club2.getAddress())
+    expect(await factory.defaultRoyaltyBps()).to.equal(750n)
+  })
+
+  it('allows owner to update publish fee without redeploying factory', async function () {
+    const [owner, creator] = await ethers.getSigners()
+    const { wetn, router } = await deploySwapMocks()
+    const Factory = await ethers.getContractFactory('LaunchpadFactory')
+    const factory = await deployFactory(Factory, [
+      owner.address,
+      owner.address,
+      CLUB_TOKEN,
+      await wetn.getAddress(),
+      await router.getAddress(),
+      ethers.parseEther('1'),
+      500,
+    ])
+
+    await factory.connect(owner).setPublishFee(ethers.parseEther('2'))
+    expect(await factory.publishFee()).to.equal(ethers.parseEther('2'))
+
+    const burnConfig = { clubBurnAmount: 0n, burnOnMint: false, royaltyBurnBps: 0 }
+    await expect(
+      factory.connect(creator).deployCollection('Fee', 'FEE', burnConfig, 1, { value: ethers.parseEther('1') }),
+    ).to.be.revertedWith('Insufficient publish fee')
+
+    await factory.connect(creator).deployCollection('Fee', 'FEE', burnConfig, 1, { value: ethers.parseEther('2') })
+  })
 })
 
 describe('EditableERC721', function () {
   async function deployNft(burnConfig, owner) {
     const { wetn, club, router } = await deploySwapMocks()
     const NFT = await ethers.getContractFactory('EditableERC721')
-    const nft = await NFT.deploy(
-      'Editable',
-      'EDT',
-      owner.address,
-      await club.getAddress(),
-      await wetn.getAddress(),
-      await router.getAddress(),
-      burnConfig,
-      10,
+    const nft = await waitDeployed(
+      await NFT.deploy(
+        'Editable',
+        'EDT',
+        owner.address,
+        await club.getAddress(),
+        await wetn.getAddress(),
+        await router.getAddress(),
+        burnConfig,
+        10,
+        500,
+      ),
     )
-    await nft.waitForDeployment()
     return { nft, club }
   }
 

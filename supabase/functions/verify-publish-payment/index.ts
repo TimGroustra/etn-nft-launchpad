@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
-import { createPublicClient, http } from 'https://esm.sh/viem@2.21.0'
+import { createPublicClient, http, parseAbi } from 'https://esm.sh/viem@2.21.0'
 import { corsHeaders, normalizeWallet, assertValidTxHash, validateSession } from '../_shared/utils.ts'
 
 const CHAIN_RPC: Record<number, string> = {
@@ -8,13 +8,53 @@ const CHAIN_RPC: Record<number, string> = {
   5201420: 'https://rpc.ankr.com/electroneum_testnet',
 }
 
-/** 1 ETN testnet, 1000 ETN mainnet */
+const FACTORY_ABI = parseAbi(['function publishFee() view returns (uint256)'])
+
+/** Fallback if factory read fails */
 const DEFAULT_PUBLISH_FEE_WEI: Record<number, string> = {
   5201420: '1000000000000000000',
   52014: '1000000000000000000000',
 }
 
-function getPublishFeeWei(chainId: number): bigint {
+async function getFactoryAddress(
+  supabase: ReturnType<typeof import('https://esm.sh/@supabase/supabase-js@2.45.0').createClient>,
+  chainId: number,
+): Promise<string | null> {
+  const key = chainId === 5201420 ? 'factory_address_testnet' : 'factory_address_mainnet'
+  const { data } = await supabase.from('platform_config').select('value').eq('key', key).maybeSingle()
+  const value = data?.value?.trim()
+  if (!value || value === '0x0000000000000000000000000000000000000000') return null
+  return value
+}
+
+async function getPublishFeeWei(
+  supabase: ReturnType<typeof import('https://esm.sh/@supabase/supabase-js@2.45.0').createClient>,
+  chainId: number,
+): Promise<bigint> {
+  const factoryAddress = await getFactoryAddress(supabase, chainId)
+  const rpc = CHAIN_RPC[chainId]
+  if (factoryAddress && rpc) {
+    try {
+      const client = createPublicClient({
+        chain: {
+          id: chainId,
+          name: chainId === 5201420 ? 'Electroneum Testnet' : 'Electroneum',
+          nativeCurrency: { name: 'ETN', symbol: 'ETN', decimals: 18 },
+          rpcUrls: { default: { http: [rpc] } },
+        },
+        transport: http(rpc),
+      })
+      const fee = await client.readContract({
+        address: factoryAddress as `0x${string}`,
+        abi: FACTORY_ABI,
+        functionName: 'publishFee',
+      })
+      return BigInt(fee)
+    } catch {
+      // fall through to env/default
+    }
+  }
+
   if (chainId === 5201420) {
     return BigInt(Deno.env.get('PUBLISH_FEE_WEI_TESTNET') ?? DEFAULT_PUBLISH_FEE_WEI[5201420])
   }
@@ -77,7 +117,7 @@ serve(async (req) => {
     const tx = await publicClient.getTransaction({ hash: normalizedHash as `0x${string}` })
     if (!tx || tx.from?.toLowerCase() !== wallet) throw new Error('Transaction sender mismatch')
 
-    const publishFeeWei = getPublishFeeWei(chainId)
+    const publishFeeWei = await getPublishFeeWei(supabase, chainId)
     if (tx.value < publishFeeWei) throw new Error('Insufficient ETN payment')
 
     await supabase.from('publish_payments').insert({

@@ -55,9 +55,11 @@ contract EditableERC721 is ERC721URIStorage, ERC2981, Ownable2Step, ReentrancyGu
         address wetn_,
         address swapRouter_,
         BurnConfig memory config_,
-        uint256 maxSupply_
+        uint256 maxSupply_,
+        uint96 defaultRoyaltyBps_
     ) ERC721(name_, symbol_) Ownable(initialOwner) {
         require(config_.royaltyBurnBps <= 10_000, "Invalid royalty burn bps");
+        require(defaultRoyaltyBps_ <= 10_000, "Invalid royalty bps");
         clubToken = IERC20(clubToken_);
         WETN = wetn_;
         swapRouter = ISwapRouterV3(swapRouter_);
@@ -65,7 +67,7 @@ contract EditableERC721 is ERC721URIStorage, ERC2981, Ownable2Step, ReentrancyGu
         maxSupply = maxSupply_;
         _nextTokenId = 1;
         isMintable = false;
-        _setDefaultRoyalty(address(this), 500);
+        _setDefaultRoyalty(address(this), defaultRoyaltyBps_);
     }
 
     function setMintable(bool mintable_) external onlyOwner {

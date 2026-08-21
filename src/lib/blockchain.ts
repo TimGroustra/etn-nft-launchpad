@@ -103,6 +103,8 @@ export const ERC20_ABI = [
   },
 ] as const
 
+export const DEFAULT_FACTORY_ROYALTY_BPS = 500
+
 export const FACTORY_ABI = [
   {
     inputs: [
@@ -129,6 +131,95 @@ export const FACTORY_ABI = [
     name: 'publishFee',
     outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'defaultRoyaltyBps',
+    outputs: [{ name: '', type: 'uint96' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'clubToken',
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'wetn',
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'swapRouter',
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'treasury',
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'newFee', type: 'uint256' }],
+    name: 'setPublishFee',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'newTreasury', type: 'address' }],
+    name: 'setTreasury',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'newClubToken', type: 'address' }],
+    name: 'setClubToken',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'newWetn', type: 'address' }],
+    name: 'setWetn',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'newSwapRouter', type: 'address' }],
+    name: 'setSwapRouter',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'newBps', type: 'uint96' }],
+    name: 'setDefaultRoyaltyBps',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'clubToken_', type: 'address' },
+      { name: 'wetn_', type: 'address' },
+      { name: 'swapRouter_', type: 'address' },
+      { name: 'defaultRoyaltyBps_', type: 'uint96' },
+    ],
+    name: 'setDeploymentConfig',
+    outputs: [],
+    stateMutability: 'nonpayable',
     type: 'function',
   },
   {

@@ -11,7 +11,10 @@
     "compile": "hardhat compile",
     "test:contracts": "hardhat test",
     "deploy:testnet": "hardhat run scripts/deploy.cjs --network electroneumTestnet",
-    "deploy:mainnet": "hardhat run scripts/deploy.cjs --network electroneum"
+    "deploy:mainnet": "hardhat run scripts/deploy.cjs --network electroneum",
+    "factory:config": "node scripts/set-factory-config.cjs testnet",
+    "factory:config:mainnet": "node scripts/set-factory-config.cjs mainnet",
+    "factory:publish-fee": "node scripts/set-publish-fee.cjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

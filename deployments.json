@@ -4,9 +4,10 @@
     "note": "Run `npm run deploy:mainnet` with DEPLOYER_PRIVATE_KEY set, then update VITE_FACTORY_ADDRESS"
   },
   "electroneumTestnet": {
-    "LaunchpadFactory": "0x93bafee995d6f0f2696b1de833148cd25832ff07",
-    "deployedAt": "2026-08-21T16:50:00.000Z",
+    "LaunchpadFactory": "0x4af09b0bffcb5a726243ba86ba67a47d47ef3024",
+    "deployedAt": "2026-08-21T17:10:00.000Z",
     "deployer": "0x126aa663BdeDd6Ae477fd28a7d0b624b8109D15d",
-    "txHash": "0xdfae48c5bf444ef1c246fc40e54088e7a899ad31ce157b6c51449374dc7d3ae8"
+    "txHash": "0x558d3234a6d26006c409726164b0669294533368fcc69d73ea4e13922abd3b94",
+    "note": "Editable factory — swap addresses, publish fee, treasury, and default royalty are owner-configurable"
   }
 }

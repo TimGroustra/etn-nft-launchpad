@@ -42,6 +42,37 @@ UPDATE platform_config SET value = '0xYourMainnetFactory' WHERE key = 'factory_a
 
 Or set env vars: `VITE_FACTORY_ADDRESS_TESTNET`, `VITE_FACTORY_ADDRESS_MAINNET`.
 
+## Editable factory (no redeploy for config changes)
+
+`LaunchpadFactory` is **Ownable2Step**. The factory owner can update platform settings on-chain; only **new** collections pick up deployment config changes.
+
+| Setting | Setter | Affects |
+|---------|--------|---------|
+| Publish fee | `setPublishFee` | Future publishes (app reads from chain) |
+| Treasury | `setTreasury` | Where publish fees are sent |
+| CLUB token | `setClubToken` | New collections only |
+| WETN / swap router | `setWetn`, `setSwapRouter` | New collections only |
+| Default EIP-2981 royalty | `setDefaultRoyaltyBps` | New collections only |
+
+Update everything at once:
+
+```bash
+set DEPLOYER_PRIVATE_KEY=0x...
+set FACTORY_PUBLISH_FEE_ETN=1
+set FACTORY_WETN=0x...
+set FACTORY_SWAP_ROUTER=0x...
+set FACTORY_DEFAULT_ROYALTY_BPS=500
+npm run factory:config
+```
+
+Or only publish fee:
+
+```bash
+npm run factory:publish-fee
+```
+
+Already-deployed collection contracts are unchanged (their swap addresses and royalty are fixed at their deploy time).
+
 ## Supabase Project
 
 - **Project:** ETN-NFT-Launchpad (`sktexilttapijefdusni`)
