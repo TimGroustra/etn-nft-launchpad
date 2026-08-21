@@ -22,7 +22,9 @@ export interface Database {
           max_supply: number
           club_burn_amount: number
           burn_on_mint: boolean
-          burn_on_resale: boolean
+          royalty_burn_bps: number
+          mint_price_etn: number
+          max_mint_per_wallet: number
           storage_provider: 'supabase'
           base_uri: string | null
           publish_tx_hash: string | null

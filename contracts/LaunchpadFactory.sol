@@ -8,6 +8,8 @@ import {EditableERC721} from "./EditableERC721.sol";
 contract LaunchpadFactory is Ownable2Step {
     address public treasury;
     address public immutable clubToken;
+    address public immutable wetn;
+    address public immutable swapRouter;
     uint256 public publishFee;
 
     address[] public deployedCollections;
@@ -23,9 +25,18 @@ contract LaunchpadFactory is Ownable2Step {
     event PublishFeeUpdated(uint256 newFee);
     event TreasuryUpdated(address newTreasury);
 
-    constructor(address initialOwner, address treasury_, address clubToken_, uint256 publishFee_) Ownable(initialOwner) {
+    constructor(
+        address initialOwner,
+        address treasury_,
+        address clubToken_,
+        address wetn_,
+        address swapRouter_,
+        uint256 publishFee_
+    ) Ownable(initialOwner) {
         treasury = treasury_;
         clubToken = clubToken_;
+        wetn = wetn_;
+        swapRouter = swapRouter_;
         publishFee = publishFee_;
     }
 
@@ -50,8 +61,10 @@ contract LaunchpadFactory is Ownable2Step {
         EditableERC721 collection = new EditableERC721(
             name,
             symbol,
-            msg.sender, // collection owner = publisher wallet
+            msg.sender,
             clubToken,
+            wetn,
+            swapRouter,
             burnConfig,
             maxSupply
         );

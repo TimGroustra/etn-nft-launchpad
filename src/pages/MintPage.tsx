@@ -1,12 +1,11 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { useAccount, useWriteContract, useReadContract } from 'wagmi'
+import { useAccount, useWriteContract } from 'wagmi'
 import { toast } from 'sonner'
 import { useCollection, useCollectionTokens } from '@/hooks/useCollections'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
-import { CLUB_TOKEN_ADDRESS, ERC20_ABI, NFT_ABI } from '@/lib/blockchain'
-import { parseClubAmount } from '@/lib/utils'
+import { NFT_ABI } from '@/lib/blockchain'
 import { syncTokenUri, updateToken } from '@/lib/api'
 import { getPublicImageUrl } from '@/lib/supabase'
 
@@ -20,27 +19,6 @@ export function MintPage() {
   const { writeContractAsync } = useWriteContract()
   const [minting, setMinting] = useState(false)
 
-  const burnAmount = collection ? parseClubAmount(String(collection.club_burn_amount)) : 0n
-
-  const { data: allowance } = useReadContract({
-    address: CLUB_TOKEN_ADDRESS,
-    abi: ERC20_ABI,
-    functionName: 'allowance',
-    args: address && contractAddress ? [address, contractAddress as `0x${string}`] : undefined,
-    query: { enabled: !!address && !!contractAddress && burnAmount > 0n },
-  })
-
-  const approveClub = async () => {
-    if (!contractAddress) return
-    await writeContractAsync({
-      address: CLUB_TOKEN_ADDRESS,
-      abi: ERC20_ABI,
-      functionName: 'approve',
-      args: [contractAddress as `0x${string}`, burnAmount * 1000n],
-    })
-    toast.success('CLUB approved')
-  }
-
   const lazyMint = async (tokenId: number, dbId: string) => {
     if (!address || !collection?.contract_address) return
     setMinting(true)
@@ -49,7 +27,7 @@ export function MintPage() {
       const hash = await writeContractAsync({
         address: collection.contract_address as `0x${string}`,
         abi: NFT_ABI,
-        functionName: 'mint',
+        functionName: 'ownerMint',
         args: [address, sync.tokenUri],
       })
       await updateToken(address, { tokenId: dbId, minted: true, mintTxHash: hash })
@@ -106,15 +84,13 @@ export function MintPage() {
         <CardDescription>Mode: {collection.mint_mode}</CardDescription>
       </div>
 
-      {collection.burn_on_mint && burnAmount > 0n && (
+      {collection.burn_on_mint && Number(collection.club_burn_amount) > 0 && (
         <Card>
-          <CardTitle>CLUB Approval Required</CardTitle>
+          <CardTitle>CLUB burn on ElectroSwap mint</CardTitle>
           <CardDescription className="mt-2">
-            Each mint burns {collection.club_burn_amount} CLUB. Allowance: {allowance?.toString() ?? '0'}
+            Each IMintable mint swaps ETN for {collection.club_burn_amount} CLUB and burns it. Owner lazy/batch mints here
+            do not trigger this burn.
           </CardDescription>
-          <Button className="mt-3" variant="outline" onClick={approveClub}>
-            Approve CLUB
-          </Button>
         </Card>
       )}
 

@@ -9,7 +9,9 @@ export interface CollectionInput {
   maxSupply: number
   clubBurnAmount: number
   burnOnMint: boolean
-  burnOnResale: boolean
+  royaltyBurnBps: number
+  mintPriceEtn?: number
+  maxMintPerWallet?: number
   storageProvider?: 'supabase'
   chainId?: number
 }

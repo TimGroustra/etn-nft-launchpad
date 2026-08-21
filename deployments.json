@@ -4,9 +4,9 @@
     "note": "Run `npm run deploy:mainnet` with DEPLOYER_PRIVATE_KEY set, then update VITE_FACTORY_ADDRESS"
   },
   "electroneumTestnet": {
-    "LaunchpadFactory": "0xC760c0c8cA9D2fC6967488f4c4CB783D8b05BE0c",
-    "deployedAt": "2026-08-21T15:30:00.000Z",
+    "LaunchpadFactory": "0x93bafee995d6f0f2696b1de833148cd25832ff07",
+    "deployedAt": "2026-08-21T16:50:00.000Z",
     "deployer": "0x126aa663BdeDd6Ae477fd28a7d0b624b8109D15d",
-    "txHash": "0x6b92da42ddb40b8f0ac9b9fbd9722cabfa07e81eb283df9f7105236ddfdeede3"
+    "txHash": "0xdfae48c5bf444ef1c246fc40e54088e7a899ad31ce157b6c51449374dc7d3ae8"
   }
 }

@@ -42,7 +42,9 @@ export function getChainId(key: NetworkKey): number {
   return getChainByKey(key).id
 }
 
-export const CLUB_TOKEN_ADDRESS = '0xC9FC4AB00911793D99b5c7Bd01f01203C21D4131' as const
+export const CLUB_TOKEN_ADDRESS = '0xC9FC4AB00911793D99b5c7Bd01f01203C21D4131'
+export const WETN_ADDRESS = '0x138DAFbDA0CCB3d8E39C19edb0510Fc31b7C1c77'
+export const ELECTROSWAP_V3_ROUTER = '0xfdB0d62Fc929fD53D266B969Bfe4250b205D0899' as const
 export const DEAD_ADDRESS = '0x000000000000000000000000000000000000dEaD' as const
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const
@@ -112,7 +114,7 @@ export const FACTORY_ABI = [
         components: [
           { name: 'clubBurnAmount', type: 'uint256' },
           { name: 'burnOnMint', type: 'bool' },
-          { name: 'burnOnResale', type: 'bool' },
+          { name: 'royaltyBurnBps', type: 'uint96' },
         ],
       },
       { name: 'maxSupply', type: 'uint256' },
@@ -143,7 +145,7 @@ export const FACTORY_ABI = [
         components: [
           { name: 'clubBurnAmount', type: 'uint256' },
           { name: 'burnOnMint', type: 'bool' },
-          { name: 'burnOnResale', type: 'bool' },
+          { name: 'royaltyBurnBps', type: 'uint96' },
         ],
       },
       { indexed: false, name: 'maxSupply', type: 'uint256' },
@@ -180,7 +182,7 @@ export const NFT_ABI = [
       { name: 'to', type: 'address' },
       { name: 'uri', type: 'string' },
     ],
-    name: 'mint',
+    name: 'ownerMint',
     outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'nonpayable',
     type: 'function',
@@ -196,9 +198,51 @@ export const NFT_ABI = [
     type: 'function',
   },
   {
-    inputs: [{ name: 'uri', type: 'string' }],
-    name: 'publicMint',
+    inputs: [{ name: 'mintCount', type: 'uint256' }],
+    name: 'mint',
+    outputs: [],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'mintPrice',
     outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'account', type: 'address' }],
+    name: 'mintableCount',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'isMintable',
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'mintable_', type: 'bool' }],
+    name: 'setMintable',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'price', type: 'uint256' }],
+    name: 'setMintPrice',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'maxMintPerWallet_', type: 'uint256' }],
+    name: 'setMaxMintPerWallet',
+    outputs: [],
     stateMutability: 'nonpayable',
     type: 'function',
   },

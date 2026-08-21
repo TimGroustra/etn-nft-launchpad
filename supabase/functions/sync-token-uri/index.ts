@@ -1,25 +1,10 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 import { corsHeaders, validateSession, normalizeWallet } from '../_shared/utils.ts'
-
-interface NftAttribute {
-  trait_type: string
-  value: string | number
-}
-
-function buildMetadata(token: {
-  name: string
-  description: string | null
-  attributes: NftAttribute[]
-  imageUrl: string
-}) {
-  return {
-    name: token.name,
-    description: token.description ?? '',
-    image: token.imageUrl,
-    attributes: token.attributes ?? [],
-  }
-}
+import {
+  buildNftMetadata,
+  validateNoMetadataRoyaltyFields,
+} from '../_shared/nft-metadata.ts'
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
@@ -58,12 +43,15 @@ serve(async (req) => {
       ? `${supabaseUrl}/storage/v1/object/public/collection-images/${token.image_storage_path}`
       : ''
 
-    const metadata = buildMetadata({
+    const metadata = buildNftMetadata({
       name: token.name,
       description: token.description,
-      attributes: token.attributes ?? [],
+      attributes: (token.attributes ?? []) as { trait_type: string; value: string | number }[],
       imageUrl,
     })
+
+    const royaltyError = validateNoMetadataRoyaltyFields(metadata as unknown as Record<string, unknown>)
+    if (royaltyError) throw new Error(royaltyError)
 
     const metadataPath = `${collectionId}/${tokenId}.json`
     const { error: uploadError } = await supabase.storage

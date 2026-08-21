@@ -14,6 +14,9 @@ import { FACTORY_ABI, formatPublishFeeEtn, getChainId, getPublishFeeWei } from '
 import { usePlatformConfig, resolveFactoryAddress } from '@/hooks/usePlatformConfig'
 import { parseClubAmount } from '@/lib/utils'
 import { updateCollection, verifyPublishPayment } from '@/lib/api'
+import { configureElectroSwapMint, prepareCollectionMetadata } from '@/lib/publish-collection'
+import { listCollectionTokens } from '@/lib/collection-metadata'
+import { firstIssueMessage, validateCollectionForPublish } from '@/lib/create-collection-validation'
 
 export function DashboardPage() {
   const { address, isConnected } = useAccount()
@@ -32,10 +35,25 @@ export function DashboardPage() {
     if (!address) return
     setPublishingId(collection.id)
     try {
+      const tokens = await listCollectionTokens(collection.id)
+      const publishIssues = validateCollectionForPublish(collection, tokens.flatMap((t) => {
+        if (t.token_id == null) return []
+        return [{
+          token_id: t.token_id,
+          name: t.name ?? '',
+          image_storage_path: t.image_storage_path,
+        }]
+      }))
+      const publishError = firstIssueMessage(publishIssues)
+      if (publishError) {
+        toast.error(publishError)
+        return
+      }
+
       const burnConfig = {
         clubBurnAmount: parseClubAmount(String(collection.club_burn_amount)),
         burnOnMint: collection.burn_on_mint,
-        burnOnResale: collection.burn_on_resale,
+        royaltyBurnBps: BigInt(collection.royalty_burn_bps ?? 0),
       }
 
       const hash = await writeContractAsync({
@@ -67,14 +85,28 @@ export function DashboardPage() {
         }
       }
 
+      if (!contractAddress) throw new Error('Could not resolve deployed contract address')
+
+      toast.message('Uploading metadata…')
+      await prepareCollectionMetadata(address, collection.id)
+
+      toast.message('Configuring ElectroSwap mint…')
+      const baseUri = await configureElectroSwapMint(
+        writeContractAsync,
+        contractAddress as `0x${string}`,
+        collection,
+        chain.id,
+      )
+
       await updateCollection(address, collection.id, {
         contractAddress,
+        baseUri,
         status: 'published',
         chainId: chain.id,
       })
 
       await verifyPublishPayment(address, collection.id, hash, chain.id)
-      toast.success(`Collection published on ${chain.name}. You are the contract owner.`)
+      toast.success(`Collection published on ${chain.name} and listed for ElectroSwap minting.`)
       refetch()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Publish failed')
