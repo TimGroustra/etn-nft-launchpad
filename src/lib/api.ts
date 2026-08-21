@@ -7,7 +7,7 @@ export interface CollectionInput {
   description?: string
   mintMode: 'lazy' | 'batch'
   maxSupply: number
-  clubBurnAmount: number
+  mintBurnBps: number
   burnOnMint: boolean
   royaltyBurnBps: number
   mintPriceEtn?: number

@@ -1,6 +1,6 @@
 # Metadata & artwork guide for creators
 
-This launchpad stores NFT images and JSON metadata in a format compatible with OpenSea, wallets, and ElectroSwap. Follow these rules for the smoothest publish and mint experience.
+This launchpad stores NFT images and JSON metadata in a format compatible with OpenSea, wallets, and IMintable marketplaces. Follow these rules for the smoothest publish and mint experience.
 
 ## Quick checklist
 
@@ -98,7 +98,7 @@ https://YOUR-PROJECT.supabase.co/storage/v1/object/public/collection-metadata/{c
 |------|------------------|
 | **Lazy mint** | At least **1** complete row (name + image). Add more before minting each token. |
 | **Batch mint** | Exactly **max supply** complete rows (every token needs name + image). |
-| **Public mint (ElectroSwap)** | **All max supply** rows complete — collectors mint unrevealed slots from the same metadata set. |
+| **Public mint (IMintable)** | **All max supply** rows complete — collectors mint via any marketplace that supports IMintable |
 
 A row is **complete** when it has a **name** and an **image file**.
 

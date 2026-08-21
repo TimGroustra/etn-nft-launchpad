@@ -18,7 +18,7 @@ export async function prepareCollectionMetadata(walletAddress: string, collectio
   }
 }
 
-export async function configureElectroSwapMint(
+export async function configurePublicMint(
   writeContractAsync: WriteContract,
   contractAddress: `0x${string}`,
   collection: Collection,

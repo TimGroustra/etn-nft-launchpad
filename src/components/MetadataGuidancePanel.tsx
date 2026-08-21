@@ -15,7 +15,7 @@ export function MetadataGuidancePanel({ compact, showIpfs = true }: MetadataGuid
     <div className={`rounded-xl border border-slate-800 bg-slate-900/50 ${compact ? 'p-4' : 'p-5'}`}>
       <h3 className="font-medium text-white">Metadata & image compatibility</h3>
       <p className="mt-2 text-sm leading-relaxed text-slate-400">
-        Follow these rules so wallets, marketplaces, and ElectroSwap read your collection correctly. The platform
+        Follow these rules so wallets, marketplaces, and IMintable hosts read your collection correctly. The platform
         builds JSON for you — you only need name, optional description, and an image per token.
       </p>
 

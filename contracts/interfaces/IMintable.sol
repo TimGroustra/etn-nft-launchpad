@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @notice ElectroSwap NFT marketplace mint interface.
-/// @dev See https://electroswap.io/docs/nft-marketplace/imintable
+/// @notice Standard NFT marketplace mint interface (IMintable).
+/// @dev Compatible with ElectroSwap and other marketplaces that host IMintable minting.
 interface IMintable {
     function mintPrice() external view returns (uint256);
 

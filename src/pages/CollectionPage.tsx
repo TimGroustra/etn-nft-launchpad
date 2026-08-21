@@ -2,6 +2,7 @@ import { useParams } from 'react-router-dom'
 import { useCollection, useCollectionTokens } from '@/hooks/useCollections'
 import { getPublicImageUrl } from '@/lib/supabase'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
+import { formatPercentFromBps } from '@/lib/create-collection-validation'
 import { shortenAddress } from '@/lib/utils'
 
 export function CollectionPage() {
@@ -22,13 +23,13 @@ export function CollectionPage() {
         </p>
         <p className="text-sm text-slate-500">
           Mint: {collection.mint_mode}
-          {Number(collection.mint_price_etn) > 0 && ` · ElectroSwap: ${collection.mint_price_etn} ETN`}
+          {Number(collection.mint_price_etn) > 0 && ` · Public mint: ${collection.mint_price_etn} ETN`}
           {collection.chain_id === 5201420 ? ' · Testnet' : collection.chain_id === 52014 ? ' · Mainnet' : ''}
         </p>
         {(collection.burn_on_mint || collection.royalty_burn_bps > 0) && (
           <p className="text-sm text-amber-400">
-            {collection.burn_on_mint && (
-              <>CLUB mint burn: {collection.club_burn_amount} (paid public mint) · </>
+            {collection.burn_on_mint && Number(collection.mint_burn_bps ?? 0) > 0 && (
+              <>Mint CLUB burn: {formatPercentFromBps(collection.mint_burn_bps)} of mint price · </>
             )}
             {collection.royalty_burn_bps > 0 && (
               <>Royalties burn: {collection.royalty_burn_bps / 100}% ETN swapped to CLUB</>

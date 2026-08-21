@@ -20,6 +20,7 @@ export interface Database {
           status: 'draft' | 'published' | 'archived'
           mint_mode: 'lazy' | 'batch'
           max_supply: number
+          mint_burn_bps: number
           club_burn_amount: number
           burn_on_mint: boolean
           royalty_burn_bps: number

@@ -6,7 +6,7 @@ export type CollectionTokenSummary = {
   image_storage_path: string | null
 }
 
-/** Base URI for ElectroSwap IMintable metadata: `{base}{tokenId}.json` */
+/** Base URI for IMintable public mint metadata: `{base}{tokenId}.json` */
 export function getCollectionMetadataBaseUri(collectionId: string): string {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? ''
   return `${supabaseUrl}/storage/v1/object/public/collection-metadata/${collectionId}/`

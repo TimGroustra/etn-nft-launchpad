@@ -13,11 +13,10 @@ import { useNetwork } from '@/context/NetworkContext'
 import { formatEther } from 'viem'
 import { FACTORY_ABI, getChainId, getPublishFeeWei } from '@/lib/blockchain'
 import { usePlatformConfig, resolveFactoryAddress } from '@/hooks/usePlatformConfig'
-import { parseClubAmount } from '@/lib/utils'
-import { updateCollection, verifyPublishPayment } from '@/lib/api'
-import { configureElectroSwapMint, prepareCollectionMetadata } from '@/lib/publish-collection'
-import { listCollectionTokens } from '@/lib/collection-metadata'
 import { firstIssueMessage, validateCollectionForPublish } from '@/lib/create-collection-validation'
+import { updateCollection, verifyPublishPayment } from '@/lib/api'
+import { configurePublicMint, prepareCollectionMetadata } from '@/lib/publish-collection'
+import { listCollectionTokens } from '@/lib/collection-metadata'
 
 export function DashboardPage() {
   const { address, isConnected } = useAccount()
@@ -61,7 +60,7 @@ export function DashboardPage() {
       }
 
       const burnConfig = {
-        clubBurnAmount: parseClubAmount(String(collection.club_burn_amount)),
+        mintBurnBps: BigInt(collection.mint_burn_bps ?? 0),
         burnOnMint: collection.burn_on_mint,
         royaltyBurnBps: BigInt(collection.royalty_burn_bps ?? 0),
       }
@@ -100,8 +99,8 @@ export function DashboardPage() {
       toast.message('Uploading metadata…')
       await prepareCollectionMetadata(address, collection.id)
 
-      toast.message('Configuring ElectroSwap mint…')
-      const baseUri = await configureElectroSwapMint(
+      toast.message('Configuring public mint (IMintable)…')
+      const baseUri = await configurePublicMint(
         writeContractAsync,
         contractAddress as `0x${string}`,
         collection,
@@ -116,7 +115,7 @@ export function DashboardPage() {
       })
 
       await verifyPublishPayment(address, collection.id, hash, chain.id)
-      toast.success(`Collection published on ${chain.name} and listed for ElectroSwap minting.`)
+      toast.success(`Collection published on ${chain.name} and ready for marketplace minting.`)
       refetch()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Publish failed')

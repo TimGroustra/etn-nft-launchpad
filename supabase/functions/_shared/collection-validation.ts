@@ -15,7 +15,7 @@ export type CollectionPayload = {
   description?: string
   mintMode?: MintMode
   maxSupply?: number
-  clubBurnAmount?: number
+  mintBurnBps?: number
   burnOnMint?: boolean
   royaltyBurnBps?: number
   mintPriceEtn?: number
@@ -52,7 +52,7 @@ export function validateCollectionPayload(body: CollectionPayload): string | nul
   const mintPriceEtn = Number(body.mintPriceEtn ?? 0)
   const mintMode = (body.mintMode ?? 'lazy') as MintMode
   const burnOnMint = Boolean(body.burnOnMint)
-  const clubBurnAmount = Number(body.clubBurnAmount ?? 0)
+  const mintBurnBps = Number(body.mintBurnBps ?? 0)
   const royaltyBurnBps = Number(body.royaltyBurnBps ?? 0)
   const maxMintPerWallet = Number(body.maxMintPerWallet ?? 0)
 
@@ -74,8 +74,12 @@ export function validateCollectionPayload(body: CollectionPayload): string | nul
     return 'Mint CLUB burn requires a public mint price.'
   }
 
-  if (burnOnMint && clubBurnAmount <= 0) {
-    return 'Mint CLUB burn requires a CLUB amount greater than 0.'
+  if (burnOnMint && mintBurnBps <= 0) {
+    return 'Mint CLUB burn requires a percentage greater than 0.'
+  }
+
+  if (burnOnMint && mintBurnBps > 10_000) {
+    return 'Mint CLUB burn cannot exceed 100%.'
   }
 
   if (mintMode !== 'lazy' && mintMode !== 'batch') {

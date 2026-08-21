@@ -8,7 +8,7 @@ export type CreateCollectionForm = {
   description: string
   mintMode: MintMode
   maxSupply: number
-  clubBurnAmount: string
+  mintBurnPercent: string
   burnOnMint: boolean
   royaltyBurnPercent: string
   mintPriceEtn: string
@@ -35,6 +35,18 @@ export const COLLECTION_NAME_MAX = 80
 export const COLLECTION_DESC_MAX = 2000
 
 const SYMBOL_RE = /^[A-Z0-9]{2,12}$/
+
+export function percentToBps(percent: number): number {
+  return Math.min(10_000, Math.max(0, Math.round(percent * 100)))
+}
+
+export function bpsToPercent(bps: number): number {
+  return bps / 100
+}
+
+export function formatPercentFromBps(bps: number): string {
+  return `${bpsToPercent(bps).toFixed(2).replace(/\.?0+$/, '')}%`
+}
 
 export function isTokenRowComplete(token: DraftToken): boolean {
   return Boolean(token.name.trim() && token.file)
@@ -75,7 +87,7 @@ export function sanitizeFormForMode(form: CreateCollectionForm, tokens: DraftTok
 
   if (next.burnOnMint && !next.enablePublicMint) {
     next.burnOnMint = false
-    next.clubBurnAmount = '0'
+    next.mintBurnPercent = '0'
   }
 
   if (next.mintMode === 'batch' && !canEnablePublicMint(next, tokens)) {
@@ -88,6 +100,7 @@ export function sanitizeFormForMode(form: CreateCollectionForm, tokens: DraftTok
 
   if (!next.enablePublicMint) {
     next.burnOnMint = false
+    next.mintBurnPercent = '0'
   }
 
   return next
@@ -262,14 +275,17 @@ export function validateCreateStep(
     if (f.burnOnMint && !f.enablePublicMint) {
       issues.push({
         field: 'burnOnMint',
-        message: 'Mint CLUB burn only applies when ElectroSwap public mint is enabled.',
+        message: 'Mint CLUB burn only applies when public mint (IMintable) is enabled.',
       })
     }
 
     if (f.burnOnMint) {
-      const club = Number(f.clubBurnAmount)
-      if (!Number.isFinite(club) || club <= 0) {
-        issues.push({ field: 'clubBurnAmount', message: 'Enter a CLUB amount greater than 0, or turn off mint CLUB burn.' })
+      const mintBurn = Number(f.mintBurnPercent)
+      if (!Number.isFinite(mintBurn) || mintBurn <= 0 || mintBurn > 100) {
+        issues.push({
+          field: 'mintBurnPercent',
+          message: 'Enter a mint burn percentage between 0 and 100, or turn off mint CLUB burn.',
+        })
       }
     }
   }
@@ -317,7 +333,7 @@ export type SavedCollectionShape = {
   max_supply: number
   mint_price_etn: number | null
   burn_on_mint: boolean
-  club_burn_amount: number | null
+  mint_burn_bps: number | null
 }
 
 export type SavedTokenShape = {
@@ -369,10 +385,10 @@ export function validateCollectionForPublish(
     })
   }
 
-  if (collection.burn_on_mint && Number(collection.club_burn_amount ?? 0) <= 0) {
+  if (collection.burn_on_mint && Number(collection.mint_burn_bps ?? 0) <= 0) {
     issues.push({
-      field: 'clubBurnAmount',
-      message: 'Mint CLUB burn is enabled but amount is zero. Set a CLUB amount or turn off mint burn.',
+      field: 'mintBurnPercent',
+      message: 'Mint CLUB burn is enabled but percentage is zero. Set a mint burn % or turn off mint burn.',
     })
   }
 

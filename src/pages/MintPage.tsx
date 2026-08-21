@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
 import { NFT_ABI } from '@/lib/blockchain'
 import { syncTokenUri, updateToken } from '@/lib/api'
+import { formatPercentFromBps } from '@/lib/create-collection-validation'
 import { getPublicImageUrl } from '@/lib/supabase'
 
 const CHUNK_SIZE = 20
@@ -84,12 +85,12 @@ export function MintPage() {
         <CardDescription>Mode: {collection.mint_mode}</CardDescription>
       </div>
 
-      {collection.burn_on_mint && Number(collection.club_burn_amount) > 0 && (
+      {collection.burn_on_mint && Number(collection.mint_burn_bps ?? 0) > 0 && (
         <Card>
-          <CardTitle>CLUB burn on ElectroSwap mint</CardTitle>
+          <CardTitle>CLUB burn on public mint</CardTitle>
           <CardDescription className="mt-2">
-            Each IMintable mint swaps ETN for {collection.club_burn_amount} CLUB and burns it. Owner lazy/batch mints here
-            do not trigger this burn.
+            Each IMintable mint on a marketplace swaps {formatPercentFromBps(collection.mint_burn_bps)} of the mint
+            payment to CLUB and burns it. Owner lazy/batch mints here do not trigger this burn.
           </CardDescription>
         </Card>
       )}

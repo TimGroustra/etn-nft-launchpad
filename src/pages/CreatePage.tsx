@@ -18,6 +18,7 @@ import {
   validateBeforeSave,
   validateCreateStep,
   firstIssueMessage,
+  percentToBps,
   type CreateCollectionForm,
   type DraftToken,
   type MintMode,
@@ -107,7 +108,7 @@ const INITIAL_FORM: CreateCollectionForm = {
   description: '',
   mintMode: 'lazy',
   maxSupply: 100,
-  clubBurnAmount: '0',
+  mintBurnPercent: '0',
   burnOnMint: false,
   royaltyBurnPercent: '0',
   mintPriceEtn: String(MIN_PUBLIC_MINT_ETN),
@@ -262,7 +263,7 @@ export function CreatePage() {
         description: sanitized.description,
         mintMode: sanitized.mintMode,
         maxSupply: sanitized.maxSupply,
-        clubBurnAmount: Number(sanitized.clubBurnAmount),
+        mintBurnBps: percentToBps(Number(sanitized.mintBurnPercent)),
         burnOnMint: sanitized.burnOnMint,
         royaltyBurnBps: Math.min(10000, Math.max(0, Math.round(Number(sanitized.royaltyBurnPercent) * 100))),
         mintPriceEtn: sanitized.enablePublicMint ? Number(sanitized.mintPriceEtn) : 0,
@@ -428,8 +429,8 @@ export function CreatePage() {
                 : undefined
             }
             onChange={(enablePublicMint) => update('enablePublicMint', enablePublicMint)}
-            label="Enable ElectroSwap public mint"
-            description="Lets anyone mint directly on ElectroSwap. Requires a minimum price of 1 ETN and complete metadata for every token in max supply."
+            label="Enable public mint (IMintable)"
+            description="Lets collectors mint via any marketplace that supports IMintable (e.g. ElectroSwap). Requires at least 1 ETN and complete metadata for every token."
           />
 
           {form.enablePublicMint && (
@@ -443,7 +444,7 @@ export function CreatePage() {
                   value={form.mintPriceEtn}
                   onChange={(e) => update('mintPriceEtn', e.target.value)}
                 />
-                <FieldHint>Minimum {MIN_PUBLIC_MINT_ETN} ETN per NFT on ElectroSwap.</FieldHint>
+                <FieldHint>Minimum {MIN_PUBLIC_MINT_ETN} ETN per NFT on supported marketplaces.</FieldHint>
                 <FieldError message={fieldErrors.mintPriceEtn} />
               </div>
               <div>
@@ -454,7 +455,7 @@ export function CreatePage() {
                   value={form.maxMintPerWallet}
                   onChange={(e) => update('maxMintPerWallet', e.target.value)}
                 />
-                <FieldHint>Limit how many NFTs one wallet can mint on ElectroSwap. Use 0 for no limit.</FieldHint>
+                <FieldHint>Limit how many NFTs one wallet can mint via public mint. Use 0 for no limit.</FieldHint>
                 <FieldError message={fieldErrors.maxMintPerWallet} />
               </div>
             </div>
@@ -476,7 +477,7 @@ export function CreatePage() {
           {isBatch && form.enablePublicMint && (
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
               Batch + public mint: upload metadata for all {form.maxSupply} tokens. Tokens you batch mint at publish
-              plus any unsold supply share the same ElectroSwap price.
+              plus any unsold supply share the same public mint price.
             </div>
           )}
 
@@ -506,24 +507,27 @@ export function CreatePage() {
           <ToggleRow
             checked={form.burnOnMint}
             disabled={!form.enablePublicMint}
-            disabledReason="Mint CLUB burn only applies when ElectroSwap public mint is enabled."
+            disabledReason="Mint CLUB burn only applies when public mint (IMintable) is enabled."
             onChange={(burnOnMint) => update('burnOnMint', burnOnMint)}
-            label="Burn CLUB on ElectroSwap mint"
-            description="When someone mints via ElectroSwap, part of their ETN payment is swapped to CLUB and sent to the burn address."
+            label="Burn CLUB on public mint"
+            description="When someone mints via IMintable on a marketplace, a percentage of their ETN payment is swapped to CLUB and burned."
           />
 
           {form.burnOnMint && (
             <div>
-              <Label>CLUB burned per public mint</Label>
+              <Label>Mint burn (% of mint price)</Label>
               <Input
                 type="number"
                 min={0}
-                step="0.000001"
-                value={form.clubBurnAmount}
-                onChange={(e) => update('clubBurnAmount', e.target.value)}
+                max={100}
+                step="0.01"
+                value={form.mintBurnPercent}
+                onChange={(e) => update('mintBurnPercent', e.target.value)}
               />
-              <FieldHint>Exact amount of CLUB tokens burned each time a collector mints on ElectroSwap.</FieldHint>
-              <FieldError message={fieldErrors.clubBurnAmount} />
+              <FieldHint>
+                Percentage of each public mint payment swapped to CLUB and burned (e.g. 10% of a 5 ETN mint = 0.5 ETN).
+              </FieldHint>
+              <FieldError message={fieldErrors.mintBurnPercent} />
             </div>
           )}
 
@@ -654,7 +658,7 @@ export function CreatePage() {
               </div>
               <div className="flex justify-between gap-4 border-b border-slate-800 py-2">
                 <dt className="text-slate-400">Mint CLUB burn</dt>
-                <dd>{form.burnOnMint ? `${form.clubBurnAmount} CLUB` : 'Off'}</dd>
+                <dd>{form.burnOnMint ? `${form.mintBurnPercent}% of mint price → CLUB burn` : 'Off'}</dd>
               </div>
               <div className="flex justify-between gap-4 py-2">
                 <dt className="text-slate-400">Artwork</dt>
@@ -673,7 +677,7 @@ export function CreatePage() {
           <CardTitle>Save draft</CardTitle>
           <CardDescription className="mt-2">
             Save your collection, then publish from the dashboard. We deploy the contract, upload metadata, and
-            configure ElectroSwap for you.
+            configure public mint (IMintable) for you.
           </CardDescription>
           <Button className="mt-4" onClick={saveDraft} disabled={loading || validatingImages}>
             {loading ? 'Saving…' : validatingImages ? 'Validating images…' : 'Save draft'}

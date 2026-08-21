@@ -49,7 +49,7 @@ describe('LaunchpadFactory', function () {
     ])
 
     const burnConfig = {
-      clubBurnAmount: 0n,
+      mintBurnBps: 0n,
       burnOnMint: false,
       royaltyBurnBps: 0,
     }
@@ -79,7 +79,7 @@ describe('LaunchpadFactory', function () {
       500,
     ])
 
-    const burnConfig = { clubBurnAmount: 0n, burnOnMint: false, royaltyBurnBps: 0 }
+    const burnConfig = { mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }
     const tx = await factory.connect(creator).deployCollection('Owned', 'OWN', burnConfig, 10, {
       value: publishFee,
     })
@@ -106,7 +106,7 @@ describe('LaunchpadFactory', function () {
       500,
     ])
 
-    const burnConfig = { clubBurnAmount: 0n, burnOnMint: false, royaltyBurnBps: 0 }
+    const burnConfig = { mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }
     const tx1 = await factory.connect(creator).deployCollection('First', 'ONE', burnConfig, 5, {
       value: publishFee,
     })
@@ -153,7 +153,7 @@ describe('LaunchpadFactory', function () {
     await factory.connect(owner).setPublishFee(ethers.parseEther('2'))
     expect(await factory.publishFee()).to.equal(ethers.parseEther('2'))
 
-    const burnConfig = { clubBurnAmount: 0n, burnOnMint: false, royaltyBurnBps: 0 }
+    const burnConfig = { mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }
     await expect(
       factory.connect(creator).deployCollection('Fee', 'FEE', burnConfig, 1, { value: ethers.parseEther('1') }),
     ).to.be.revertedWith('Insufficient publish fee')
@@ -184,7 +184,7 @@ describe('EditableERC721', function () {
 
   it('mints with URI and allows owner to update metadata', async function () {
     const [owner, minter] = await ethers.getSigners()
-    const { nft } = await deployNft({ clubBurnAmount: 0n, burnOnMint: false, royaltyBurnBps: 0 }, owner)
+    const { nft } = await deployNft({ mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }, owner)
 
     await nft.connect(owner).ownerMint(minter.address, 'ipfs://initial')
     expect(await nft.tokenURI(1)).to.equal('ipfs://initial')
@@ -195,7 +195,7 @@ describe('EditableERC721', function () {
 
   it('allows owner to withdraw ETN from the contract', async function () {
     const [owner] = await ethers.getSigners()
-    const { nft } = await deployNft({ clubBurnAmount: 0n, burnOnMint: false, royaltyBurnBps: 0 }, owner)
+    const { nft } = await deployNft({ mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }, owner)
 
     const amount = ethers.parseEther('1')
     await owner.sendTransaction({ to: await nft.getAddress(), value: amount })
@@ -210,7 +210,7 @@ describe('EditableERC721', function () {
   it('swaps a royalty share to CLUB and burns it', async function () {
     const [owner, payer] = await ethers.getSigners()
     const { nft, club } = await deployNft(
-      { clubBurnAmount: 0n, burnOnMint: false, royaltyBurnBps: 3000 },
+      { mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 3000 },
       owner,
     )
     const nftAddress = await nft.getAddress()
@@ -226,7 +226,7 @@ describe('EditableERC721', function () {
   it('burns CLUB from paid IMintable mint via ETN swap', async function () {
     const [owner, minter] = await ethers.getSigners()
     const { nft, club } = await deployNft(
-      { clubBurnAmount: ethers.parseEther('10'), burnOnMint: true, royaltyBurnBps: 0 },
+      { mintBurnBps: 1000n, burnOnMint: true, royaltyBurnBps: 0 },
       owner,
     )
 
@@ -240,9 +240,9 @@ describe('EditableERC721', function () {
     expect(await nft.tokenURI(1)).to.equal('ipfs://collection/1.json')
   })
 
-  it('exposes ElectroSwap IMintable helpers', async function () {
+  it('exposes IMintable marketplace helpers', async function () {
     const [owner, buyer] = await ethers.getSigners()
-    const { nft } = await deployNft({ clubBurnAmount: 0n, burnOnMint: false, royaltyBurnBps: 0 }, owner)
+    const { nft } = await deployNft({ mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }, owner)
 
     await nft.connect(owner).setBaseURI('ipfs://collection/')
     await nft.connect(owner).setMintPrice(ethers.parseEther('5'))

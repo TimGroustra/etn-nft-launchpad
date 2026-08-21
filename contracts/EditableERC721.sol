@@ -14,13 +14,14 @@ import {IMintable} from "./interfaces/IMintable.sol";
 
 interface IEditableERC721 {
     struct BurnConfig {
-        uint256 clubBurnAmount;
+        uint96 mintBurnBps;
         bool burnOnMint;
         uint96 royaltyBurnBps;
     }
 }
 
-/// @notice ETN mint/royalty proceeds are wrapped to WETN and swapped for CLUB on ElectroSwap V3, then sent to the burn address.
+/// @notice ETN mint/royalty proceeds are wrapped to WETN and swapped for CLUB, then sent to the burn address.
+/// @dev Public mint uses the standard IMintable interface supported by NFT marketplaces (e.g. ElectroSwap).
 contract EditableERC721 is ERC721URIStorage, ERC2981, Ownable2Step, ReentrancyGuard, IEditableERC721, IMintable {
     uint24 private constant POOL_FEE = 3000;
 
@@ -59,6 +60,7 @@ contract EditableERC721 is ERC721URIStorage, ERC2981, Ownable2Step, ReentrancyGu
         uint96 defaultRoyaltyBps_
     ) ERC721(name_, symbol_) Ownable(initialOwner) {
         require(config_.royaltyBurnBps <= 10_000, "Invalid royalty burn bps");
+        require(config_.mintBurnBps <= 10_000, "Invalid mint burn bps");
         require(defaultRoyaltyBps_ <= 10_000, "Invalid royalty bps");
         clubToken = IERC20(clubToken_);
         WETN = wetn_;
@@ -107,6 +109,7 @@ contract EditableERC721 is ERC721URIStorage, ERC2981, Ownable2Step, ReentrancyGu
 
     function setBurnConfig(BurnConfig calldata config_) external onlyOwner {
         require(config_.royaltyBurnBps <= 10_000, "Invalid royalty burn bps");
+        require(config_.mintBurnBps <= 10_000, "Invalid mint burn bps");
         burnConfig = config_;
         emit BurnConfigUpdated(config_);
     }
@@ -154,8 +157,9 @@ contract EditableERC721 is ERC721URIStorage, ERC2981, Ownable2Step, ReentrancyGu
             emit BatchMetadataUpdate(firstTokenId, _nextTokenId - 1);
         }
 
-        if (burnConfig.burnOnMint && burnConfig.clubBurnAmount > 0) {
-            _swapEtnForExactClub(burnConfig.clubBurnAmount * mintCount, msg.value);
+        if (burnConfig.burnOnMint && burnConfig.mintBurnBps > 0) {
+            uint256 burnEtn = (msg.value * uint256(burnConfig.mintBurnBps)) / 10_000;
+            _swapEtnForClubBurn(burnEtn);
         }
     }
 
@@ -220,26 +224,6 @@ contract EditableERC721 is ERC721URIStorage, ERC2981, Ownable2Step, ReentrancyGu
 
         if (clubOut > 0) emit ClubBurned(clubOut, etnAmount);
         return clubOut;
-    }
-
-    function _swapEtnForExactClub(uint256 clubOut, uint256 maxEtn) private returns (uint256 etnUsed) {
-        if (clubOut == 0 || maxEtn == 0 || !_canSwap()) return 0;
-
-        IWETN(WETN).deposit{value: maxEtn}();
-        IWETN(WETN).approve(address(swapRouter), maxEtn);
-
-        ISwapRouterV3.ExactOutputParams memory params = ISwapRouterV3.ExactOutputParams({
-            path: abi.encodePacked(address(clubToken), POOL_FEE, WETN),
-            recipient: DEAD,
-            amountOut: clubOut,
-            amountInMaximum: maxEtn
-        });
-
-        etnUsed = swapRouter.exactOutput(params);
-        _refundWetn();
-
-        if (clubOut > 0) emit ClubBurned(clubOut, etnUsed);
-        return etnUsed;
     }
 
     function _processRoyaltyPayment(uint256 amount) private {

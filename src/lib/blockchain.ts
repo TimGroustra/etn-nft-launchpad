@@ -114,7 +114,7 @@ export const FACTORY_ABI = [
         name: 'burnConfig',
         type: 'tuple',
         components: [
-          { name: 'clubBurnAmount', type: 'uint256' },
+          { name: 'mintBurnBps', type: 'uint96' },
           { name: 'burnOnMint', type: 'bool' },
           { name: 'royaltyBurnBps', type: 'uint96' },
         ],
@@ -234,7 +234,7 @@ export const FACTORY_ABI = [
         name: 'burnConfig',
         type: 'tuple',
         components: [
-          { name: 'clubBurnAmount', type: 'uint256' },
+          { name: 'mintBurnBps', type: 'uint96' },
           { name: 'burnOnMint', type: 'bool' },
           { name: 'royaltyBurnBps', type: 'uint96' },
         ],
