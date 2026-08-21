@@ -30,8 +30,15 @@ async function main() {
   const deployTx = factory.deploymentTransaction()
   if (!deployTx) throw new Error('Factory deployment transaction missing')
   console.log('Deploy tx:', deployTx.hash)
-  const receipt = await deployTx.wait()
-  if (!receipt?.contractAddress) throw new Error('Factory deployment failed')
+  const provider = ethers.provider
+  let receipt = null
+  const deadline = Date.now() + 120_000
+  while (Date.now() < deadline) {
+    receipt = await provider.getTransactionReceipt(deployTx.hash)
+    if (receipt) break
+    await new Promise((resolve) => setTimeout(resolve, 2000))
+  }
+  if (!receipt?.contractAddress) throw new Error(`Factory deployment receipt missing for ${deployTx.hash}`)
 
   const address = receipt.contractAddress
   const key = Number(network.chainId) === 52014 ? 'electroneum' : 'electroneumTestnet'
