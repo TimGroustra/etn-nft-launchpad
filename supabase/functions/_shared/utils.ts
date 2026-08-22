@@ -7,6 +7,14 @@ export function normalizeWallet(wallet: string): string {
   return wallet.toLowerCase().trim()
 }
 
+export function normalizeContractAddress(address: string): string {
+  const normalized = address.toLowerCase().trim()
+  if (!/^0x[a-f0-9]{40}$/.test(normalized)) {
+    throw new Error('Invalid contract address')
+  }
+  return normalized
+}
+
 export function assertValidTxHash(hash: string) {
   if (!/^0x[a-f0-9]{64}$/.test(hash)) {
     throw new Error('Invalid transaction hash format')

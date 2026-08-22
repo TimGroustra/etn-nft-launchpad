@@ -1,4 +1,4 @@
-import { defineChain } from 'viem'
+import { defineChain, parseEventLogs, type TransactionReceipt } from 'viem'
 
 export const electroneum = defineChain({
   id: 52014,
@@ -42,10 +42,30 @@ export function getChainId(key: NetworkKey): number {
   return getChainByKey(key).id
 }
 
+export function getExplorerContractUrl(chainId: number, contractAddress: string): string {
+  const chain = chainId === electroneumTestnet.id ? electroneumTestnet : electroneum
+  return `${chain.blockExplorers.default.url}/address/${contractAddress}`
+}
+
+export function getExplorerNftUrl(chainId: number, contractAddress: string, tokenId: number | string): string {
+  const chain = chainId === electroneumTestnet.id ? electroneumTestnet : electroneum
+  return `${chain.blockExplorers.default.url}/token/${contractAddress}/instance/${tokenId}`
+}
+
 export const CLUB_TOKEN_ADDRESS = '0xC9FC4AB00911793D99b5c7Bd01f01203C21D4131'
 export const WETN_ADDRESS = '0x138DAFbDA0CCB3d8E39C19edb0510Fc31b7C1c77'
-export const ELECTROSWAP_V3_ROUTER = '0xfdB0d62Fc929fD53D266B969Bfe4250b205D0899' as const
+/** ElectroSwap SwapRouter02 (V3 exactInput). Do not use the V3 Liquidity Locker (0xfdB0…). */
+export const ELECTROSWAP_V3_ROUTER = '0x5A3AB7e9f405250B36e7e0a4654c1052EADC1F07' as const
 export const DEAD_ADDRESS = '0x000000000000000000000000000000000000dEaD' as const
+
+/** Factory treasury — only this wallet may switch the app to testnet. */
+export const TREASURY_ADDRESS = (
+  import.meta.env.VITE_TREASURY_ADDRESS ?? '0x126aa663BdeDd6Ae477fd28a7d0b624b8109D15d'
+).toLowerCase() as `0x${string}`
+
+export function isTreasuryWallet(address?: string | null): boolean {
+  return Boolean(address && address.toLowerCase() === TREASURY_ADDRESS)
+}
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const
 
@@ -338,6 +358,13 @@ export const NFT_ABI = [
     type: 'function',
   },
   {
+    inputs: [],
+    name: 'maxMintPerWallet',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
     inputs: [
       { name: 'tokenId', type: 'uint256' },
       { name: 'uri', type: 'string' },
@@ -365,6 +392,23 @@ export const NFT_ABI = [
     type: 'function',
   },
   {
+    inputs: [
+      {
+        name: 'config_',
+        type: 'tuple',
+        components: [
+          { name: 'mintBurnBps', type: 'uint96' },
+          { name: 'burnOnMint', type: 'bool' },
+          { name: 'royaltyBurnBps', type: 'uint96' },
+        ],
+      },
+    ],
+    name: 'setBurnConfig',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
     inputs: [{ name: 'tokenId', type: 'uint256' }],
     name: 'tokenURI',
     outputs: [{ name: '', type: 'string' }],
@@ -386,3 +430,29 @@ export const NFT_ABI = [
     type: 'function',
   },
 ] as const
+
+/** Parse the factory CollectionDeployed event — never use generic log topic heuristics. */
+export function resolveDeployedCollectionAddress(
+  receipt: TransactionReceipt,
+  factoryAddress: string,
+  creatorAddress?: string,
+): `0x${string}` {
+  const factory = factoryAddress.toLowerCase()
+  const candidateLogs = receipt.logs.filter((log) => log.address.toLowerCase() === factory)
+  const events = parseEventLogs({
+    abi: FACTORY_ABI,
+    logs: candidateLogs.length > 0 ? candidateLogs : receipt.logs,
+    eventName: 'CollectionDeployed',
+  })
+
+  const collection = events.at(-1)?.args.collection
+  if (!collection) {
+    throw new Error('Could not find CollectionDeployed event in the deploy transaction.')
+  }
+
+  if (creatorAddress && collection.toLowerCase() === creatorAddress.toLowerCase()) {
+    throw new Error('Deploy transaction did not return a valid collection contract address.')
+  }
+
+  return collection
+}

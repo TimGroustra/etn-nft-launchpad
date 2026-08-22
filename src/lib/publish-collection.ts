@@ -18,6 +18,26 @@ export async function prepareCollectionMetadata(walletAddress: string, collectio
   }
 }
 
+export async function syncPublishedCollection(
+  walletAddress: string,
+  collection: Collection,
+  writeContractAsync: WriteContract,
+  chainId: number,
+) {
+  await prepareCollectionMetadata(walletAddress, collection.id)
+
+  if (!collection.contract_address) {
+    throw new Error('Collection is not published on-chain yet.')
+  }
+
+  await configurePublicMint(
+    writeContractAsync,
+    collection.contract_address as `0x${string}`,
+    collection,
+    chainId,
+  )
+}
+
 export async function configurePublicMint(
   writeContractAsync: WriteContract,
   contractAddress: `0x${string}`,

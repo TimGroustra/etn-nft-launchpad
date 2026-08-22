@@ -5,6 +5,7 @@ import {
   electroneumTestnet,
   getChainByKey,
   getChainKey,
+  isTreasuryWallet,
   type NetworkKey,
 } from '@/lib/blockchain'
 
@@ -14,45 +15,69 @@ interface NetworkContextValue {
   network: NetworkKey
   chain: typeof electroneum | typeof electroneumTestnet
   isMainnet: boolean
+  canSwitchNetwork: boolean
   setNetwork: (network: NetworkKey) => Promise<void>
   switching: boolean
 }
 
 const NetworkContext = createContext<NetworkContextValue | null>(null)
 
-function readStoredNetwork(): NetworkKey {
+function readStoredNetwork(allowTestnet: boolean): NetworkKey {
   const stored = localStorage.getItem(STORAGE_KEY)
-  return stored === 'testnet' ? 'testnet' : 'mainnet'
+  if (stored === 'testnet' && allowTestnet) return 'testnet'
+  return 'mainnet'
 }
 
 export function NetworkProvider({ children }: { children: ReactNode }) {
-  const { chainId, isConnected } = useAccount()
+  const { address, chainId, isConnected } = useAccount()
   const { switchChainAsync, isPending } = useSwitchChain()
-  const [network, setNetworkState] = useState<NetworkKey>(readStoredNetwork)
+  const canSwitchNetwork = isTreasuryWallet(address)
+  const [network, setNetworkState] = useState<NetworkKey>(() => readStoredNetwork(false))
 
   const chain = useMemo(() => getChainByKey(network), [network])
 
   useEffect(() => {
-    if (isConnected && chainId && getChainKey(chainId) !== network) {
-      setNetworkState(getChainKey(chainId))
-      localStorage.setItem(STORAGE_KEY, getChainKey(chainId))
+    if (!canSwitchNetwork) {
+      setNetworkState('mainnet')
+      localStorage.setItem(STORAGE_KEY, 'mainnet')
+      if (isConnected && chainId === electroneumTestnet.id) {
+        switchChainAsync({ chainId: electroneum.id }).catch(() => undefined)
+      }
+      return
     }
-  }, [chainId, isConnected, network])
+
+    if (isConnected && chainId) {
+      const walletNetwork = getChainKey(chainId)
+      setNetworkState(walletNetwork)
+      localStorage.setItem(STORAGE_KEY, walletNetwork)
+      return
+    }
+
+    setNetworkState(readStoredNetwork(true))
+  }, [canSwitchNetwork, chainId, isConnected, switchChainAsync])
 
   const setNetwork = useCallback(
     async (next: NetworkKey) => {
+      if (!canSwitchNetwork && next === 'testnet') return
       setNetworkState(next)
       localStorage.setItem(STORAGE_KEY, next)
       if (isConnected) {
         await switchChainAsync({ chainId: getChainByKey(next).id })
       }
     },
-    [isConnected, switchChainAsync],
+    [canSwitchNetwork, isConnected, switchChainAsync],
   )
 
   return (
     <NetworkContext.Provider
-      value={{ network, chain, isMainnet: network === 'mainnet', setNetwork, switching: isPending }}
+      value={{
+        network,
+        chain,
+        isMainnet: network === 'mainnet',
+        canSwitchNetwork,
+        setNetwork,
+        switching: isPending,
+      }}
     >
       {children}
     </NetworkContext.Provider>

@@ -1,0 +1,11 @@
+{
+  "name": "Launchpad Tester #2",
+  "description": "Second test token — Ember edition for bulk import and public mint testing.",
+  "attributes": [
+    { "trait_type": "Collection", "value": "Test NFT Launchpad" },
+    { "trait_type": "Edition", "value": 2 },
+    { "trait_type": "Rarity", "value": "Common" },
+    { "trait_type": "Element", "value": "Ember" },
+    { "trait_type": "Network", "value": "Electroneum Testnet" }
+  ]
+}

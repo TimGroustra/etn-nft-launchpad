@@ -1,0 +1,11 @@
+{
+  "name": "Launchpad Tester #6",
+  "description": "Sixth test token — Frost edition for IMintable public mint testing at 1 ETN.",
+  "attributes": [
+    { "trait_type": "Collection", "value": "Test NFT Launchpad" },
+    { "trait_type": "Edition", "value": 6 },
+    { "trait_type": "Rarity", "value": "Uncommon" },
+    { "trait_type": "Element", "value": "Frost" },
+    { "trait_type": "Network", "value": "Electroneum Testnet" }
+  ]
+}

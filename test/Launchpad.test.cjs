@@ -193,6 +193,26 @@ describe('EditableERC721', function () {
     expect(await nft.tokenURI(1)).to.equal('ipfs://updated')
   })
 
+  it('returns absolute token URI when baseURI was set after a full URL was stored', async function () {
+    const [owner, minter] = await ethers.getSigners()
+    const { nft } = await deployNft({ mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }, owner)
+
+    const absolute = 'https://example.com/collection/4.json'
+    await nft.connect(owner).ownerMint(minter.address, absolute)
+    await nft.connect(owner).setBaseURI('https://example.com/collection/')
+
+    expect(await nft.tokenURI(1)).to.equal(absolute)
+  })
+
+  it('stores relative suffixes under baseURI for owner mint', async function () {
+    const [owner, minter] = await ethers.getSigners()
+    const { nft } = await deployNft({ mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }, owner)
+
+    await nft.connect(owner).setBaseURI('https://example.com/meta/')
+    await nft.connect(owner).ownerMint(minter.address, '1.json')
+    expect(await nft.tokenURI(1)).to.equal('https://example.com/meta/1.json')
+  })
+
   it('allows owner to withdraw ETN from the contract', async function () {
     const [owner] = await ethers.getSigners()
     const { nft } = await deployNft({ mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }, owner)
@@ -251,5 +271,25 @@ describe('EditableERC721', function () {
 
     expect(await nft.mintPrice()).to.equal(ethers.parseEther('5'))
     expect(await nft.mintableCount(buyer.address)).to.equal(2n)
+  })
+
+  it('returns preview tokenURI for unminted IMintable tokens', async function () {
+    const [owner] = await ethers.getSigners()
+    const { nft } = await deployNft({ mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }, owner)
+
+    await nft.connect(owner).setBaseURI('ipfs://collection/')
+    await nft.connect(owner).setMintPrice(ethers.parseEther('5'))
+    await nft.connect(owner).setMintable(true)
+
+    expect(await nft.tokenURI(1)).to.equal('ipfs://collection/1.json')
+    expect(await nft.tokenURI(2)).to.equal('ipfs://collection/2.json')
+    await expect(nft.tokenURI(11)).to.be.reverted
+  })
+
+  it('reverts tokenURI for unminted tokens when public mint is disabled', async function () {
+    const [owner] = await ethers.getSigners()
+    const { nft } = await deployNft({ mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }, owner)
+
+    await expect(nft.tokenURI(1)).to.be.reverted
   })
 })

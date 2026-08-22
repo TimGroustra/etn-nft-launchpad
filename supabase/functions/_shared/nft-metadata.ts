@@ -13,6 +13,9 @@ export type NftAttribute = {
   value: string | number
 }
 
+export const MAX_ATTRIBUTES_PER_TOKEN = 50
+export const ATTRIBUTE_TRAIT_MAX = 80
+
 export type NftMetadata = {
   name: string
   description: string
@@ -63,6 +66,44 @@ export function validateNoMetadataRoyaltyFields(metadata: Record<string, unknown
       }
     }
   }
+
+  return null
+}
+
+export function validateAttributesList(
+  attributes: NftAttribute[],
+  context: string,
+): string | null {
+  if (attributes.length > MAX_ATTRIBUTES_PER_TOKEN) {
+    return `${context}: At most ${MAX_ATTRIBUTES_PER_TOKEN} attributes allowed.`
+  }
+
+  const traits = new Set<string>()
+  for (const attr of attributes) {
+    const trait = String(attr.trait_type ?? '').trim()
+    if (!trait) return `${context}: Each attribute needs a trait name.`
+    if (trait.length > ATTRIBUTE_TRAIT_MAX) {
+      return `${context}: Trait name must be ${ATTRIBUTE_TRAIT_MAX} characters or fewer.`
+    }
+    const key = trait.toLowerCase()
+    if (traits.has(key)) {
+      return `${context}: Duplicate trait "${trait}" in the same token.`
+    }
+    traits.add(key)
+
+    const value = attr.value
+    if (value === undefined || value === null || value === '') {
+      return `${context}: Each attribute needs a value.`
+    }
+  }
+
+  const royaltyError = validateNoMetadataRoyaltyFields({
+    name: 'x',
+    description: '',
+    image: 'x',
+    attributes,
+  })
+  if (royaltyError) return `${context}: ${royaltyError}`
 
   return null
 }

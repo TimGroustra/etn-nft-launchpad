@@ -1,4 +1,7 @@
 import { validateImageFileSync } from '@/lib/validate-upload-image'
+import { validateAttributesList } from '@/lib/metadata-import'
+import { getRowTokenId } from '@/lib/draft-token-rows'
+import type { NftAttribute } from '@/lib/nft-metadata'
 
 export type MintMode = 'lazy' | 'batch'
 
@@ -14,12 +17,17 @@ export type CreateCollectionForm = {
   mintPriceEtn: string
   maxMintPerWallet: string
   enablePublicMint: boolean
+  showOnMintPanel: boolean
 }
 
 export type DraftToken = {
+  tokenId?: number
+  dbTokenId?: string
   name: string
   description: string
   file: File | null
+  existingImagePath?: string | null
+  attributes: NftAttribute[]
 }
 
 export type ValidationIssue = {
@@ -48,16 +56,69 @@ export function formatPercentFromBps(bps: number): string {
   return `${bpsToPercent(bps).toFixed(2).replace(/\.?0+$/, '')}%`
 }
 
+/** Sanitize percentage text while typing — strips invalid chars, leading zeros, caps at 100. */
+export function sanitizePercentInput(raw: string): string {
+  const trimmed = raw.trim()
+  if (trimmed === '') return ''
+
+  let value = trimmed.replace(/[^\d.]/g, '')
+  const firstDot = value.indexOf('.')
+  if (firstDot !== -1) {
+    value = value.slice(0, firstDot + 1) + value.slice(firstDot + 1).replace(/\./g, '')
+  }
+
+  const hasDot = firstDot !== -1
+  let [whole = '', frac = ''] = value.split('.')
+  if (hasDot) frac = frac.slice(0, 2)
+
+  if (whole.length > 1 && whole.startsWith('0')) {
+    whole = whole.replace(/^0+/, '') || '0'
+  }
+
+  if (!hasDot) {
+    value = whole
+  } else if (raw.endsWith('.') && frac === '') {
+    value = `${whole || '0'}.`
+  } else {
+    value = frac === '' && !raw.endsWith('.') ? whole || '0' : `${whole || '0'}.${frac}`
+  }
+
+  if (value === '' || value === '.') return ''
+
+  const num = Number(value.endsWith('.') ? value.slice(0, -1) : value)
+  if (!Number.isFinite(num)) return ''
+  if (num > 100) return '100'
+
+  return value
+}
+
+/** Normalize a percent string for display/storage (e.g. "050" → "50", "" → "0"). */
+export function formatPercentDisplay(raw: string): string {
+  const trimmed = raw.trim()
+  if (trimmed === '' || trimmed === '.') return '0'
+  const num = Number(trimmed)
+  if (!Number.isFinite(num)) return '0'
+  const clamped = Math.min(100, Math.max(0, num))
+  if (Number.isInteger(clamped)) return String(clamped)
+  return String(clamped).replace(/0+$/, '').replace(/\.$/, '')
+}
+
 export function isTokenRowComplete(token: DraftToken): boolean {
-  return Boolean(token.name.trim() && token.file)
+  return Boolean(token.name.trim() && (token.file || token.existingImagePath))
 }
 
 export function isTokenRowEmpty(token: DraftToken): boolean {
-  return !token.name.trim() && !token.description.trim() && !token.file
+  return !token.name.trim() && !token.description.trim() && !token.file && token.attributes.length === 0
 }
 
 export function getCompleteTokens(tokens: DraftToken[]): DraftToken[] {
   return tokens.filter(isTokenRowComplete)
+}
+
+export function getTokenAttributesForSave(token: DraftToken): NftAttribute[] {
+  return token.attributes.filter(
+    (attr) => attr.trait_type.trim() && String(attr.value).trim() !== '',
+  )
 }
 
 export function getActiveTokens(tokens: DraftToken[]): DraftToken[] {
@@ -101,6 +162,7 @@ export function sanitizeFormForMode(form: CreateCollectionForm, tokens: DraftTok
   if (!next.enablePublicMint) {
     next.burnOnMint = false
     next.mintBurnPercent = '0'
+    next.showOnMintPanel = false
   }
 
   return next
@@ -111,7 +173,8 @@ function validateTokenMetadata(tokens: DraftToken[], prefix: string): Validation
   const names = new Set<string>()
 
   tokens.forEach((token, index) => {
-    const row = `${prefix}${index + 1}`
+    const rowNum = getRowTokenId(token, index)
+    const row = `${prefix}${rowNum}`
     if (isTokenRowEmpty(token)) return
 
     const name = token.name.trim()
@@ -130,11 +193,24 @@ function validateTokenMetadata(tokens: DraftToken[], prefix: string): Validation
       issues.push({ field: `${row}.description`, message: `Description must be ${TOKEN_DESC_MAX} characters or fewer.` })
     }
 
-    if (!token.file) {
+    if (!token.file && !token.existingImagePath) {
       issues.push({ field: `${row}.image`, message: 'An image is required for this token.' })
-    } else {
+    } else if (token.file) {
       const imageError = validateImageFileSync(token.file)
       if (imageError) issues.push({ field: `${row}.image`, message: imageError })
+    }
+
+    const filledAttributes = token.attributes.filter(
+      (attr) => attr.trait_type.trim() || String(attr.value).trim(),
+    )
+    if (filledAttributes.some((attr) => !attr.trait_type.trim() || String(attr.value).trim() === '')) {
+      issues.push({
+        field: `${row}.attributes`,
+        message: 'Each attribute needs both a trait name and a value, or remove empty rows.',
+      })
+    } else {
+      const attrError = validateAttributesList(filledAttributes, `Token #${rowNum}`)
+      if (attrError) issues.push({ field: `${row}.attributes`, message: attrError })
     }
   })
 
@@ -264,6 +340,13 @@ export function validateCreateStep(
         message: 'Add fewer tokens than max supply before enabling public mint in batch mode.',
       })
     }
+
+    if (f.showOnMintPanel && !f.enablePublicMint) {
+      issues.push({
+        field: 'showOnMintPanel',
+        message: 'Enable public mint before listing on the NFT Minting Panel.',
+      })
+    }
   }
 
   if (step === 2) {
@@ -304,6 +387,16 @@ export function validateBeforeSave(form: CreateCollectionForm, tokens: DraftToke
     all.push(...validateCreateStep(step, form, tokens))
   }
   return dedupeIssues(all)
+}
+
+export function inferDraftResumeStep(form: CreateCollectionForm, tokens: DraftToken[]): number {
+  const sanitized = sanitizeFormForMode(form, tokens)
+  for (let step = 0; step <= 3; step++) {
+    if (validateCreateStep(step, sanitized, tokens).length > 0) {
+      return step
+    }
+  }
+  return validateBeforeSave(sanitized, tokens).length === 0 ? 4 : 3
 }
 
 export function dedupeIssues(issues: ValidationIssue[]): ValidationIssue[] {

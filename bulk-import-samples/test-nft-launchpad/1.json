@@ -1,0 +1,11 @@
+{
+  "name": "Launchpad Tester #1",
+  "description": "First test token for the ETN NFT Launchpad minting panel. Spark edition.",
+  "attributes": [
+    { "trait_type": "Collection", "value": "Test NFT Launchpad" },
+    { "trait_type": "Edition", "value": 1 },
+    { "trait_type": "Rarity", "value": "Common" },
+    { "trait_type": "Element", "value": "Spark" },
+    { "trait_type": "Network", "value": "Electroneum Testnet" }
+  ]
+}

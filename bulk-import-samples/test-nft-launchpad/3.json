@@ -1,0 +1,11 @@
+{
+  "name": "Launchpad Tester #3",
+  "description": "Third test token — Tide edition. Use with 3.png in bulk upload.",
+  "attributes": [
+    { "trait_type": "Collection", "value": "Test NFT Launchpad" },
+    { "trait_type": "Edition", "value": 3 },
+    { "trait_type": "Rarity", "value": "Common" },
+    { "trait_type": "Element", "value": "Tide" },
+    { "trait_type": "Network", "value": "Electroneum Testnet" }
+  ]
+}

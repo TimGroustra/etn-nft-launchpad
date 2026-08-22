@@ -20,6 +20,26 @@ export function useCollections(walletAddress?: string, chainId?: number) {
   })
 }
 
+export function useMintPanelCollections(chainId?: number) {
+  return useQuery({
+    queryKey: ['mint-panel-collections', chainId],
+    queryFn: async () => {
+      let query = supabase
+        .from('collections')
+        .select('*')
+        .eq('status', 'published')
+        .eq('show_on_mint_panel', true)
+        .not('contract_address', 'is', null)
+        .gt('mint_price_etn', 0)
+        .order('created_at', { ascending: false })
+      if (chainId) query = query.eq('chain_id', chainId)
+      const { data, error } = await query
+      if (error) throw error
+      return data as Collection[]
+    },
+  })
+}
+
 export function useCollection(idOrAddress?: string) {
   return useQuery({
     queryKey: ['collection', idOrAddress],
@@ -27,11 +47,15 @@ export function useCollection(idOrAddress?: string) {
     queryFn: async () => {
       const isUuid = idOrAddress?.includes('-')
       const query = isUuid
-        ? supabase.from('collections').select('*').eq('id', idOrAddress!).single()
-        : supabase.from('collections').select('*').eq('contract_address', idOrAddress!.toLowerCase()).single()
+        ? supabase.from('collections').select('*').eq('id', idOrAddress!).maybeSingle()
+        : supabase
+            .from('collections')
+            .select('*')
+            .ilike('contract_address', idOrAddress!.toLowerCase())
+            .maybeSingle()
       const { data, error } = await query
       if (error) throw error
-      return data as Collection
+      return (data as Collection | null) ?? null
     },
   })
 }

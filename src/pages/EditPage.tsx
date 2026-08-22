@@ -1,92 +1,151 @@
-import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
 import { useAccount, useWriteContract } from 'wagmi'
+import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useCollection, useCollectionTokens } from '@/hooks/useCollections'
 import { useWalletAuth } from '@/hooks/useWalletAuth'
+import { useNetwork } from '@/context/NetworkContext'
 import { Button } from '@/components/ui/button'
-import { Card, CardTitle } from '@/components/ui/card'
-import { Input, Label, Textarea } from '@/components/ui/input'
-import { getPublicImageUrl } from '@/lib/supabase'
-import { updateToken, syncTokenUri, uploadImage } from '@/lib/api'
+import { Card, CardDescription, CardTitle } from '@/components/ui/card'
 import { CollectionWithdraw } from '@/components/CollectionWithdraw'
 import { MetadataGuidancePanel } from '@/components/MetadataGuidancePanel'
-import { NFT_ABI } from '@/lib/blockchain'
+import { BulkTokenUpload } from '@/components/BulkTokenUpload'
+import { DraftTokenRow } from '@/components/DraftTokenRow'
+import { FieldHint } from '@/components/form-fields'
+import {
+  type DraftToken,
+} from '@/lib/create-collection-validation'
+import { buildDraftRowsFromDb, buildEditableTokenRows, dedupeDbTokensByTokenId, getRowTokenId } from '@/lib/draft-token-rows'
+import { assertStoragePathForCollection } from '@/lib/storage-paths'
+import { collectionToForm, collectionToUpdatePayload, saveDraftCollection } from '@/lib/save-draft-collection'
+import { syncPublishedCollection } from '@/lib/publish-collection'
+import { updateCollection } from '@/lib/api'
+import { validateImageFileAsync } from '@/lib/validate-upload-image'
 
 export function EditPage() {
   const { address: contractAddress } = useParams()
   const { address } = useAccount()
   const { isAuthenticated } = useWalletAuth()
+  const { chain } = useNetwork()
+  const queryClient = useQueryClient()
   const { data: collection } = useCollection(contractAddress)
-  const { data: tokens = [], refetch } = useCollectionTokens(collection?.id)
+  const { data: dbTokens = [], refetch, isFetched } = useCollectionTokens(collection?.id)
   const { writeContractAsync } = useWriteContract()
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [form, setForm] = useState({ name: '', description: '', tokenUri: '', imageUrl: '' })
+  const [tokens, setTokens] = useState<DraftToken[]>([])
+  const [loaded, setLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [showOnMintPanel, setShowOnMintPanel] = useState(false)
+  const [savingPanelSetting, setSavingPanelSetting] = useState(false)
 
-  const selected = tokens.find((t) => t.id === selectedId)
+  useEffect(() => {
+    if (!collection || !isFetched || loaded) return
+    setTokens(buildDraftRowsFromDb(dbTokens, collection.max_supply, collection.id))
+    setShowOnMintPanel(collection.show_on_mint_panel ?? false)
+    setLoaded(true)
+  }, [collection, dbTokens, isFetched, loaded])
 
-  const selectToken = (tokenId: string) => {
-    const token = tokens.find((t) => t.id === tokenId)
-    if (!token) return
-    setSelectedId(tokenId)
-    setForm({
-      name: token.name,
-      description: token.description ?? '',
-      tokenUri: token.token_uri ?? '',
-      imageUrl: token.image_storage_path ? getPublicImageUrl(token.image_storage_path) : '',
+  const handleBulkImport = (imported: DraftToken[]) => {
+    if (!collection) return
+    const importedRows = buildEditableTokenRows(imported, collection.max_supply)
+    const dedupedDbTokens = dedupeDbTokensByTokenId(dbTokens)
+    const dbByTokenId = new Map(
+      dedupedDbTokens
+        .filter((token) => token.token_id != null)
+        .map((token) => [token.token_id!, token]),
+    )
+    const existingById = new Map(
+      tokens.filter((token) => token.tokenId != null).map((token) => [token.tokenId!, token]),
+    )
+    const merged = importedRows.map((row) => {
+      const existing = row.tokenId != null ? existingById.get(row.tokenId) : undefined
+      const dbRow = row.tokenId != null ? dbByTokenId.get(row.tokenId) : undefined
+      const dbTokenId = existing?.dbTokenId ?? dbRow?.id
+      const rawImagePath =
+        row.existingImagePath ?? existing?.existingImagePath ?? dbRow?.image_storage_path ?? undefined
+      const scopedImagePath =
+        rawImagePath && !assertStoragePathForCollection(collection.id, rawImagePath)
+          ? rawImagePath
+          : undefined
+      if (!existing && !dbRow) return row
+      return {
+        ...row,
+        dbTokenId,
+        existingImagePath: row.file ? undefined : scopedImagePath,
+      }
     })
+    setTokens(merged)
+    toast.success('Imported data filled into editable rows below')
   }
 
-  const save = async () => {
-    if (!address || !collection || !selected?.token_id) return
-    setLoading(true)
+  const saveMintPanelSetting = async (nextValue: boolean) => {
+    if (!address || !collection) return
+    const publicMint = Number(collection.mint_price_etn ?? 0) > 0
+    if (nextValue && !publicMint) {
+      toast.error('Enable public mint before listing on the NFT Minting Panel.')
+      return
+    }
+
+    setSavingPanelSetting(true)
     try {
-      const customUri = form.tokenUri.trim()
-      let onChainUri = customUri
-
-      if (!customUri) {
-        await updateToken(address, {
-          tokenId: selected.id,
-          name: form.name,
-          description: form.description,
-        })
-        const sync = await syncTokenUri(address, collection.id, selected.token_id)
-        onChainUri = sync.tokenUri
-      } else {
-        await updateToken(address, {
-          tokenId: selected.id,
-          name: form.name,
-          description: form.description,
-          tokenUri: customUri,
-        })
-      }
-
-      if (collection.contract_address && onChainUri) {
-        await writeContractAsync({
-          address: collection.contract_address as `0x${string}`,
-          abi: NFT_ABI,
-          functionName: 'setTokenURI',
-          args: [BigInt(selected.token_id), onChainUri],
-        })
-      }
-
-      toast.success('Metadata updated on-chain')
-      refetch()
+      await updateCollection(
+        address,
+        collection.id,
+        collectionToUpdatePayload(collection, { showOnMintPanel: nextValue && publicMint }),
+      )
+      setShowOnMintPanel(nextValue && publicMint)
+      toast.success(nextValue ? 'Collection added to the minting panel' : 'Collection removed from the minting panel')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Update failed')
+      toast.error(err instanceof Error ? err.message : 'Failed to update minting panel setting')
     } finally {
-      setLoading(false)
+      setSavingPanelSetting(false)
     }
   }
 
-  const handleImageUpload = async (file: File) => {
-    if (!address || !collection || !selected?.token_id) return
-    const path = await uploadImage(collection.id, selected.token_id, file)
-    await updateToken(address, { tokenId: selected.id, imageStoragePath: path })
-    setForm((prev) => ({ ...prev, imageUrl: getPublicImageUrl(path), tokenUri: '' }))
-    refetch()
-    toast.success('Image updated in Supabase storage')
+  const saveAll = async (syncOnChain = false) => {
+    if (!address || !collection) return
+    setLoading(true)
+    try {
+      for (let i = 0; i < tokens.length; i++) {
+        const file = tokens[i].file
+        if (!file) continue
+        const imageError = await validateImageFileAsync(file)
+        if (imageError) {
+          toast.error(`Token #${getRowTokenId(tokens[i], i)}: ${imageError}`)
+          return
+        }
+      }
+
+      await saveDraftCollection(
+        address,
+        collection.id,
+        collectionToForm(collection),
+        tokens,
+        dbTokens,
+        collection,
+      )
+
+      await queryClient.invalidateQueries({ queryKey: ['collection', contractAddress] })
+      await queryClient.invalidateQueries({ queryKey: ['collection-tokens', collection.id] })
+      const { data: freshTokens = [] } = await refetch()
+      setTokens(buildDraftRowsFromDb(freshTokens, collection.max_supply, collection.id))
+
+      if (syncOnChain && collection.contract_address) {
+        toast.message('Syncing metadata on-chain…')
+        await syncPublishedCollection(address, collection, writeContractAsync, chain.id)
+        toast.success('Saved to Supabase and synced on-chain')
+      } else {
+        toast.success(
+          collection.contract_address
+            ? 'Saved to Supabase — click Update on the dashboard to sync on-chain'
+            : 'Changes saved',
+        )
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Save failed')
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (!collection) return <p>Loading...</p>
@@ -94,67 +153,89 @@ export function EditPage() {
     return <Card><CardTitle>Only the collection creator can edit metadata.</CardTitle></Card>
   }
 
+  const isPublished = Boolean(collection.contract_address)
+  const publicMintEnabled = Number(collection.mint_price_etn ?? 0) > 0
+
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <div className="space-y-3">
+    <div className="mx-auto max-w-2xl space-y-6">
+      <div>
         <h1 className="text-2xl font-bold">Edit {collection.name}</h1>
         <p className="text-sm text-slate-400">
-          Images and metadata JSON are hosted in Supabase by default. To use your own IPFS or storage,
-          paste your metadata URL below and sync on-chain.
+          Update names, descriptions, images, and attributes. Bulk import fills the editable rows below.
+          {isPublished
+            ? ' Save here updates Supabase; use Update on the dashboard to push changes on-chain.'
+            : ' Save your changes, then publish from the dashboard.'}
         </p>
-        <MetadataGuidancePanel compact showIpfs />
-        {collection.contract_address && (
-          <CollectionWithdraw contractAddress={collection.contract_address} />
-        )}
-        {tokens.map((token) => (
-          <button
-            key={token.id}
-            onClick={() => selectToken(token.id)}
-            className={`w-full rounded-lg border p-3 text-left ${selectedId === token.id ? 'border-blue-500' : 'border-slate-800'}`}
-          >
-            <p className="font-medium">{token.name}</p>
-            <p className="text-xs text-slate-500">#{token.token_id}</p>
-          </button>
-        ))}
       </div>
 
-      {selected && (
-        <Card className="space-y-4">
-          {(form.imageUrl || selected.image_storage_path) && (
-            <img
-              src={form.imageUrl || getPublicImageUrl(selected.image_storage_path!)}
-              alt={selected.name}
-              className="aspect-square w-full rounded-lg object-cover"
-            />
-          )}
-          <div>
-            <Label>Name</Label>
-            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          </div>
-          <div>
-            <Label>Description</Label>
-            <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-          </div>
-          <div>
-            <Label>Replace image (Supabase storage)</Label>
-            <Input type="file" accept="image/*" onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0])} />
-          </div>
-          <div>
-            <Label>Metadata / token URI</Label>
-            <Input
-              value={form.tokenUri}
-              onChange={(e) => setForm({ ...form, tokenUri: e.target.value })}
-              placeholder="Leave blank to auto-generate from Supabase, or paste ipfs:// / https://"
-            />
-            <p className="mt-1 text-xs text-slate-500">
-              Blank = rebuild JSON in Supabase storage. Custom URL = your own metadata (IPFS, Arweave, etc.).
-            </p>
-          </div>
-          <Button onClick={save} disabled={loading}>
-            {loading ? 'Saving...' : 'Save & Sync On-Chain'}
+      <MetadataGuidancePanel compact showIpfs />
+      {collection.contract_address && <CollectionWithdraw contractAddress={collection.contract_address} />}
+
+      <Card className="space-y-4">
+        <CardTitle>NFT Minting Panel</CardTitle>
+        <CardDescription>
+          Control whether this collection appears on the launchpad home page for public wallet minting.
+        </CardDescription>
+        <label className={`flex items-start gap-3 ${!publicMintEnabled || savingPanelSetting ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={showOnMintPanel}
+            disabled={!publicMintEnabled || savingPanelSetting || !isPublished}
+            onChange={(e) => saveMintPanelSetting(e.target.checked)}
+          />
+          <span>
+            <span className="font-medium text-white">Show on NFT Minting Panel</span>
+            <FieldHint>
+              Requires public mint (IMintable) and a published contract. Collectors can mint directly from the home page.
+            </FieldHint>
+            {!publicMintEnabled && (
+              <p className="mt-1 text-sm text-amber-200/90">
+                Public mint is disabled for this collection. Enable it in the create flow before publishing, or republish
+                with public mint settings.
+              </p>
+            )}
+            {publicMintEnabled && !isPublished && (
+              <p className="mt-1 text-sm text-amber-200/90">Publish the collection before it can appear on the minting panel.</p>
+            )}
+          </span>
+        </label>
+      </Card>
+
+      <BulkTokenUpload maxSupply={collection.max_supply} onImport={handleBulkImport} />
+
+      <Card className="space-y-4">
+        <CardTitle>Token metadata</CardTitle>
+        <CardDescription>Edit any row, or bulk import numbered files to populate fields automatically.</CardDescription>
+
+        {tokens.map((token, i) => (
+          <DraftTokenRow
+            key={`${token.dbTokenId ?? 'new'}-${getRowTokenId(token, i)}`}
+            token={token}
+            rowIndex={i}
+            fieldErrors={{}}
+            onChange={(next) => {
+              const updated = [...tokens]
+              updated[i] = next
+              setTokens(updated)
+            }}
+          />
+        ))}
+      </Card>
+
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={() => saveAll(false)} disabled={loading}>
+          {loading ? 'Saving…' : 'Save to Supabase'}
+        </Button>
+        {isPublished && (
+          <Button variant="outline" onClick={() => saveAll(true)} disabled={loading}>
+            Save & sync on-chain
           </Button>
-        </Card>
-      )}
+        )}
+        <Button variant="outline" asChild>
+          <Link to="/dashboard">Back to dashboard</Link>
+        </Button>
+      </div>
     </div>
   )
 }

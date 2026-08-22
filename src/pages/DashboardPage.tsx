@@ -1,21 +1,21 @@
 import { Link } from 'react-router-dom'
 import { useAccount } from 'wagmi'
 import { useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi'
-import { createPublicClient, decodeEventLog, http, type TransactionReceipt } from 'viem'
+import { createPublicClient, http, type TransactionReceipt } from 'viem'
 import { toast } from 'sonner'
 import { useState } from 'react'
 import { useCollections } from '@/hooks/useCollections'
 import { WalletAuthButton, useWalletAuth } from '@/hooks/useWalletAuth'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
-import { CollectionWithdraw } from '@/components/CollectionWithdraw'
+import { CollectionOwnerPanel } from '@/components/CollectionOwnerPanel'
 import { useNetwork } from '@/context/NetworkContext'
 import { formatEther } from 'viem'
-import { FACTORY_ABI, getChainId, getPublishFeeWei } from '@/lib/blockchain'
+import { FACTORY_ABI, getChainId, getPublishFeeWei, resolveDeployedCollectionAddress } from '@/lib/blockchain'
 import { usePlatformConfig, resolveFactoryAddress } from '@/hooks/usePlatformConfig'
 import { firstIssueMessage, validateCollectionForPublish } from '@/lib/create-collection-validation'
-import { updateCollection, verifyPublishPayment } from '@/lib/api'
-import { configurePublicMint, prepareCollectionMetadata } from '@/lib/publish-collection'
+import { updateCollection, verifyPublishPayment, verifyCollectionContract, deleteCollection } from '@/lib/api'
+import { configurePublicMint, prepareCollectionMetadata, syncPublishedCollection } from '@/lib/publish-collection'
 import { listCollectionTokens } from '@/lib/collection-metadata'
 
 export function DashboardPage() {
@@ -24,6 +24,8 @@ export function DashboardPage() {
   const { network, chain } = useNetwork()
   const { data: collections = [], refetch } = useCollections(address, getChainId(network))
   const [publishingId, setPublishingId] = useState<string | null>(null)
+  const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const { writeContractAsync, data: txHash } = useWriteContract()
   const { isLoading: confirming } = useWaitForTransactionReceipt({ hash: txHash })
 
@@ -77,24 +79,7 @@ export function DashboardPage() {
       const client = createPublicClient({ chain, transport: http() })
       const receipt: TransactionReceipt = await client.waitForTransactionReceipt({ hash })
 
-      const deployedLog = receipt.logs.find((log) => log.topics.length >= 3)
-      let contractAddress = ''
-      if (deployedLog) {
-        try {
-          const decoded = decodeEventLog({
-            abi: FACTORY_ABI,
-            data: deployedLog.data,
-            topics: deployedLog.topics,
-          })
-          if (decoded.eventName === 'CollectionDeployed') {
-            contractAddress = (decoded.args as { collection: string }).collection
-          }
-        } catch {
-          contractAddress = `0x${deployedLog.topics[2]?.slice(26)}`
-        }
-      }
-
-      if (!contractAddress) throw new Error('Could not resolve deployed contract address')
+      const contractAddress = resolveDeployedCollectionAddress(receipt, factoryAddress, address)
 
       toast.message('Uploading metadata…')
       await prepareCollectionMetadata(address, collection.id)
@@ -115,12 +100,66 @@ export function DashboardPage() {
       })
 
       await verifyPublishPayment(address, collection.id, hash, chain.id)
-      toast.success(`Collection published on ${chain.name} and ready for marketplace minting.`)
+
+      toast.message('Verifying contract on block explorer…')
+      try {
+        const verification = await verifyCollectionContract(
+          address,
+          collection.id,
+          contractAddress,
+          chain.id,
+        )
+        if (verification.status === 'already_verified') {
+          toast.success(`Collection published and already verified on ${chain.name}.`)
+        } else {
+          toast.success(`Collection published on ${chain.name}. Contract verification submitted.`)
+        }
+      } catch (verifyErr) {
+        toast.message(
+          `Collection published on ${chain.name}. Explorer verification will need a manual retry: ${
+            verifyErr instanceof Error ? verifyErr.message : 'unknown error'
+          }`,
+        )
+      }
       refetch()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Publish failed')
     } finally {
       setPublishingId(null)
+    }
+  }
+
+  const updatePublished = async (collection: (typeof collections)[0]) => {
+    if (!address) return
+    setUpdatingId(collection.id)
+    try {
+      toast.message('Saving metadata to Supabase storage…')
+      await syncPublishedCollection(address, collection, writeContractAsync, chain.id)
+      toast.success('Collection updated in Supabase and on-chain.')
+      refetch()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Update failed')
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
+  const deleteDraft = async (collection: (typeof collections)[0]) => {
+    if (!address) return
+    const confirmed = window.confirm(
+      `Delete draft "${collection.name}"? This removes all artwork and metadata and cannot be undone.`,
+    )
+    if (!confirmed) return
+
+    setDeletingId(collection.id)
+    try {
+      await deleteCollection(address, collection.id)
+      toast.success('Draft deleted')
+      refetch()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -170,14 +209,27 @@ export function DashboardPage() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {collection.status === 'draft' && (
-                    <Button
-                      onClick={() => publish(collection)}
-                      disabled={publishingId === collection.id || confirming || factoryAddress === '0x0000000000000000000000000000000000000000'}
-                    >
-                      {publishingId === collection.id
-                        ? 'Publishing...'
-                        : `Publish (${publishFeeLabel} ETN)`}
-                    </Button>
+                    <>
+                      <Button variant="outline" asChild>
+                        <Link to={`/draft/${collection.id}/edit`}>Edit</Link>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => deleteDraft(collection)}
+                        disabled={deletingId === collection.id}
+                        className="border-red-900/60 text-red-300 hover:bg-red-950/40 hover:text-red-200"
+                      >
+                        {deletingId === collection.id ? 'Deleting…' : 'Delete'}
+                      </Button>
+                      <Button
+                        onClick={() => publish(collection)}
+                        disabled={publishingId === collection.id || confirming || factoryAddress === '0x0000000000000000000000000000000000000000'}
+                      >
+                        {publishingId === collection.id
+                          ? 'Publishing...'
+                          : `Publish (${publishFeeLabel} ETN)`}
+                      </Button>
+                    </>
                   )}
                   {collection.contract_address && (
                     <>
@@ -187,15 +239,22 @@ export function DashboardPage() {
                       <Button variant="outline" asChild>
                         <Link to={`/collection/${collection.contract_address}/edit`}>Edit</Link>
                       </Button>
-                      <Button variant="outline" asChild>
-                        <Link to={`/collection/${collection.contract_address}/mint`}>Mint</Link>
+                      <Button
+                        onClick={() => updatePublished(collection)}
+                        disabled={updatingId === collection.id || confirming}
+                      >
+                        {updatingId === collection.id ? 'Updating…' : 'Update'}
                       </Button>
                     </>
                   )}
                 </div>
               </div>
               {collection.contract_address && (
-                <CollectionWithdraw contractAddress={collection.contract_address} />
+                <CollectionOwnerPanel
+                  collection={collection}
+                  chainId={chain.id}
+                  onUpdated={() => void refetch()}
+                />
               )}
             </Card>
           ))}

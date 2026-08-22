@@ -1,0 +1,11 @@
+{
+  "name": "Launchpad Tester #5",
+  "description": "Fifth test token — Volt edition. Mid-series rarity bump for mint panel tests.",
+  "attributes": [
+    { "trait_type": "Collection", "value": "Test NFT Launchpad" },
+    { "trait_type": "Edition", "value": 5 },
+    { "trait_type": "Rarity", "value": "Uncommon" },
+    { "trait_type": "Element", "value": "Volt" },
+    { "trait_type": "Network", "value": "Electroneum Testnet" }
+  ]
+}

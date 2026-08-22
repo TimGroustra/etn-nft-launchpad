@@ -1,6 +1,7 @@
 import { useParams } from 'react-router-dom'
 import { useCollection, useCollectionTokens } from '@/hooks/useCollections'
 import { getPublicImageUrl } from '@/lib/supabase'
+import { getExplorerContractUrl } from '@/lib/blockchain'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
 import { formatPercentFromBps } from '@/lib/create-collection-validation'
 import { shortenAddress } from '@/lib/utils'
@@ -19,20 +20,38 @@ export function CollectionPage() {
         <h1 className="text-3xl font-bold">{collection.name}</h1>
         <p className="text-slate-400">{collection.description}</p>
         <p className="mt-2 text-sm text-slate-500">
-          Contract: {collection.contract_address ? shortenAddress(collection.contract_address) : 'Not deployed'}
+          Contract:{' '}
+          {collection.contract_address && collection.chain_id != null ? (
+            <a
+              href={getExplorerContractUrl(collection.chain_id, collection.contract_address)}
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-400 hover:underline"
+            >
+              {shortenAddress(collection.contract_address)}
+            </a>
+          ) : (
+            'Not deployed'
+          )}
         </p>
+        {collection.contract_address && (
+          <p className="text-xs text-slate-500">
+            Block explorers may not preview unminted NFTs for contracts published before the latest factory update.
+            Minted tokens appear on the explorer normally.
+          </p>
+        )}
         <p className="text-sm text-slate-500">
           Mint: {collection.mint_mode}
           {Number(collection.mint_price_etn) > 0 && ` · Public mint: ${collection.mint_price_etn} ETN`}
           {collection.chain_id === 5201420 ? ' · Testnet' : collection.chain_id === 52014 ? ' · Mainnet' : ''}
         </p>
-        {(collection.burn_on_mint || collection.royalty_burn_bps > 0) && (
+        {(collection.burn_on_mint || Number(collection.royalty_burn_bps ?? 0) > 0) && (
           <p className="text-sm text-amber-400">
             {collection.burn_on_mint && Number(collection.mint_burn_bps ?? 0) > 0 && (
               <>Mint CLUB burn: {formatPercentFromBps(collection.mint_burn_bps)} of mint price · </>
             )}
-            {collection.royalty_burn_bps > 0 && (
-              <>Royalties burn: {collection.royalty_burn_bps / 100}% ETN swapped to CLUB</>
+            {Number(collection.royalty_burn_bps ?? 0) > 0 && (
+              <>Royalties burn: {Number(collection.royalty_burn_bps) / 100}% ETN swapped to CLUB</>
             )}
           </p>
         )}

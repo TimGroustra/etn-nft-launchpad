@@ -2,7 +2,9 @@ import { useNetwork } from '@/context/NetworkContext'
 import { Button } from '@/components/ui/button'
 
 export function NetworkToggle() {
-  const { network, setNetwork, switching } = useNetwork()
+  const { network, setNetwork, switching, canSwitchNetwork } = useNetwork()
+
+  if (!canSwitchNetwork) return null
 
   return (
     <div className="flex rounded-lg border border-slate-700 p-0.5 text-xs">

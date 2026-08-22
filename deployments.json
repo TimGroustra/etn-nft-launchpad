@@ -1,13 +1,16 @@
 {
   "electroneum": {
-    "LaunchpadFactory": "0x0000000000000000000000000000000000000000",
-    "note": "Run `npm run deploy:mainnet` with DEPLOYER_PRIVATE_KEY set, then update VITE_FACTORY_ADDRESS"
+    "LaunchpadFactory": "0x85ceB5f1D66c1B5e7661B4cABfB4ecCF5d80673a",
+    "note": "Run `npm run deploy:mainnet` with DEPLOYER_PRIVATE_KEY set, then update VITE_FACTORY_ADDRESS",
+    "deployedAt": "2026-08-22T08:21:35.664Z",
+    "deployer": "0x126aa663BdeDd6Ae477fd28a7d0b624b8109D15d",
+    "txHash": "0x3ba6221e0e186852f422720d3c1f2ea338b84004057e4dd7474008e57a8c5f93"
   },
   "electroneumTestnet": {
-    "LaunchpadFactory": "0x6EcE2b14372eD9881533DF7B6b3b8Cc1b538Ce7B",
-    "deployedAt": "2026-08-21T18:23:00.000Z",
+    "LaunchpadFactory": "0x368Fe607F06ab5Ee022755Db854e0CC49f7469e7",
+    "deployedAt": "2026-08-21T22:04:56.454Z",
     "deployer": "0x126aa663BdeDd6Ae477fd28a7d0b624b8109D15d",
-    "txHash": "0x9ab00c4a25765e90de4db08fba7fa338ed0b20b70632fe2a78ec035e4b75faed",
+    "txHash": "0xdc72eb00ea646c88830c71bae7600824c1bf824d8ab09efd3a93351ac418cfd6",
     "note": "Editable factory with mintBurnBps (% of mint price) — swap addresses, publish fee, treasury, and default royalty are owner-configurable"
   }
 }

@@ -9,9 +9,11 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "compile": "hardhat compile",
+    "export:verification": "node scripts/export-verification-artifact.mjs",
     "test:contracts": "hardhat test",
     "deploy:testnet": "hardhat run scripts/deploy.cjs --network electroneumTestnet",
     "deploy:mainnet": "hardhat run scripts/deploy.cjs --network electroneum",
+    "verify:collection": "node scripts/verify-collection.cjs",
     "factory:config": "node scripts/set-factory-config.cjs testnet",
     "factory:config:mainnet": "node scripts/set-factory-config.cjs mainnet",
     "factory:publish-fee": "node scripts/set-publish-fee.cjs"

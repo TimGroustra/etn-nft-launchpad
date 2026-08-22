@@ -1,0 +1,11 @@
+{
+  "name": "Launchpad Tester #4",
+  "description": "Fourth test token — Grove edition for launchpad metadata validation.",
+  "attributes": [
+    { "trait_type": "Collection", "value": "Test NFT Launchpad" },
+    { "trait_type": "Edition", "value": 4 },
+    { "trait_type": "Rarity", "value": "Uncommon" },
+    { "trait_type": "Element", "value": "Grove" },
+    { "trait_type": "Network", "value": "Electroneum Testnet" }
+  ]
+}

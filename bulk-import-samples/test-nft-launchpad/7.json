@@ -1,0 +1,11 @@
+{
+  "name": "Launchpad Tester #7",
+  "description": "Seventh test token — Shadow edition. Rare tier for preview carousel checks.",
+  "attributes": [
+    { "trait_type": "Collection", "value": "Test NFT Launchpad" },
+    { "trait_type": "Edition", "value": 7 },
+    { "trait_type": "Rarity", "value": "Rare" },
+    { "trait_type": "Element", "value": "Shadow" },
+    { "trait_type": "Network", "value": "Electroneum Testnet" }
+  ]
+}

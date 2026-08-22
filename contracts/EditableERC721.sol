@@ -183,6 +183,77 @@ contract EditableERC721 is ERC721URIStorage, ERC2981, Ownable2Step, ReentrancyGu
     function _composeTokenURI(uint256 tokenId) internal pure returns (string memory) {
         return string(abi.encodePacked(Strings.toString(tokenId), ".json"));
     }
+
+    /// @notice IERC721 metadata for minted tokens; for active public mint sales also exposes
+    /// canonical metadata URLs for unminted token IDs so explorers/marketplaces can index the collection.
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        if (_ownerOf(tokenId) != address(0)) {
+            return _resolveMintedTokenURI(tokenId);
+        }
+
+        if (
+            isMintable &&
+            mintPrice > 0 &&
+            bytes(_baseTokenURI).length > 0 &&
+            tokenId > 0 &&
+            tokenId <= maxSupply
+        ) {
+            return string(abi.encodePacked(_baseTokenURI, Strings.toString(tokenId), ".json"));
+        }
+
+        revert ERC721NonexistentToken(tokenId);
+    }
+
+    /// @dev ERC721URIStorage concatenates baseURI + stored suffix. If a full URL was stored by mistake,
+    /// return the absolute URI instead of base + absolute (which breaks wallets/explorers).
+    function _resolveMintedTokenURI(uint256 tokenId) internal view returns (string memory) {
+        string memory uri = super.tokenURI(tokenId);
+        string memory base = _baseURI();
+        if (bytes(base).length == 0) {
+            return uri;
+        }
+
+        bytes memory uriBytes = bytes(uri);
+        bytes memory baseBytes = bytes(base);
+        if (uriBytes.length > baseBytes.length) {
+            bool matchesBase = true;
+            for (uint256 i = 0; i < baseBytes.length; i++) {
+                if (uriBytes[i] != baseBytes[i]) {
+                    matchesBase = false;
+                    break;
+                }
+            }
+            if (matchesBase) {
+                string memory remainder = _slice(uri, baseBytes.length, uriBytes.length - baseBytes.length);
+                if (_isAbsoluteUri(remainder)) {
+                    return remainder;
+                }
+            }
+        }
+
+        return uri;
+    }
+
+    function _isAbsoluteUri(string memory uri) private pure returns (bool) {
+        bytes memory b = bytes(uri);
+        if (b.length < 4) return false;
+        for (uint256 i = 0; i + 2 < b.length; i++) {
+            if (b[i] == ":" && b[i + 1] == "/" && b[i + 2] == "/") {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function _slice(string memory data, uint256 start, uint256 length) private pure returns (string memory) {
+        bytes memory dataBytes = bytes(data);
+        bytes memory result = new bytes(length);
+        for (uint256 i = 0; i < length; i++) {
+            result[i] = dataBytes[start + i];
+        }
+        return string(result);
+    }
+
     function _mintWithURI(address to, string calldata uri) internal returns (uint256) {
         require(_nextTokenId <= maxSupply, "Max supply reached");
         uint256 tokenId = _nextTokenId++;

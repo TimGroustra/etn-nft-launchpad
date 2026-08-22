@@ -1,0 +1,11 @@
+{
+  "name": "Launchpad Tester #9",
+  "description": "Ninth test token — Nova edition. Epic tier for near-complete collection preview.",
+  "attributes": [
+    { "trait_type": "Collection", "value": "Test NFT Launchpad" },
+    { "trait_type": "Edition", "value": 9 },
+    { "trait_type": "Rarity", "value": "Epic" },
+    { "trait_type": "Element", "value": "Nova" },
+    { "trait_type": "Network", "value": "Electroneum Testnet" }
+  ]
+}

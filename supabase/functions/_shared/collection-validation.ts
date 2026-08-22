@@ -1,3 +1,7 @@
+import type { NftAttribute } from './nft-metadata.ts'
+import { validateAttributesList } from './nft-metadata.ts'
+import { validateCollectionImagePath } from './storage-paths.ts'
+
 export type MintMode = 'lazy' | 'batch'
 
 export const MIN_PUBLIC_MINT_ETN = 1
@@ -20,12 +24,16 @@ export type CollectionPayload = {
   royaltyBurnBps?: number
   mintPriceEtn?: number
   maxMintPerWallet?: number
+  showOnMintPanel?: boolean
 }
 
 export type TokenPayload = {
+  collectionId?: string
+  tokenId?: number
   name: string
   description?: string
   imageStoragePath?: string | null
+  attributes?: NftAttribute[]
 }
 
 export function validateCollectionPayload(body: CollectionPayload): string | null {
@@ -86,6 +94,10 @@ export function validateCollectionPayload(body: CollectionPayload): string | nul
     return 'Invalid mint mode.'
   }
 
+  if (body.showOnMintPanel && mintPriceEtn <= 0) {
+    return 'Public mint must be enabled before listing on the NFT Minting Panel.'
+  }
+
   return null
 }
 
@@ -100,6 +112,19 @@ export function validateTokenPayload(body: TokenPayload): string | null {
   }
 
   if (!body.imageStoragePath) return 'Token image is required.'
+
+  if (body.collectionId && body.tokenId !== undefined) {
+    const pathError = validateCollectionImagePath(
+      body.collectionId,
+      Number(body.tokenId),
+      String(body.imageStoragePath),
+    )
+    if (pathError) return pathError
+  }
+
+  const attributes = (body.attributes ?? []) as NftAttribute[]
+  const attrError = validateAttributesList(attributes, 'Token')
+  if (attrError) return attrError
 
   return null
 }

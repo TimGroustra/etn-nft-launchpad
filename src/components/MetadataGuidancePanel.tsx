@@ -16,7 +16,9 @@ export function MetadataGuidancePanel({ compact, showIpfs = true }: MetadataGuid
       <h3 className="font-medium text-white">Metadata & image compatibility</h3>
       <p className="mt-2 text-sm leading-relaxed text-slate-400">
         Follow these rules so wallets, marketplaces, and IMintable hosts read your collection correctly. The platform
-        builds JSON for you — you only need name, optional description, and an image per token.
+        builds JSON for you — upload images manually or use bulk import with numbered{' '}
+        <code className="text-slate-300">1.png</code>/<code className="text-slate-300">1.json</code> pairs. Add
+        attributes per token or include them in JSON files.
       </p>
 
       <div className={`mt-4 grid gap-3 ${compact ? '' : 'md:grid-cols-2'}`}>
@@ -30,7 +32,7 @@ export function MetadataGuidancePanel({ compact, showIpfs = true }: MetadataGuid
             </li>
             <li>10 MB max per file</li>
             <li>Square (1:1) recommended — e.g. 1024×1024</li>
-            <li>Original filename does not matter; token # is assigned on save</li>
+            <li>Original filename for bulk import: <code className="text-slate-300">1.png</code>, <code className="text-slate-300">1.json</code>, etc.</li>
           </ul>
         </section>
 

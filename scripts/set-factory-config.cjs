@@ -4,7 +4,7 @@ const path = require('path')
 
 const RPC = {
   testnet: 'https://rpc.ankr.com/electroneum_testnet',
-  mainnet: 'https://rpc.electroneum.com',
+  mainnet: process.env.ELECTRONEUM_MAINNET_RPC ?? 'https://rpc.ankr.com/electroneum',
 }
 
 const FACTORY_ABI = [

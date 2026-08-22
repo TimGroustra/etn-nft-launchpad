@@ -5,6 +5,7 @@ import { WagmiProvider } from 'wagmi'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SUPPORTED_CHAINS } from '@/lib/blockchain'
 import { NetworkProvider } from '@/context/NetworkContext'
+import { WalletAuthProvider } from '@/hooks/useWalletAuth'
 
 const projectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID ?? '6bf6982c9ea6494b0917646e22c1c358'
 
@@ -49,7 +50,9 @@ export function Web3Provider({ children }: { children: ReactNode }) {
   return (
     <WagmiProvider config={wagmiAdapter.wagmiConfig}>
       <QueryClientProvider client={queryClient}>
-        <NetworkProvider>{children}</NetworkProvider>
+        <NetworkProvider>
+          <WalletAuthProvider>{children}</WalletAuthProvider>
+        </NetworkProvider>
       </QueryClientProvider>
     </WagmiProvider>
   )

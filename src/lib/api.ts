@@ -1,5 +1,7 @@
 import { supabase } from './supabase'
 import { getSessionHeaders } from './auth'
+import type { Collection, CollectionToken } from '@/types/database'
+import type { FunctionsError } from '@supabase/supabase-js'
 
 export interface CollectionInput {
   name: string
@@ -12,48 +14,90 @@ export interface CollectionInput {
   royaltyBurnBps: number
   mintPriceEtn?: number
   maxMintPerWallet?: number
+  showOnMintPanel?: boolean
   storageProvider?: 'supabase'
   chainId?: number
 }
 
-export async function createCollection(walletAddress: string, input: CollectionInput) {
-  const { data, error } = await supabase.functions.invoke('collection-api', {
-    body: { action: 'create_collection', walletAddress, ...input },
+function extractFunctionError(data: unknown, error: FunctionsError | null): string {
+  if (data && typeof data === 'object' && 'error' in data) {
+    const message = (data as { error?: unknown }).error
+    if (typeof message === 'string' && message.trim()) return message
+  }
+  if (error?.message) return error.message
+  return 'Request failed'
+}
+
+async function invokeFunction<T = Record<string, unknown>>(
+  functionName: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const { data, error } = await supabase.functions.invoke(functionName, {
+    body,
     headers: getSessionHeaders(),
   })
-  if (error) throw error
-  if (data?.error) throw new Error(data.error)
+  if (error) throw new Error(extractFunctionError(data, error))
+  if (data && typeof data === 'object' && 'error' in data && (data as { error?: string }).error) {
+    throw new Error(String((data as { error: string }).error))
+  }
+  return data as T
+}
+
+export async function createCollection(walletAddress: string, input: CollectionInput): Promise<Collection> {
+  const data = await invokeFunction<{ collection: Collection }>('collection-api', {
+    action: 'create_collection',
+    walletAddress,
+    ...input,
+  })
   return data.collection
 }
 
-export async function updateCollection(walletAddress: string, collectionId: string, updates: Record<string, unknown>) {
-  const { data, error } = await supabase.functions.invoke('collection-api', {
-    body: { action: 'update_collection', walletAddress, collectionId, ...updates },
-    headers: getSessionHeaders(),
+export async function updateCollection(
+  walletAddress: string,
+  collectionId: string,
+  updates: Record<string, unknown>,
+): Promise<Collection> {
+  const data = await invokeFunction<{ collection: Collection }>('collection-api', {
+    action: 'update_collection',
+    walletAddress,
+    collectionId,
+    ...updates,
   })
-  if (error) throw error
-  if (data?.error) throw new Error(data.error)
   return data.collection
 }
 
-export async function addToken(walletAddress: string, payload: Record<string, unknown>) {
-  const { data, error } = await supabase.functions.invoke('collection-api', {
-    body: { action: 'add_token', walletAddress, ...payload },
-    headers: getSessionHeaders(),
+export async function deleteCollection(walletAddress: string, collectionId: string) {
+  return invokeFunction('collection-api', {
+    action: 'delete_collection',
+    walletAddress,
+    collectionId,
   })
-  if (error) throw error
-  if (data?.error) throw new Error(data.error)
+}
+
+export async function addToken(walletAddress: string, payload: Record<string, unknown>): Promise<CollectionToken> {
+  const data = await invokeFunction<{ token: CollectionToken }>('collection-api', {
+    action: 'upsert_token',
+    walletAddress,
+    ...payload,
+  })
   return data.token
 }
 
-export async function updateToken(walletAddress: string, payload: Record<string, unknown>) {
-  const { data, error } = await supabase.functions.invoke('collection-api', {
-    body: { action: 'update_token', walletAddress, ...payload },
-    headers: getSessionHeaders(),
+export async function updateToken(walletAddress: string, payload: Record<string, unknown>): Promise<CollectionToken> {
+  const data = await invokeFunction<{ token: CollectionToken }>('collection-api', {
+    action: 'update_token',
+    walletAddress,
+    ...payload,
   })
-  if (error) throw error
-  if (data?.error) throw new Error(data.error)
   return data.token
+}
+
+export async function deleteToken(walletAddress: string, tokenDbId: string) {
+  return invokeFunction('collection-api', {
+    action: 'delete_token',
+    walletAddress,
+    tokenId: tokenDbId,
+  })
 }
 
 export async function verifyPublishPayment(
@@ -62,30 +106,65 @@ export async function verifyPublishPayment(
   txHash: string,
   chainId: number,
 ) {
-  const { data, error } = await supabase.functions.invoke('verify-publish-payment', {
-    body: { walletAddress, collectionId, txHash, chainId },
-    headers: getSessionHeaders(),
+  return invokeFunction('verify-publish-payment', {
+    walletAddress,
+    collectionId,
+    txHash,
+    chainId,
   })
-  if (error) throw error
-  if (data?.error) throw new Error(data.error)
-  return data
 }
 
-export async function syncTokenUri(walletAddress: string, collectionId: string, tokenId: number) {
-  const { data, error } = await supabase.functions.invoke('sync-token-uri', {
-    body: { walletAddress, collectionId, tokenId },
-    headers: getSessionHeaders(),
+export async function verifyCollectionContract(
+  walletAddress: string,
+  collectionId: string,
+  contractAddress: string,
+  chainId: number,
+): Promise<{ success: boolean; status?: string; message?: string }> {
+  return invokeFunction('verify-collection-contract', {
+    walletAddress,
+    collectionId,
+    contractAddress,
+    chainId,
   })
-  if (error) throw error
-  if (data?.error) throw new Error(data.error)
-  return data
 }
 
-export async function uploadImage(collectionId: string, tokenId: number, file: File) {
-  const path = `${collectionId}/${tokenId}.png`
-  const { error } = await supabase.storage
-    .from('collection-images')
-    .upload(path, file, { upsert: true, contentType: file.type })
-  if (error) throw error
-  return path
+export async function syncTokenUri(
+  walletAddress: string,
+  collectionId: string,
+  tokenId: number,
+): Promise<{
+  tokenUri: string
+  onChainTokenUri?: string
+  contractAddress?: string
+  functionName?: string
+  args?: unknown[]
+}> {
+  return invokeFunction('sync-token-uri', {
+    walletAddress,
+    collectionId,
+    tokenId,
+  })
+}
+
+export async function uploadImage(
+  walletAddress: string,
+  collectionId: string,
+  tokenId: number,
+  file: File,
+): Promise<string> {
+  const buffer = await file.arrayBuffer()
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+  const imageBase64 = btoa(binary)
+
+  const data = await invokeFunction<{ path: string }>('collection-api', {
+    action: 'upload_image',
+    walletAddress,
+    collectionId,
+    tokenId,
+    contentType: file.type || 'image/png',
+    imageBase64,
+  })
+  return data.path
 }

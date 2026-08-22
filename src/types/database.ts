@@ -26,6 +26,7 @@ export interface Database {
           royalty_burn_bps: number
           mint_price_etn: number
           max_mint_per_wallet: number
+          show_on_mint_panel: boolean
           storage_provider: 'supabase'
           base_uri: string | null
           publish_tx_hash: string | null

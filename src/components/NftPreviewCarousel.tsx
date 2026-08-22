@@ -106,6 +106,16 @@ export function NftPreviewCarousel({ tokens, collectionName }: NftPreviewCarouse
             <p className="mt-2 text-sm leading-relaxed text-slate-300">
               {current.description.trim() || 'No description'}
             </p>
+            {current.metadata.attributes.length > 0 && (
+              <dl className="mt-4 grid gap-2 border-t border-slate-800 pt-4 text-sm">
+                {current.metadata.attributes.map((attr) => (
+                  <div key={attr.trait_type} className="flex justify-between gap-4">
+                    <dt className="text-slate-400">{attr.trait_type}</dt>
+                    <dd className="text-right text-white">{String(attr.value)}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
           </div>
 
           <div className="rounded-xl border border-slate-800 p-4">

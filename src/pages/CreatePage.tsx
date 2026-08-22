@@ -1,43 +1,66 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAccount } from 'wagmi'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
 import { Input, Label, Textarea } from '@/components/ui/input'
 import { WalletAuthButton, useWalletAuth } from '@/hooks/useWalletAuth'
-import { createCollection, addToken, uploadImage } from '@/lib/api'
+import { useCollection, useCollectionTokens } from '@/hooks/useCollections'
+import { createCollection, deleteCollection } from '@/lib/api'
 import { useNetwork } from '@/context/NetworkContext'
 import { getChainId } from '@/lib/blockchain'
 import {
   canEnablePublicMint,
   getCompleteTokens,
+  getTokenAttributesForSave,
+  inferDraftResumeStep,
+  isTokenRowComplete,
   issuesToFieldMap,
   MIN_PUBLIC_MINT_ETN,
   sanitizeFormForMode,
   validateBeforeSave,
   validateCreateStep,
   firstIssueMessage,
+  formatPercentDisplay,
   percentToBps,
+  sanitizePercentInput,
   type CreateCollectionForm,
   type DraftToken,
   type MintMode,
 } from '@/lib/create-collection-validation'
+import { buildEditableTokenRows, buildDraftRowsFromDb, getRowTokenId } from '@/lib/draft-token-rows'
+import { collectionToForm, saveDraftCollection } from '@/lib/save-draft-collection'
 import { IMAGE_RULES, validateImageFileAsync } from '@/lib/validate-upload-image'
 import { MetadataGuidancePanel } from '@/components/MetadataGuidancePanel'
+import { BulkTokenUpload } from '@/components/BulkTokenUpload'
+import { DraftTokenRow } from '@/components/DraftTokenRow'
+import { FieldError, FieldHint } from '@/components/form-fields'
 import { NftPreviewCarousel, type NftPreviewItem } from '@/components/NftPreviewCarousel'
 import { RoyaltyInfoPanel } from '@/components/RoyaltyInfoPanel'
 import { buildDraftMetadataPreview } from '@/lib/nft-metadata'
+import { getPublicImageUrl } from '@/lib/supabase'
 
 const STEPS = ['Details', 'Minting', 'Burns', 'Artwork', 'Preview', 'Save']
 
-function FieldHint({ children }: { children: React.ReactNode }) {
-  return <p className="mt-1.5 text-sm leading-relaxed text-slate-400">{children}</p>
-}
-
-function FieldError({ message }: { message: string | null | undefined }) {
-  if (!message) return null
-  return <p className="mt-1.5 text-sm text-red-400">{message}</p>
+function CreateHero() {
+  return (
+    <section className="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-10">
+      <h1 className="text-4xl font-bold">Launch editable NFT collections on Electroneum</h1>
+      <p className="mt-3 max-w-2xl text-slate-400">
+        Upload artwork, configure CLUB burns, pay ETN to publish, and keep metadata fully editable after launch.
+        Images and metadata are stored in Supabase — update the token URI anytime to point at your own storage.
+      </p>
+      <div className="mt-6 flex gap-3">
+        <Button size="lg" className="pointer-events-none">
+          Create Collection
+        </Button>
+        <Button variant="outline" asChild size="lg">
+          <Link to="/dashboard">My Dashboard</Link>
+        </Button>
+      </div>
+    </section>
+  )
 }
 
 function OptionCard({
@@ -114,45 +137,105 @@ const INITIAL_FORM: CreateCollectionForm = {
   mintPriceEtn: String(MIN_PUBLIC_MINT_ETN),
   maxMintPerWallet: '0',
   enablePublicMint: false,
+  showOnMintPanel: false,
 }
 
 export function CreatePage() {
+  const { collectionId: editCollectionId } = useParams()
+  const isEditingDraft = Boolean(editCollectionId)
   const navigate = useNavigate()
   const { address, isConnected } = useAccount()
   const { isAuthenticated } = useWalletAuth()
   const { network, chain } = useNetwork()
+  const { data: existingCollection, isLoading: loadingCollection, isFetched: collectionFetched } =
+    useCollection(editCollectionId)
+  const {
+    data: existingDbTokens = [],
+    isLoading: loadingTokens,
+    isFetched: tokensFetched,
+  } = useCollectionTokens(editCollectionId)
   const [step, setStep] = useState(0)
   const [loading, setLoading] = useState(false)
   const [validatingImages, setValidatingImages] = useState(false)
-  const [collectionId, setCollectionId] = useState<string | null>(null)
+  const [collectionId, setCollectionId] = useState<string | null>(editCollectionId ?? null)
   const [stepError, setStepError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [form, setForm] = useState<CreateCollectionForm>(INITIAL_FORM)
-  const [tokens, setTokens] = useState<DraftToken[]>([{ name: 'Token #1', description: '', file: null }])
+  const [tokens, setTokens] = useState<DraftToken[]>([
+    { tokenId: 1, name: 'Token #1', description: '', file: null, attributes: [] },
+  ])
   const [previewItems, setPreviewItems] = useState<NftPreviewItem[]>([])
+  const [loadedDraft, setLoadedDraft] = useState(!isEditingDraft)
+
+  useEffect(() => {
+    if (!isEditingDraft || !collectionFetched || !tokensFetched || loadedDraft) return
+
+    if (!existingCollection) {
+      toast.error('Draft not found.')
+      navigate('/dashboard')
+      return
+    }
+
+    if (existingCollection.status !== 'draft') {
+      toast.error('Only draft collections can be edited here.')
+      navigate('/dashboard')
+      return
+    }
+
+    const loadedTokens = buildDraftRowsFromDb(
+      existingDbTokens,
+      existingCollection.max_supply,
+      existingCollection.id,
+    )
+    const loadedForm = sanitizeFormForMode(collectionToForm(existingCollection), loadedTokens)
+
+    setForm(loadedForm)
+    setTokens(loadedTokens)
+    setCollectionId(existingCollection.id)
+    setStep(inferDraftResumeStep(loadedForm, loadedTokens))
+    setLoadedDraft(true)
+  }, [
+    isEditingDraft,
+    collectionFetched,
+    tokensFetched,
+    existingCollection,
+    existingDbTokens,
+    loadedDraft,
+    navigate,
+  ])
 
   const completeCount = getCompleteTokens(tokens).length
   const publicMintAllowed = canEnablePublicMint(form, tokens)
 
   useEffect(() => {
-    const complete = getCompleteTokens(tokens)
-    const objectUrls = complete.map((token) => (token.file ? URL.createObjectURL(token.file) : null))
-    setPreviewItems(
-      complete.map((token, i) => ({
-        tokenId: i + 1,
+    const preview: NftPreviewItem[] = []
+    const objectUrls: string[] = []
+
+    tokens.forEach((token, rowIndex) => {
+      if (!isTokenRowComplete(token)) return
+      let imageUrl: string | null = null
+      if (token.file) {
+        imageUrl = URL.createObjectURL(token.file)
+        objectUrls.push(imageUrl)
+      } else if (token.existingImagePath) {
+        imageUrl = getPublicImageUrl(token.existingImagePath)
+      }
+      preview.push({
+        tokenId: getRowTokenId(token, rowIndex),
         name: token.name.trim(),
         description: token.description,
-        imageUrl: objectUrls[i],
+        imageUrl,
         metadata: buildDraftMetadataPreview({
           name: token.name,
           description: token.description,
+          attributes: getTokenAttributesForSave(token),
         }),
-      })),
-    )
-    return () => {
-      objectUrls.forEach((url) => {
-        if (url) URL.revokeObjectURL(url)
       })
+    })
+
+    setPreviewItems(preview)
+    return () => {
+      objectUrls.forEach((url) => URL.revokeObjectURL(url))
     }
   }, [tokens])
 
@@ -166,6 +249,7 @@ export function CreatePage() {
       const next = { ...prev, [key]: value }
       if (key === 'enablePublicMint' && value === false) {
         next.burnOnMint = false
+        next.showOnMintPanel = false
       }
       return sanitizeFormForMode(next, tokens)
     })
@@ -218,7 +302,7 @@ export function CreatePage() {
           if (!file) continue
           const imageError = await validateImageFileAsync(file)
           if (imageError) {
-            setFieldErrors({ [`token.${i + 1}.image`]: imageError })
+            setFieldErrors({ [`token.${getRowTokenId(tokens[i], i)}.image`]: imageError })
             setStepError(imageError)
             return
           }
@@ -246,7 +330,7 @@ export function CreatePage() {
         if (!file) continue
         const imageError = await validateImageFileAsync(file)
         if (imageError) {
-          toast.error(`Token #${i + 1}: ${imageError}`)
+          toast.error(`Token #${getRowTokenId(tokens[i], i)}: ${imageError}`)
           return
         }
       }
@@ -254,39 +338,38 @@ export function CreatePage() {
       setValidatingImages(false)
     }
 
-    const sanitized = sanitizeFormForMode(form, tokens)
     setLoading(true)
     try {
-      const collection = await createCollection(address, {
-        name: sanitized.name.trim(),
-        symbol: sanitized.symbol.trim().toUpperCase(),
-        description: sanitized.description,
-        mintMode: sanitized.mintMode,
-        maxSupply: sanitized.maxSupply,
-        mintBurnBps: percentToBps(Number(sanitized.mintBurnPercent)),
-        burnOnMint: sanitized.burnOnMint,
-        royaltyBurnBps: Math.min(10000, Math.max(0, Math.round(Number(sanitized.royaltyBurnPercent) * 100))),
-        mintPriceEtn: sanitized.enablePublicMint ? Number(sanitized.mintPriceEtn) : 0,
-        maxMintPerWallet: Number(sanitized.maxMintPerWallet) || 0,
-        chainId: getChainId(network),
-      })
-      setCollectionId(collection.id)
-
-      const tokensToSave = getCompleteTokens(tokens)
-      for (let i = 0; i < tokensToSave.length; i++) {
-        const token = tokensToSave[i]
-        const imagePath = token.file ? await uploadImage(collection.id, i + 1, token.file) : undefined
-        await addToken(address, {
-          collectionId: collection.id,
-          tokenId: i + 1,
-          name: token.name.trim(),
-          description: token.description.trim(),
-          imageStoragePath: imagePath,
-          attributes: [],
+      if (isEditingDraft && collectionId) {
+        await saveDraftCollection(
+          address,
+          collectionId,
+          form,
+          tokens,
+          existingDbTokens,
+          existingCollection ?? undefined,
+        )
+        toast.success('Draft updated')
+      } else {
+        const sanitized = sanitizeFormForMode(form, tokens)
+        const collection = await createCollection(address, {
+          name: sanitized.name.trim(),
+          symbol: sanitized.symbol.trim().toUpperCase(),
+          description: sanitized.description,
+          mintMode: sanitized.mintMode,
+          maxSupply: sanitized.maxSupply,
+          mintBurnBps: percentToBps(Number(sanitized.mintBurnPercent)),
+          burnOnMint: sanitized.burnOnMint,
+          royaltyBurnBps: Math.min(10000, Math.max(0, Math.round(Number(sanitized.royaltyBurnPercent) * 100))),
+          mintPriceEtn: sanitized.enablePublicMint ? Number(sanitized.mintPriceEtn) : 0,
+          maxMintPerWallet: Number(sanitized.maxMintPerWallet) || 0,
+          showOnMintPanel: sanitized.enablePublicMint && sanitized.showOnMintPanel,
+          chainId: getChainId(network),
         })
+        setCollectionId(collection.id)
+        await saveDraftCollection(address, collection.id, form, tokens, [])
+        toast.success('Draft saved')
       }
-
-      toast.success('Draft saved')
       navigate('/dashboard')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to save draft')
@@ -296,7 +379,11 @@ export function CreatePage() {
   }
 
   const addTokenRow = () => {
-    const next = [...tokens, { name: `Token #${tokens.length + 1}`, description: '', file: null }]
+    const nextId = getRowTokenId(tokens[tokens.length - 1] ?? { tokenId: 0 } as DraftToken, tokens.length - 1) + 1
+    const next = [
+      ...tokens,
+      { tokenId: nextId, name: `Token #${nextId}`, description: '', file: null, attributes: [] },
+    ]
     if (form.mintMode === 'batch' && !form.enablePublicMint) {
       setForm((prev) => sanitizeFormForMode({ ...prev, maxSupply: next.length }, next))
     }
@@ -306,41 +393,94 @@ export function CreatePage() {
   const fillRowsToMaxSupply = () => {
     if (tokens.length >= form.maxSupply) return
     const extra = Array.from({ length: form.maxSupply - tokens.length }, (_, j) => ({
+      tokenId: tokens.length + j + 1,
       name: `Token #${tokens.length + j + 1}`,
       description: '',
       file: null,
+      attributes: [] as DraftToken['attributes'],
     }))
     setTokensAndSync([...tokens, ...extra])
   }
 
+  const handleBulkImport = (imported: DraftToken[]) => {
+    const rows = buildEditableTokenRows(imported, form.maxSupply)
+    const existingById = new Map(
+      tokens.filter((token) => token.tokenId != null).map((token) => [token.tokenId!, token]),
+    )
+    const merged = rows.map((row) => {
+      const existing = row.tokenId != null ? existingById.get(row.tokenId) : undefined
+      if (!existing) return row
+      return {
+        ...row,
+        dbTokenId: existing.dbTokenId,
+        existingImagePath: row.file ? undefined : (row.existingImagePath ?? existing.existingImagePath),
+      }
+    })
+    setTokensAndSync(merged)
+    if (form.mintMode === 'batch' && !form.enablePublicMint) {
+      setForm((prev) => sanitizeFormForMode({ ...prev, maxSupply: merged.length }, merged))
+    }
+  }
+
+  const handleDeleteDraft = async () => {
+    if (!address || !collectionId || !isEditingDraft) return
+    const confirmed = window.confirm(
+      `Delete draft "${form.name || 'this collection'}"? This removes all artwork and metadata and cannot be undone.`,
+    )
+    if (!confirmed) return
+
+    setLoading(true)
+    try {
+      await deleteCollection(address, collectionId)
+      toast.success('Draft deleted')
+      navigate('/dashboard')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   if (!isConnected) {
     return (
-      <Card>
-        <CardTitle>Connect your wallet</CardTitle>
-        <CardDescription className="mt-2">Connect an Electroneum wallet to create a collection.</CardDescription>
-      </Card>
+      <div className="space-y-8">
+        {!isEditingDraft && <CreateHero />}
+        <Card>
+          <CardTitle>Connect your wallet</CardTitle>
+          <CardDescription className="mt-2">Connect an Electroneum wallet to create a collection.</CardDescription>
+        </Card>
+      </div>
     )
   }
 
   if (!isAuthenticated) {
     return (
-      <Card>
-        <CardTitle>Sign in with wallet</CardTitle>
-        <CardDescription className="mt-2">Authenticate to create and manage collections.</CardDescription>
-        <div className="mt-4">
-          <WalletAuthButton />
-        </div>
-      </Card>
+      <div className="space-y-8">
+        {!isEditingDraft && <CreateHero />}
+        <Card>
+          <CardTitle>Sign in with wallet</CardTitle>
+          <CardDescription className="mt-2">Authenticate to create and manage collections.</CardDescription>
+          <div className="mt-4">
+            <WalletAuthButton />
+          </div>
+        </Card>
+      </div>
     )
+  }
+
+  if (isEditingDraft && (loadingCollection || loadingTokens || !loadedDraft)) {
+    return <Card><CardTitle>Loading draft…</CardTitle></Card>
   }
 
   const isBatch = form.mintMode === 'batch'
   const nextDisabled = validatingImages || currentStepIssues.length > 0
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="space-y-8">
+      {!isEditingDraft && <CreateHero />}
+      <div className="mx-auto max-w-2xl space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Create Collection</h1>
+        <h2 className="text-3xl font-bold">{isEditingDraft ? 'Edit Draft Collection' : 'Create Collection'}</h2>
         <p className="text-slate-400">
           Step {step + 1} of {STEPS.length}: {STEPS[step]}
         </p>
@@ -461,6 +601,15 @@ export function CreatePage() {
             </div>
           )}
 
+          <ToggleRow
+            checked={form.showOnMintPanel}
+            disabled={!form.enablePublicMint}
+            disabledReason="Enable public mint (IMintable) before listing on the home page minting panel."
+            onChange={(showOnMintPanel) => update('showOnMintPanel', showOnMintPanel)}
+            label="Show on NFT Minting Panel"
+            description="List this collection on the launchpad home page so anyone can mint directly from their wallet."
+          />
+
           {form.enablePublicMint && (
             <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-4 text-sm text-blue-100">
               Public mint requires artwork and metadata for all {form.maxSupply} tokens before you can save or publish.
@@ -481,7 +630,7 @@ export function CreatePage() {
             </div>
           )}
 
-          <FieldError message={fieldErrors.enablePublicMint || fieldErrors.tokens || stepError} />
+          <FieldError message={fieldErrors.enablePublicMint || fieldErrors.showOnMintPanel || fieldErrors.tokens || stepError} />
         </Card>
       )}
 
@@ -495,7 +644,8 @@ export function CreatePage() {
               max={100}
               step="0.01"
               value={form.royaltyBurnPercent}
-              onChange={(e) => update('royaltyBurnPercent', e.target.value)}
+              onChange={(e) => update('royaltyBurnPercent', sanitizePercentInput(e.target.value))}
+              onBlur={() => update('royaltyBurnPercent', formatPercentDisplay(form.royaltyBurnPercent))}
             />
             <FieldHint>
               Of ETN royalties received by your collection contract, this percentage is swapped to CLUB and burned.
@@ -522,7 +672,8 @@ export function CreatePage() {
                 max={100}
                 step="0.01"
                 value={form.mintBurnPercent}
-                onChange={(e) => update('mintBurnPercent', e.target.value)}
+                onChange={(e) => update('mintBurnPercent', sanitizePercentInput(e.target.value))}
+                onBlur={() => update('mintBurnPercent', formatPercentDisplay(form.mintBurnPercent))}
               />
               <FieldHint>
                 Percentage of each public mint payment swapped to CLUB and burned (e.g. 10% of a 5 ETN mint = 0.5 ETN).
@@ -538,76 +689,55 @@ export function CreatePage() {
       {step === 3 && (
         <div className="space-y-4">
           <MetadataGuidancePanel />
+          <BulkTokenUpload maxSupply={form.maxSupply} onImport={handleBulkImport} />
           <Card className="space-y-4">
-          <div>
-            <CardTitle>{isBatch ? 'Upload your full collection' : 'Upload artwork'}</CardTitle>
-            <FieldHint>
-              Images: PNG, JPEG, WebP, or GIF · {IMAGE_RULES.minWidth}×{IMAGE_RULES.minHeight}px minimum · 10 MB max.
-              {form.enablePublicMint
-                ? ` All ${form.maxSupply} rows must be complete (name + image).`
-                : isBatch
-                  ? ` Upload exactly ${form.maxSupply} complete row(s) for batch mint.`
-                  : ' At least one complete row is required for lazy mint.'}
-            </FieldHint>
-          </div>
-
-          {form.enablePublicMint && tokens.length < form.maxSupply && (
-            <Button variant="outline" onClick={fillRowsToMaxSupply}>
-              Add {form.maxSupply - tokens.length} row(s) to match max supply
-            </Button>
-          )}
-
-          {tokens.map((token, i) => (
-            <div key={i} className="space-y-3 rounded-lg border border-slate-800 p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Token #{i + 1}</p>
-              <Input
-                value={token.name}
-                onChange={(e) => {
-                  const next = [...tokens]
-                  next[i] = { ...next[i], name: e.target.value }
-                  setTokensAndSync(next)
-                }}
-                placeholder="Token name"
-              />
-              <FieldError message={fieldErrors[`token.${i + 1}.name`]} />
-              <Textarea
-                value={token.description}
-                onChange={(e) => {
-                  const next = [...tokens]
-                  next[i] = { ...next[i], description: e.target.value }
-                  setTokensAndSync(next)
-                }}
-                placeholder="Description (optional)"
-              />
-              <FieldError message={fieldErrors[`token.${i + 1}.description`]} />
-              <Input
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
-                onChange={(e) => {
-                  const file = e.target.files?.[0] ?? null
-                  const next = [...tokens]
-                  next[i] = { ...next[i], file }
-                  setTokensAndSync(next)
-                }}
-              />
-              <FieldError message={fieldErrors[`token.${i + 1}.image`]} />
+            <div>
+              <CardTitle>{isBatch ? 'Upload your full collection' : 'Upload artwork'}</CardTitle>
+              <FieldHint>
+                Images: PNG, JPEG, WebP, or GIF · {IMAGE_RULES.minWidth}×{IMAGE_RULES.minHeight}px minimum · 10 MB max.
+                Bulk import fills the rows below — you can edit every field before saving.
+                {form.enablePublicMint
+                  ? ` All ${form.maxSupply} rows must be complete (name + image).`
+                  : isBatch
+                    ? ` Upload exactly ${form.maxSupply} complete row(s) for batch mint.`
+                    : ' At least one complete row is required for lazy mint.'}
+              </FieldHint>
             </div>
-          ))}
 
-          {!isBatch && tokens.length < form.maxSupply && (
-            <Button variant="outline" onClick={addTokenRow}>
-              Add another token ({completeCount}/{form.maxSupply} complete)
-            </Button>
-          )}
+            {form.enablePublicMint && tokens.length < form.maxSupply && (
+              <Button variant="outline" onClick={fillRowsToMaxSupply}>
+                Add {form.maxSupply - tokens.length} row(s) to match max supply
+              </Button>
+            )}
 
-          {isBatch && tokens.length < form.maxSupply && (
-            <Button variant="outline" onClick={addTokenRow}>
-              Add token ({tokens.length} / {form.maxSupply} max)
-            </Button>
-          )}
+            {tokens.map((token, i) => (
+              <DraftTokenRow
+                key={`${token.dbTokenId ?? 'new'}-${getRowTokenId(token, i)}`}
+                token={token}
+                rowIndex={i}
+                fieldErrors={fieldErrors}
+                onChange={(next) => {
+                  const updated = [...tokens]
+                  updated[i] = next
+                  setTokensAndSync(updated)
+                }}
+              />
+            ))}
 
-          <FieldError message={fieldErrors.tokens || stepError} />
-        </Card>
+            {!isBatch && tokens.length < form.maxSupply && (
+              <Button variant="outline" onClick={addTokenRow}>
+                Add another token ({completeCount}/{form.maxSupply} complete)
+              </Button>
+            )}
+
+            {isBatch && tokens.length < form.maxSupply && (
+              <Button variant="outline" onClick={addTokenRow}>
+                Add token ({tokens.length} / {form.maxSupply} max)
+              </Button>
+            )}
+
+            <FieldError message={fieldErrors.tokens || stepError} />
+          </Card>
         </div>
       )}
 
@@ -653,12 +783,16 @@ export function CreatePage() {
                 </dd>
               </div>
               <div className="flex justify-between gap-4 border-b border-slate-800 py-2">
+                <dt className="text-slate-400">Minting panel</dt>
+                <dd>{form.enablePublicMint && form.showOnMintPanel ? 'Visible on home page' : 'Hidden'}</dd>
+              </div>
+              <div className="flex justify-between gap-4 border-b border-slate-800 py-2">
                 <dt className="text-slate-400">Royalties burn</dt>
-                <dd>{form.royaltyBurnPercent || '0'}% of contract royalties</dd>
+                <dd>{formatPercentDisplay(form.royaltyBurnPercent)}% of contract royalties</dd>
               </div>
               <div className="flex justify-between gap-4 border-b border-slate-800 py-2">
                 <dt className="text-slate-400">Mint CLUB burn</dt>
-                <dd>{form.burnOnMint ? `${form.mintBurnPercent}% of mint price → CLUB burn` : 'Off'}</dd>
+                <dd>{form.burnOnMint ? `${formatPercentDisplay(form.mintBurnPercent)}% of mint price → CLUB burn` : 'Off'}</dd>
               </div>
               <div className="flex justify-between gap-4 py-2">
                 <dt className="text-slate-400">Artwork</dt>
@@ -674,15 +808,33 @@ export function CreatePage() {
 
       {step === 5 && (
         <Card>
-          <CardTitle>Save draft</CardTitle>
+          <CardTitle>{isEditingDraft ? 'Save draft changes' : 'Save draft'}</CardTitle>
           <CardDescription className="mt-2">
-            Save your collection, then publish from the dashboard. We deploy the contract, upload metadata, and
-            configure public mint (IMintable) for you.
+            {isEditingDraft
+              ? 'Save your edits, then publish from the dashboard when you are ready.'
+              : 'Save your collection, then publish from the dashboard. We deploy the contract, upload metadata, and configure public mint (IMintable) for you.'}
           </CardDescription>
           <Button className="mt-4" onClick={saveDraft} disabled={loading || validatingImages}>
-            {loading ? 'Saving…' : validatingImages ? 'Validating images…' : 'Save draft'}
+            {loading ? 'Saving…' : validatingImages ? 'Validating images…' : isEditingDraft ? 'Save changes' : 'Save draft'}
           </Button>
-          {collectionId && <p className="mt-2 text-sm text-green-400">Draft saved. Go to dashboard to publish.</p>}
+          {isEditingDraft && (
+            <Button variant="outline" className="mt-3 ml-3" asChild>
+              <Link to="/dashboard">Back to dashboard</Link>
+            </Button>
+          )}
+          {isEditingDraft && (
+            <Button
+              variant="outline"
+              className="mt-3 ml-3 border-red-900/60 text-red-300 hover:bg-red-950/40 hover:text-red-200"
+              onClick={handleDeleteDraft}
+              disabled={loading}
+            >
+              Delete draft
+            </Button>
+          )}
+          {collectionId && !isEditingDraft && (
+            <p className="mt-2 text-sm text-green-400">Draft saved. Go to dashboard to publish.</p>
+          )}
         </Card>
       )}
 
@@ -703,6 +855,7 @@ export function CreatePage() {
             {validatingImages ? 'Validating…' : 'Next'}
           </Button>
         )}
+      </div>
       </div>
     </div>
   )

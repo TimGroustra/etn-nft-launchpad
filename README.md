@@ -73,6 +73,32 @@ Or only publish fee:
 npm run factory:publish-fee
 ```
 
+### Mainnet CLUB burn / swap router
+
+Collections swap mint/royalty ETN → WETN → CLUB via **ElectroSwap SwapRouter02** (`0x5A3AB7e9f405250B36e7e0a4654c1052EADC1F07`).  
+Do **not** use the V3 Liquidity Locker (`0xfdB0…`) — that address is not a swap router.
+
+Update an existing factory for **new** publishes only:
+
+```bash
+set FACTORY_SWAP_ROUTER=0x5A3AB7e9f405250B36e7e0a4654c1052EADC1F07
+npm run factory:config:mainnet
+```
+
+Already-deployed collection contracts keep the swap router they were created with (immutable). Collections published with the wrong router must be re-published from a fixed factory.
+
+## Contract verification (Blockscout)
+
+`npm run deploy:mainnet` auto-verifies the **factory** after deploy (set `SKIP_VERIFY=1` to skip).
+
+**Collection contracts** are deployed by the factory when a user publishes — not by the Hardhat deploy script. Verify a published collection manually:
+
+```bash
+npm run verify:collection -- mainnet 0xYourCollection "Name" SYM 0xOwnerWallet 5000 true 5000 10
+```
+
+Arguments: `mintBurnBps`, `burnOnMint`, `royaltyBurnBps`, `maxSupply` (must match the values used at publish).
+
 Already-deployed collection contracts are unchanged (their swap addresses and royalty are fixed at their deploy time).
 
 ## Supabase Project

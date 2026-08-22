@@ -7,7 +7,6 @@ import { CreatePage } from '@/pages/CreatePage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { CollectionPage } from '@/pages/CollectionPage'
 import { EditPage } from '@/pages/EditPage'
-import { MintPage } from '@/pages/MintPage'
 
 export default function App() {
   return (
@@ -17,10 +16,10 @@ export default function App() {
           <Route element={<Layout />}>
             <Route index element={<IndexPage />} />
             <Route path="create" element={<CreatePage />} />
+            <Route path="draft/:collectionId/edit" element={<CreatePage />} />
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="collection/:address" element={<CollectionPage />} />
             <Route path="collection/:address/edit" element={<EditPage />} />
-            <Route path="collection/:address/mint" element={<MintPage />} />
           </Route>
         </Routes>
         <Toaster theme="dark" position="bottom-right" />

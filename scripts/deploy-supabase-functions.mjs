@@ -24,6 +24,11 @@ const bundles = {
     ['index.ts', read('verify-publish-payment/index.ts')],
     ['../_shared/utils.ts', read('_shared/utils.ts')],
   ],
+  'verify-collection-contract': [
+    ['index.ts', read('verify-collection-contract/index.ts').replaceAll("'../_shared/", "'./_shared/")],
+    ['_shared/utils.ts', read('_shared/utils.ts')],
+    ['_shared/contract-verification.ts', read('_shared/contract-verification.ts')],
+  ],
 }
 
 for (const [name, files] of Object.entries(bundles)) {

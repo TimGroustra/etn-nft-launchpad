@@ -1,10 +1,10 @@
 const { ethers } = require('hardhat')
 const fs = require('fs')
 const path = require('path')
-const CLUB_TOKEN = '0xC9FC4AB00911793D99b5c7Bd01f01203C21D4131'
-const WETN_MAINNET = '0x138DAFbDA0CCB3d8E39C19edb0510Fc31b7C1c77'
-const SWAP_ROUTER_V3_MAINNET = '0xfdB0d62Fc929fD53D266B969Bfe4250b205D0899'
-const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+const {
+  CLUB_TOKEN,
+  getDeploymentAddresses,
+} = require('./chain-addresses.cjs')
 
 function loadEnvFile() {
   const envPath = path.join(__dirname, '..', '.env')
@@ -21,9 +21,9 @@ async function main() {
   const network = await ethers.provider.getNetwork()
   const chainId = Number(network.chainId)
   const publishFee = chainId === 52014 ? ethers.parseEther('1000') : ethers.parseEther('1')
-  const wetn = chainId === 52014 ? WETN_MAINNET : ZERO_ADDRESS
-  const swapRouter = chainId === 52014 ? SWAP_ROUTER_V3_MAINNET : ZERO_ADDRESS
+  const { wetn, swapRouter } = getDeploymentAddresses(chainId)
   console.log('Deploying with:', deployer.address, 'on chain', chainId, 'publish fee:', ethers.formatEther(publishFee), 'ETN')
+  console.log('WETN:', wetn, 'swapRouter:', swapRouter)
 
   const Factory = await ethers.getContractFactory('LaunchpadFactory')
   const factory = await Factory.deploy(deployer.address, deployer.address, CLUB_TOKEN, wetn, swapRouter, publishFee, 500)
@@ -55,8 +55,29 @@ async function main() {
   deployments[key].deployedAt = new Date().toISOString()
   deployments[key].deployer = deployer.address
   deployments[key].txHash = deployTx.hash
+  deployments[key].swapRouter = swapRouter
   fs.writeFileSync(deploymentsPath, JSON.stringify(deployments, null, 2))
   console.log('Updated deployments.json')
+
+  const hre = require('hardhat')
+  if (process.env.SKIP_VERIFY !== '1') {
+    console.log('Verifying factory on block explorer…')
+    try {
+      await hre.run('verify:verify', {
+        address,
+        constructorArguments: [deployer.address, deployer.address, CLUB_TOKEN, wetn, swapRouter, publishFee, 500],
+      })
+      console.log('Factory verified.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (message.toLowerCase().includes('already verified')) {
+        console.log('Factory already verified.')
+      } else {
+        console.warn('Factory verification failed:', message)
+        console.warn('Re-run: npx hardhat verify --network', key === 'electroneum' ? 'electroneum' : 'electroneumTestnet', address, ...)
+      }
+    }
+  }
 }
 
 main().catch((error) => {

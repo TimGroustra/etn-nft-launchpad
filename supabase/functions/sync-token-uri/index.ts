@@ -5,6 +5,10 @@ import {
   buildNftMetadata,
   validateNoMetadataRoyaltyFields,
 } from '../_shared/nft-metadata.ts'
+import {
+  assertStoragePathForCollection,
+  buildCollectionMetadataPath,
+} from '../_shared/storage-paths.ts'
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
@@ -30,13 +34,21 @@ serve(async (req) => {
       .maybeSingle()
     if (!collection) throw new Error('Collection not found')
 
-    const { data: token } = await supabase
+    const { data: token, error: tokenError } = await supabase
       .from('collection_tokens')
       .select('*')
       .eq('collection_id', collectionId)
       .eq('token_id', tokenId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
       .maybeSingle()
+    if (tokenError) throw tokenError
     if (!token) throw new Error('Token not found')
+
+    if (token.image_storage_path) {
+      const pathError = assertStoragePathForCollection(collectionId, token.image_storage_path)
+      if (pathError) throw new Error(pathError)
+    }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const imageUrl = token.image_storage_path
@@ -53,7 +65,7 @@ serve(async (req) => {
     const royaltyError = validateNoMetadataRoyaltyFields(metadata as unknown as Record<string, unknown>)
     if (royaltyError) throw new Error(royaltyError)
 
-    const metadataPath = `${collectionId}/${tokenId}.json`
+    const metadataPath = buildCollectionMetadataPath(collectionId, tokenId)
     const { error: uploadError } = await supabase.storage
       .from('collection-metadata')
       .upload(metadataPath, JSON.stringify(metadata, null, 2), {
@@ -63,6 +75,7 @@ serve(async (req) => {
     if (uploadError) throw uploadError
 
     const tokenUri = `${supabaseUrl}/storage/v1/object/public/collection-metadata/${metadataPath}`
+    const onChainTokenUri = `${tokenId}.json`
 
     await supabase
       .from('collection_tokens')
@@ -75,9 +88,10 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         tokenUri,
+        onChainTokenUri,
         contractAddress: collection.contract_address,
         functionName: 'setTokenURI',
-        args: [tokenId, tokenUri],
+        args: [tokenId, onChainTokenUri],
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )

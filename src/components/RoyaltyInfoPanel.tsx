@@ -1,4 +1,5 @@
 import { DEFAULT_ROYALTY_BPS, formatRoyaltyPercent, shortenAddress } from '@/lib/nft-metadata'
+import { formatPercentDisplay } from '@/lib/create-collection-validation'
 
 type RoyaltyInfoPanelProps = {
   creatorWallet?: string
@@ -7,7 +8,7 @@ type RoyaltyInfoPanelProps = {
 }
 
 export function RoyaltyInfoPanel({ creatorWallet, royaltyBurnPercent, compact }: RoyaltyInfoPanelProps) {
-  const burnPercent = Number(royaltyBurnPercent) || 0
+  const burnPercent = Number(formatPercentDisplay(royaltyBurnPercent)) || 0
   const creatorShare = Math.max(0, 100 - burnPercent)
 
   return (
