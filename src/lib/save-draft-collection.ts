@@ -9,8 +9,100 @@ import {
   type DraftToken,
 } from '@/lib/create-collection-validation'
 import { dedupeDbTokensByTokenId, getRowTokenId } from '@/lib/draft-token-rows'
-import { validateCollectionImagePath } from '@/lib/storage-paths'
+import type { NftAttribute } from '@/lib/nft-metadata'
+import { assertStoragePathForCollection, validateCollectionImagePath } from '@/lib/storage-paths'
 import type { Collection, CollectionToken } from '@/types/database'
+
+export type CollectionEditChanges = {
+  mintPanelChanged: boolean
+  metadataChanged: boolean
+  hasChanges: boolean
+  needsOnChainSync: boolean
+}
+
+function normalizeDbAttributes(attributes: unknown): NftAttribute[] {
+  if (!Array.isArray(attributes)) return []
+  return attributes
+    .filter((attr): attr is NftAttribute => typeof attr === 'object' && attr !== null && 'trait_type' in attr)
+    .map((attr) => ({ trait_type: String(attr.trait_type).trim(), value: attr.value }))
+    .filter((attr) => attr.trait_type && String(attr.value).trim() !== '')
+}
+
+function draftImagePath(collectionId: string, token: DraftToken): string | undefined {
+  if (token.file) return undefined
+  const path = token.existingImagePath
+  if (!path || assertStoragePathForCollection(collectionId, path)) return undefined
+  return path
+}
+
+export function getCollectionEditChanges(
+  tokens: DraftToken[],
+  dbTokens: CollectionToken[],
+  collection: Collection,
+  showOnMintPanel: boolean,
+): CollectionEditChanges {
+  const mintPanelChanged = showOnMintPanel !== Boolean(collection.show_on_mint_panel)
+
+  const deduped = dedupeDbTokensByTokenId(dbTokens)
+  const dbByTokenId = new Map(
+    deduped.filter((token) => token.token_id != null).map((token) => [token.token_id!, token]),
+  )
+
+  let metadataChanged = false
+  const activeTokenIds = new Set<number>()
+
+  for (let rowIndex = 0; rowIndex < tokens.length; rowIndex++) {
+    const token = tokens[rowIndex]
+    const tokenId = getRowTokenId(token, rowIndex)
+
+    if (isTokenRowEmpty(token)) {
+      if (dbByTokenId.has(tokenId)) metadataChanged = true
+      continue
+    }
+
+    activeTokenIds.add(tokenId)
+    const dbRow = dbByTokenId.get(tokenId)
+
+    if (!dbRow) {
+      metadataChanged = true
+      continue
+    }
+
+    if (
+      token.file ||
+      token.name.trim() !== dbRow.name ||
+      token.description.trim() !== (dbRow.description ?? '') ||
+      JSON.stringify(getTokenAttributesForSave(token)) !== JSON.stringify(normalizeDbAttributes(dbRow.attributes)) ||
+      draftImagePath(collection.id, token) !== (dbRow.image_storage_path ?? undefined)
+    ) {
+      metadataChanged = true
+    }
+  }
+
+  if (!metadataChanged) {
+    for (const dbRow of deduped) {
+      if (dbRow.token_id != null && !activeTokenIds.has(dbRow.token_id)) {
+        metadataChanged = true
+        break
+      }
+    }
+  }
+
+  const hasChanges = mintPanelChanged || metadataChanged
+  const needsOnChainSync = Boolean(collection.contract_address) && metadataChanged
+
+  return { mintPanelChanged, metadataChanged, hasChanges, needsOnChainSync }
+}
+
+export function buildEditCollectionForm(
+  collection: Collection,
+  showOnMintPanel: boolean,
+): CreateCollectionForm {
+  return {
+    ...collectionToForm(collection),
+    showOnMintPanel,
+  }
+}
 
 export async function saveDraftCollection(
   walletAddress: string,

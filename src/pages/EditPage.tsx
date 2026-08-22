@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAccount, useWriteContract } from 'wagmi'
 import { useQueryClient } from '@tanstack/react-query'
@@ -13,12 +13,15 @@ import { MetadataGuidancePanel } from '@/components/MetadataGuidancePanel'
 import { BulkTokenUpload } from '@/components/BulkTokenUpload'
 import { DraftTokenRow } from '@/components/DraftTokenRow'
 import { FieldHint } from '@/components/form-fields'
-import {
-  type DraftToken,
-} from '@/lib/create-collection-validation'
+import { type DraftToken } from '@/lib/create-collection-validation'
 import { buildDraftRowsFromDb, buildEditableTokenRows, dedupeDbTokensByTokenId, getRowTokenId } from '@/lib/draft-token-rows'
 import { assertStoragePathForCollection } from '@/lib/storage-paths'
-import { collectionToForm, collectionToUpdatePayload, saveDraftCollection } from '@/lib/save-draft-collection'
+import {
+  buildEditCollectionForm,
+  collectionToUpdatePayload,
+  getCollectionEditChanges,
+  saveDraftCollection,
+} from '@/lib/save-draft-collection'
 import { syncPublishedCollection } from '@/lib/publish-collection'
 import { updateCollection } from '@/lib/api'
 import { validateImageFileAsync } from '@/lib/validate-upload-image'
@@ -29,14 +32,13 @@ export function EditPage() {
   const { isAuthenticated } = useWalletAuth()
   const { chain } = useNetwork()
   const queryClient = useQueryClient()
-  const { data: collection } = useCollection(contractAddress)
-  const { data: dbTokens = [], refetch, isFetched } = useCollectionTokens(collection?.id)
+  const { data: collection, refetch: refetchCollection } = useCollection(contractAddress)
+  const { data: dbTokens = [], refetch: refetchTokens, isFetched } = useCollectionTokens(collection?.id)
   const { writeContractAsync } = useWriteContract()
   const [tokens, setTokens] = useState<DraftToken[]>([])
   const [loaded, setLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
   const [showOnMintPanel, setShowOnMintPanel] = useState(false)
-  const [savingPanelSetting, setSavingPanelSetting] = useState(false)
 
   useEffect(() => {
     if (!collection || !isFetched || loaded) return
@@ -44,6 +46,11 @@ export function EditPage() {
     setShowOnMintPanel(collection.show_on_mint_panel ?? false)
     setLoaded(true)
   }, [collection, dbTokens, isFetched, loaded])
+
+  const editChanges = useMemo(() => {
+    if (!collection || !loaded) return null
+    return getCollectionEditChanges(tokens, dbTokens, collection, showOnMintPanel)
+  }, [collection, dbTokens, loaded, showOnMintPanel, tokens])
 
   const handleBulkImport = (imported: DraftToken[]) => {
     if (!collection) return
@@ -78,68 +85,65 @@ export function EditPage() {
     toast.success('Imported data filled into editable rows below')
   }
 
-  const saveMintPanelSetting = async (nextValue: boolean) => {
-    if (!address || !collection) return
-    const publicMint = Number(collection.mint_price_etn ?? 0) > 0
-    if (nextValue && !publicMint) {
+  const handleSave = async () => {
+    if (!address || !collection || !editChanges) return
+    if (!editChanges.hasChanges) {
+      toast.message('No changes to save')
+      return
+    }
+
+    const publicMintEnabled = Number(collection.mint_price_etn ?? 0) > 0
+    if (showOnMintPanel && !publicMintEnabled) {
       toast.error('Enable public mint before listing on the NFT Minting Panel.')
       return
     }
 
-    setSavingPanelSetting(true)
-    try {
-      await updateCollection(
-        address,
-        collection.id,
-        collectionToUpdatePayload(collection, { showOnMintPanel: nextValue && publicMint }),
-      )
-      setShowOnMintPanel(nextValue && publicMint)
-      toast.success(nextValue ? 'Collection added to the minting panel' : 'Collection removed from the minting panel')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update minting panel setting')
-    } finally {
-      setSavingPanelSetting(false)
-    }
-  }
-
-  const saveAll = async (syncOnChain = false) => {
-    if (!address || !collection) return
     setLoading(true)
     try {
-      for (let i = 0; i < tokens.length; i++) {
-        const file = tokens[i].file
-        if (!file) continue
-        const imageError = await validateImageFileAsync(file)
-        if (imageError) {
-          toast.error(`Token #${getRowTokenId(tokens[i], i)}: ${imageError}`)
-          return
+      if (editChanges.metadataChanged) {
+        for (let i = 0; i < tokens.length; i++) {
+          const file = tokens[i].file
+          if (!file) continue
+          const imageError = await validateImageFileAsync(file)
+          if (imageError) {
+            toast.error(`Token #${getRowTokenId(tokens[i], i)}: ${imageError}`)
+            return
+          }
         }
-      }
 
-      await saveDraftCollection(
-        address,
-        collection.id,
-        collectionToForm(collection),
-        tokens,
-        dbTokens,
-        collection,
-      )
+        await saveDraftCollection(
+          address,
+          collection.id,
+          buildEditCollectionForm(collection, showOnMintPanel),
+          tokens,
+          dbTokens,
+          collection,
+        )
+      } else if (editChanges.mintPanelChanged) {
+        await updateCollection(
+          address,
+          collection.id,
+          collectionToUpdatePayload(collection, {
+            showOnMintPanel: showOnMintPanel && publicMintEnabled,
+          }),
+        )
+      }
 
       await queryClient.invalidateQueries({ queryKey: ['collection', contractAddress] })
       await queryClient.invalidateQueries({ queryKey: ['collection-tokens', collection.id] })
-      const { data: freshTokens = [] } = await refetch()
-      setTokens(buildDraftRowsFromDb(freshTokens, collection.max_supply, collection.id))
+      await queryClient.invalidateQueries({ queryKey: ['mint-panel-collections'] })
 
-      if (syncOnChain && collection.contract_address) {
+      const { data: freshCollection } = await refetchCollection()
+      const { data: freshTokens = [] } = await refetchTokens()
+      setTokens(buildDraftRowsFromDb(freshTokens, collection.max_supply, collection.id))
+      setShowOnMintPanel(freshCollection?.show_on_mint_panel ?? showOnMintPanel)
+
+      if (editChanges.needsOnChainSync && freshCollection) {
         toast.message('Syncing metadata on-chain…')
-        await syncPublishedCollection(address, collection, writeContractAsync, chain.id)
-        toast.success('Saved to Supabase and synced on-chain')
+        await syncPublishedCollection(address, freshCollection, writeContractAsync, chain.id)
+        toast.success('Changes saved and synced on-chain')
       } else {
-        toast.success(
-          collection.contract_address
-            ? 'Saved to Supabase — click Update on the dashboard to sync on-chain'
-            : 'Changes saved',
-        )
+        toast.success('Changes saved')
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Save failed')
@@ -163,7 +167,7 @@ export function EditPage() {
         <p className="text-sm text-slate-400">
           Update names, descriptions, images, and attributes. Bulk import fills the editable rows below.
           {isPublished
-            ? ' Save here updates Supabase; use Update on the dashboard to push changes on-chain.'
+            ? ' Save applies your changes to Supabase and syncs on-chain when metadata changed.'
             : ' Save your changes, then publish from the dashboard.'}
         </p>
       </div>
@@ -176,13 +180,13 @@ export function EditPage() {
         <CardDescription>
           Control whether this collection appears on the launchpad home page for public wallet minting.
         </CardDescription>
-        <label className={`flex items-start gap-3 ${!publicMintEnabled || savingPanelSetting ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
+        <label className={`flex items-start gap-3 ${!publicMintEnabled || loading ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
           <input
             type="checkbox"
             className="mt-1"
             checked={showOnMintPanel}
-            disabled={!publicMintEnabled || savingPanelSetting || !isPublished}
-            onChange={(e) => saveMintPanelSetting(e.target.checked)}
+            disabled={!publicMintEnabled || loading || !isPublished}
+            onChange={(e) => setShowOnMintPanel(e.target.checked)}
           />
           <span>
             <span className="font-medium text-white">Show on NFT Minting Panel</span>
@@ -224,14 +228,9 @@ export function EditPage() {
       </Card>
 
       <div className="flex flex-wrap gap-2">
-        <Button onClick={() => saveAll(false)} disabled={loading}>
-          {loading ? 'Saving…' : 'Save to Supabase'}
+        <Button onClick={handleSave} disabled={loading || !editChanges?.hasChanges}>
+          {loading ? 'Saving…' : 'Save'}
         </Button>
-        {isPublished && (
-          <Button variant="outline" onClick={() => saveAll(true)} disabled={loading}>
-            Save & sync on-chain
-          </Button>
-        )}
         <Button variant="outline" asChild>
           <Link to="/dashboard">Back to dashboard</Link>
         </Button>
