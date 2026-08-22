@@ -2,14 +2,22 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import type { Collection, CollectionToken } from '@/types/database'
 
-export function useCollections(walletAddress?: string, chainId?: number) {
+export type CollectionListFilter = 'active' | 'archived' | 'all'
+
+export function useCollections(
+  walletAddress?: string,
+  chainId?: number,
+  filter: CollectionListFilter = 'active',
+) {
   return useQuery({
-    queryKey: ['collections', walletAddress, chainId],
+    queryKey: ['collections', walletAddress, chainId, filter],
     queryFn: async () => {
       let query = supabase.from('collections').select('*').order('created_at', { ascending: false })
       if (walletAddress) {
         query = query.eq('creator_wallet', walletAddress.toLowerCase())
         if (chainId) query = query.eq('chain_id', chainId)
+        if (filter === 'active') query = query.in('status', ['draft', 'published'])
+        else if (filter === 'archived') query = query.eq('status', 'archived')
       } else {
         query = query.eq('status', 'published')
       }
@@ -18,6 +26,10 @@ export function useCollections(walletAddress?: string, chainId?: number) {
       return data as Collection[]
     },
   })
+}
+
+export function useArchivedCollections(walletAddress?: string, chainId?: number) {
+  return useCollections(walletAddress, chainId, 'archived')
 }
 
 export function useMintPanelCollections(chainId?: number) {

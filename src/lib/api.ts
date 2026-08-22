@@ -74,6 +74,24 @@ export async function deleteCollection(walletAddress: string, collectionId: stri
   })
 }
 
+export async function archiveCollection(walletAddress: string, collectionId: string): Promise<Collection> {
+  const data = await invokeFunction<{ collection: Collection }>('collection-api', {
+    action: 'archive_collection',
+    walletAddress,
+    collectionId,
+  })
+  return data.collection
+}
+
+export async function restoreCollection(walletAddress: string, collectionId: string): Promise<Collection> {
+  const data = await invokeFunction<{ collection: Collection }>('collection-api', {
+    action: 'restore_collection',
+    walletAddress,
+    collectionId,
+  })
+  return data.collection
+}
+
 export async function addToken(walletAddress: string, payload: Record<string, unknown>): Promise<CollectionToken> {
   const data = await invokeFunction<{ token: CollectionToken }>('collection-api', {
     action: 'upsert_token',

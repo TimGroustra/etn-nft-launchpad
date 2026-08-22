@@ -3,8 +3,9 @@ import { useAccount } from 'wagmi'
 import { useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi'
 import { createPublicClient, http, type TransactionReceipt } from 'viem'
 import { toast } from 'sonner'
-import { useState } from 'react'
-import { useCollections } from '@/hooks/useCollections'
+import { useState, type ReactNode } from 'react'
+import { ChevronDown } from 'lucide-react'
+import { useCollections, useArchivedCollections } from '@/hooks/useCollections'
 import { WalletAuthButton, useWalletAuth } from '@/hooks/useWalletAuth'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
@@ -14,18 +15,67 @@ import { formatEther } from 'viem'
 import { FACTORY_ABI, getChainId, getPublishFeeWei, resolveDeployedCollectionAddress } from '@/lib/blockchain'
 import { usePlatformConfig, resolveFactoryAddress } from '@/hooks/usePlatformConfig'
 import { firstIssueMessage, validateCollectionForPublish } from '@/lib/create-collection-validation'
-import { updateCollection, verifyPublishPayment, verifyCollectionContract, deleteCollection } from '@/lib/api'
+import { updateCollection, verifyPublishPayment, verifyCollectionContract, deleteCollection, archiveCollection, restoreCollection } from '@/lib/api'
 import { configurePublicMint, prepareCollectionMetadata, syncPublishedCollection } from '@/lib/publish-collection'
 import { listCollectionTokens } from '@/lib/collection-metadata'
+import { cn } from '@/lib/utils'
+import type { Collection } from '@/types/database'
+
+function CollectionAccordionItem({
+  collection,
+  expanded,
+  onToggle,
+  children,
+}: {
+  collection: Collection
+  expanded: boolean
+  onToggle: () => void
+  children: ReactNode
+}) {
+  const networkLabel =
+    collection.chain_id === 5201420 ? 'Testnet' : collection.chain_id === 52014 ? 'Mainnet' : null
+
+  return (
+    <Card className="overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="flex w-full items-start justify-between gap-4 p-6 text-left transition-colors hover:bg-slate-900/40"
+      >
+        <div className="min-w-0">
+          <CardTitle className="truncate">{collection.name}</CardTitle>
+          <CardDescription className="mt-1">
+            {collection.status} · {collection.mint_mode} · {collection.symbol}
+            {networkLabel ? ` · ${networkLabel}` : ''}
+          </CardDescription>
+          {collection.contract_address && !expanded && (
+            <p className="mt-1 text-xs text-green-400">Published on-chain</p>
+          )}
+        </div>
+        <ChevronDown
+          className={cn('mt-1 h-5 w-5 shrink-0 text-slate-400 transition-transform', expanded && 'rotate-180')}
+        />
+      </button>
+      {expanded && <div className="space-y-4 border-t border-slate-800 px-6 pb-6 pt-4">{children}</div>}
+    </Card>
+  )
+}
 
 export function DashboardPage() {
   const { address, isConnected } = useAccount()
   const { isAuthenticated } = useWalletAuth()
   const { network, chain } = useNetwork()
-  const { data: collections = [], refetch } = useCollections(address, getChainId(network))
+  const chainId = getChainId(network)
+  const { data: collections = [], refetch: refetchActive } = useCollections(address, chainId, 'active')
+  const { data: archivedCollections = [], refetch: refetchArchived } = useArchivedCollections(address, chainId)
+  const [view, setView] = useState<'active' | 'archive'>('active')
   const [publishingId, setPublishingId] = useState<string | null>(null)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [archivingId, setArchivingId] = useState<string | null>(null)
+  const [restoringId, setRestoringId] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
   const { writeContractAsync, data: txHash } = useWriteContract()
   const { isLoading: confirming } = useWaitForTransactionReceipt({ hash: txHash })
 
@@ -41,6 +91,12 @@ export function DashboardPage() {
   })
   const publishFee = onChainPublishFee ?? getPublishFeeWei(network)
   const publishFeeLabel = formatEther(publishFee)
+  const displayedCollections = view === 'archive' ? archivedCollections : collections
+
+  const refetchAll = () => {
+    void refetchActive()
+    void refetchArchived()
+  }
 
   const publish = async (collection: (typeof collections)[0]) => {
     if (!address) return
@@ -121,7 +177,7 @@ export function DashboardPage() {
           }`,
         )
       }
-      refetch()
+      refetchAll()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Publish failed')
     } finally {
@@ -136,7 +192,7 @@ export function DashboardPage() {
       toast.message('Saving metadata to Supabase storage…')
       await syncPublishedCollection(address, collection, writeContractAsync, chain.id)
       toast.success('Collection updated in Supabase and on-chain.')
-      refetch()
+      refetchAll()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Update failed')
     } finally {
@@ -155,11 +211,47 @@ export function DashboardPage() {
     try {
       await deleteCollection(address, collection.id)
       toast.success('Draft deleted')
-      refetch()
+      refetchAll()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Delete failed')
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const archive = async (collection: Collection) => {
+    if (!address) return
+    const confirmed = window.confirm(
+      `Archive "${collection.name}"? It will be hidden from your active dashboard and removed from the public minting panel.`,
+    )
+    if (!confirmed) return
+
+    setArchivingId(collection.id)
+    try {
+      await archiveCollection(address, collection.id)
+      toast.success('Collection archived')
+      setExpandedId(null)
+      refetchAll()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Archive failed')
+    } finally {
+      setArchivingId(null)
+    }
+  }
+
+  const restore = async (collection: Collection) => {
+    if (!address) return
+    setRestoringId(collection.id)
+    try {
+      await restoreCollection(address, collection.id)
+      toast.success('Collection restored')
+      setExpandedId(null)
+      setView('active')
+      refetchAll()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Restore failed')
+    } finally {
+      setRestoringId(null)
     }
   }
 
@@ -178,86 +270,143 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">My Collections</h1>
-          <p className="text-sm text-slate-400">Showing collections on {chain.name}</p>
+          <h1 className="text-3xl font-bold">{view === 'archive' ? 'Archived Collections' : 'My Collections'}</h1>
+          <p className="text-sm text-slate-400">
+            {view === 'archive'
+              ? `Archived collections on ${chain.name}`
+              : `Active collections on ${chain.name}`}
+          </p>
         </div>
-        <Button asChild><Link to="/create">New Collection</Link></Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant={view === 'active' ? 'default' : 'outline'}
+            onClick={() => {
+              setView('active')
+              setExpandedId(null)
+            }}
+          >
+            Active ({collections.length})
+          </Button>
+          <Button
+            variant={view === 'archive' ? 'default' : 'outline'}
+            onClick={() => {
+              setView('archive')
+              setExpandedId(null)
+            }}
+          >
+            Archive ({archivedCollections.length})
+          </Button>
+          {view === 'active' && (
+            <Button asChild>
+              <Link to="/create">New Collection</Link>
+            </Button>
+          )}
+        </div>
       </div>
 
-      {collections.length === 0 ? (
+      {displayedCollections.length === 0 ? (
         <Card>
           <CardDescription>
-            No collections on {chain.name} yet. Switch network to test on testnet before going live on mainnet.
+            {view === 'archive'
+              ? `No archived collections on ${chain.name}.`
+              : `No collections on ${chain.name} yet. Switch network to test on testnet before going live on mainnet.`}
           </CardDescription>
         </Card>
       ) : (
         <div className="grid gap-4">
-          {collections.map((collection) => (
-            <Card key={collection.id} className="flex flex-col gap-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <CardTitle>{collection.name}</CardTitle>
-                  <CardDescription>
-                    {collection.status} · {collection.mint_mode} · {collection.symbol}
-                    {collection.chain_id === 5201420 ? ' · Testnet' : collection.chain_id === 52014 ? ' · Mainnet' : ''}
-                  </CardDescription>
-                  {collection.contract_address && (
-                    <p className="mt-1 text-xs text-green-400">You own this collection contract</p>
-                  )}
-                </div>
+          {displayedCollections.map((collection) => {
+            const expanded = expandedId === collection.id
+            return (
+              <CollectionAccordionItem
+                key={collection.id}
+                collection={collection}
+                expanded={expanded}
+                onToggle={() => setExpandedId(expanded ? null : collection.id)}
+              >
+                {collection.contract_address && view === 'active' && (
+                  <p className="text-xs text-green-400">You own this collection contract</p>
+                )}
+                {view === 'archive' && (
+                  <p className="text-sm text-slate-400">
+                    Archived collections are hidden from your active dashboard and the public minting panel.
+                    {collection.contract_address ? ' The on-chain contract is unchanged.' : ''}
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-2">
-                  {collection.status === 'draft' && (
+                  {view === 'archive' ? (
                     <>
-                      <Button variant="outline" asChild>
-                        <Link to={`/draft/${collection.id}/edit`}>Edit</Link>
+                      {collection.contract_address && (
+                        <Button variant="outline" asChild>
+                          <Link to={`/collection/${collection.contract_address}`}>View</Link>
+                        </Button>
+                      )}
+                      <Button onClick={() => restore(collection)} disabled={restoringId === collection.id}>
+                        {restoringId === collection.id ? 'Restoring…' : 'Restore'}
                       </Button>
+                    </>
+                  ) : (
+                    <>
+                      {collection.status === 'draft' && (
+                        <>
+                          <Button variant="outline" asChild>
+                            <Link to={`/draft/${collection.id}/edit`}>Edit</Link>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => deleteDraft(collection)}
+                            disabled={deletingId === collection.id}
+                            className="border-red-900/60 text-red-300 hover:bg-red-950/40 hover:text-red-200"
+                          >
+                            {deletingId === collection.id ? 'Deleting…' : 'Delete'}
+                          </Button>
+                          <Button
+                            onClick={() => publish(collection)}
+                            disabled={publishingId === collection.id || confirming || factoryAddress === '0x0000000000000000000000000000000000000000'}
+                          >
+                            {publishingId === collection.id
+                              ? 'Publishing...'
+                              : `Publish (${publishFeeLabel} ETN)`}
+                          </Button>
+                        </>
+                      )}
+                      {collection.contract_address && (
+                        <>
+                          <Button variant="outline" asChild>
+                            <Link to={`/collection/${collection.contract_address}`}>View</Link>
+                          </Button>
+                          <Button variant="outline" asChild>
+                            <Link to={`/collection/${collection.contract_address}/edit`}>Edit</Link>
+                          </Button>
+                          <Button
+                            onClick={() => updatePublished(collection)}
+                            disabled={updatingId === collection.id || confirming}
+                          >
+                            {updatingId === collection.id ? 'Updating…' : 'Update'}
+                          </Button>
+                        </>
+                      )}
                       <Button
                         variant="outline"
-                        onClick={() => deleteDraft(collection)}
-                        disabled={deletingId === collection.id}
-                        className="border-red-900/60 text-red-300 hover:bg-red-950/40 hover:text-red-200"
+                        onClick={() => archive(collection)}
+                        disabled={archivingId === collection.id}
                       >
-                        {deletingId === collection.id ? 'Deleting…' : 'Delete'}
-                      </Button>
-                      <Button
-                        onClick={() => publish(collection)}
-                        disabled={publishingId === collection.id || confirming || factoryAddress === '0x0000000000000000000000000000000000000000'}
-                      >
-                        {publishingId === collection.id
-                          ? 'Publishing...'
-                          : `Publish (${publishFeeLabel} ETN)`}
-                      </Button>
-                    </>
-                  )}
-                  {collection.contract_address && (
-                    <>
-                      <Button variant="outline" asChild>
-                        <Link to={`/collection/${collection.contract_address}`}>View</Link>
-                      </Button>
-                      <Button variant="outline" asChild>
-                        <Link to={`/collection/${collection.contract_address}/edit`}>Edit</Link>
-                      </Button>
-                      <Button
-                        onClick={() => updatePublished(collection)}
-                        disabled={updatingId === collection.id || confirming}
-                      >
-                        {updatingId === collection.id ? 'Updating…' : 'Update'}
+                        {archivingId === collection.id ? 'Archiving…' : 'Archive'}
                       </Button>
                     </>
                   )}
                 </div>
-              </div>
-              {collection.contract_address && (
-                <CollectionOwnerPanel
-                  collection={collection}
-                  chainId={chain.id}
-                  onUpdated={() => void refetch()}
-                />
-              )}
-            </Card>
-          ))}
+                {collection.contract_address && view === 'active' && (
+                  <CollectionOwnerPanel
+                    collection={collection}
+                    chainId={chain.id}
+                    onUpdated={() => void refetchAll()}
+                  />
+                )}
+              </CollectionAccordionItem>
+            )
+          })}
         </div>
       )}
     </div>

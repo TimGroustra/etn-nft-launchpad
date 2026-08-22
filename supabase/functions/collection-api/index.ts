@@ -8,6 +8,35 @@ import {
   validateCollectionImagePath,
 } from '../_shared/storage-paths.ts'
 
+async function getOwnedCollection(
+  supabase: ReturnType<typeof createClient>,
+  collectionId: string,
+  wallet: string,
+  columns = 'id, status, contract_address',
+) {
+  const { data: collection, error } = await supabase
+    .from('collections')
+    .select(columns)
+    .eq('id', collectionId)
+    .eq('creator_wallet', wallet)
+    .maybeSingle()
+  if (error) throw error
+  if (!collection) throw new Error('Collection not found.')
+  return collection
+}
+
+async function assertCollectionEditable(
+  supabase: ReturnType<typeof createClient>,
+  collectionId: string,
+  wallet: string,
+) {
+  const collection = await getOwnedCollection(supabase, collectionId, wallet, 'id, status')
+  if (collection.status === 'archived') {
+    throw new Error('This collection is archived. Restore it from your dashboard to make changes.')
+  }
+  return collection
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
 
@@ -54,6 +83,8 @@ serve(async (req) => {
     }
 
     if (body.action === 'update_collection') {
+      await assertCollectionEditable(supabase, body.collectionId, wallet)
+
       const updates: Record<string, unknown> = {}
       if (body.name !== undefined) updates.name = body.name
       if (body.symbol !== undefined) updates.symbol = body.symbol
@@ -73,7 +104,12 @@ serve(async (req) => {
       } else if (body.contractAddress !== undefined) {
         updates.contract_address = body.contractAddress
       }
-      if (body.status !== undefined) updates.status = body.status
+      if (body.status !== undefined) {
+        if (body.status === 'archived') {
+          throw new Error('Use archive_collection to archive a collection.')
+        }
+        updates.status = body.status
+      }
       if (body.baseUri !== undefined) updates.base_uri = body.baseUri
       if (body.chainId !== undefined) updates.chain_id = body.chainId
 
@@ -96,6 +132,7 @@ serve(async (req) => {
 
     if (body.action === 'upload_image') {
       if (!body.collectionId) throw new Error('Collection ID is required.')
+      await assertCollectionEditable(supabase, body.collectionId, wallet)
       const tokenId = Number(body.tokenId)
       if (!Number.isInteger(tokenId) || tokenId < 1) throw new Error('Invalid token ID.')
 
@@ -133,15 +170,7 @@ serve(async (req) => {
     if (body.action === 'upsert_token' || body.action === 'add_token') {
       const tokenError = validateTokenPayload(body)
       if (tokenError) throw new Error(tokenError)
-
-      const { data: collection, error: collectionError } = await supabase
-        .from('collections')
-        .select('id')
-        .eq('id', body.collectionId)
-        .eq('creator_wallet', wallet)
-        .maybeSingle()
-      if (collectionError) throw collectionError
-      if (!collection) throw new Error('Collection not found.')
+      await assertCollectionEditable(supabase, body.collectionId, wallet)
 
       const { data: existingRows, error: existingError } = await supabase
         .from('collection_tokens')
@@ -280,14 +309,7 @@ serve(async (req) => {
     if (body.action === 'delete_collection') {
       if (!body.collectionId) throw new Error('Collection ID is required.')
 
-      const { data: collection, error: fetchError } = await supabase
-        .from('collections')
-        .select('id, status, contract_address')
-        .eq('id', body.collectionId)
-        .eq('creator_wallet', wallet)
-        .maybeSingle()
-      if (fetchError) throw fetchError
-      if (!collection) throw new Error('Collection not found.')
+      const collection = await getOwnedCollection(supabase, body.collectionId, wallet, 'id, status, contract_address')
       if (collection.status !== 'draft') {
         throw new Error('Only draft collections can be deleted.')
       }
@@ -314,6 +336,52 @@ serve(async (req) => {
       if (deleteError) throw deleteError
 
       return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (body.action === 'archive_collection') {
+      if (!body.collectionId) throw new Error('Collection ID is required.')
+
+      const collection = await getOwnedCollection(supabase, body.collectionId, wallet, 'id, status')
+      if (collection.status === 'archived') throw new Error('Collection is already archived.')
+
+      const { data, error } = await supabase
+        .from('collections')
+        .update({ status: 'archived', show_on_mint_panel: false })
+        .eq('id', collection.id)
+        .eq('creator_wallet', wallet)
+        .select()
+        .single()
+      if (error) throw error
+
+      return new Response(JSON.stringify({ collection: data }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (body.action === 'restore_collection') {
+      if (!body.collectionId) throw new Error('Collection ID is required.')
+
+      const collection = await getOwnedCollection(
+        supabase,
+        body.collectionId,
+        wallet,
+        'id, status, contract_address',
+      )
+      if (collection.status !== 'archived') throw new Error('Collection is not archived.')
+
+      const nextStatus = collection.contract_address ? 'published' : 'draft'
+      const { data, error } = await supabase
+        .from('collections')
+        .update({ status: nextStatus })
+        .eq('id', collection.id)
+        .eq('creator_wallet', wallet)
+        .select()
+        .single()
+      if (error) throw error
+
+      return new Response(JSON.stringify({ collection: data }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }

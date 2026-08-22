@@ -11,9 +11,10 @@ function read(rel) {
 
 const bundles = {
   'collection-api': [
-    ['index.ts', read('collection-api/index.ts')],
-    ['../_shared/utils.ts', read('_shared/utils.ts')],
-    ['../_shared/collection-validation.ts', read('_shared/collection-validation.ts')],
+    ['index.ts', read('collection-api/index.ts').replaceAll("'../_shared/", "'./_shared/")],
+    ['_shared/utils.ts', read('_shared/utils.ts')],
+    ['_shared/collection-validation.ts', read('_shared/collection-validation.ts')],
+    ['_shared/storage-paths.ts', read('_shared/storage-paths.ts')],
   ],
   'sync-token-uri': [
     ['index.ts', read('sync-token-uri/index.ts')],

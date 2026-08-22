@@ -153,6 +153,19 @@ export function EditPage() {
   }
 
   if (!collection) return <p>Loading...</p>
+  if (collection.status === 'archived') {
+    return (
+      <Card>
+        <CardTitle>Collection archived</CardTitle>
+        <CardDescription className="mt-2">
+          Restore this collection from your dashboard archive before editing metadata.
+        </CardDescription>
+        <Button className="mt-4" asChild>
+          <Link to="/dashboard">Go to dashboard</Link>
+        </Button>
+      </Card>
+    )
+  }
   if (collection.creator_wallet !== address?.toLowerCase() || !isAuthenticated) {
     return <Card><CardTitle>Only the collection creator can edit metadata.</CardTitle></Card>
   }
