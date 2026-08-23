@@ -22,6 +22,8 @@ import { useNetwork } from '@/context/NetworkContext'
 
 import { useAdmin } from '@/hooks/useAdmin'
 
+import { useCanAccessCreatorTools } from '@/hooks/useCanAccessCreatorTools'
+
 import { NFT_ABI, parsePublicMintReceipt } from '@/lib/blockchain'
 
 import { formatPercentFromBps } from '@/lib/create-collection-validation'
@@ -424,7 +426,7 @@ export function NftMintingPanel() {
 
   const { chain } = useNetwork()
 
-  const { isAdmin } = useAdmin()
+  const { canAccessCreatorTools } = useCanAccessCreatorTools()
 
   const { data: collections = [], isLoading } = useMintPanelCollections(chain.id)
 
@@ -464,7 +466,7 @@ export function NftMintingPanel() {
 
           </CardDescription>
 
-          {isAdmin && (
+          {canAccessCreatorTools && (
 
             <Button className="mt-4" asChild>
 

@@ -5,7 +5,7 @@ import { NetworkToggle } from './NetworkToggle'
 import { WalletBalance } from './WalletBalance'
 import { WalletConnectButton } from './WalletConnectButton'
 import { useNetwork } from '@/context/NetworkContext'
-import { useAdmin } from '@/hooks/useAdmin'
+import { useCanAccessCreatorTools } from '@/hooks/useCanAccessCreatorTools'
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   `rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
@@ -14,7 +14,7 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
 
 export function Layout() {
   const { chain } = useNetwork()
-  const { isAdmin } = useAdmin()
+  const { canAccessCreatorTools, holdingsLoading } = useCanAccessCreatorTools()
   const { isConnected } = useAccount()
 
   return (
@@ -30,7 +30,7 @@ export function Layout() {
               <Rocket className="h-5 w-5 text-blue-400" />
             </Link>
             <nav className="flex flex-wrap items-center gap-1">
-              {isConnected && isAdmin && (
+              {isConnected && (holdingsLoading || canAccessCreatorTools) && (
                 <NavLink to="/create" className={navLinkClass}>
                   Create
                 </NavLink>

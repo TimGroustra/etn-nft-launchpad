@@ -11,7 +11,7 @@ import {
   resolvePublishFeeWei,
 } from '@/lib/creator-access'
 
-/** NFT holdings for publish-fee discounts and creator-access messaging. Create routes remain admin-only. */
+/** NFT holdings for publish-fee discounts and creator-access gating. */
 export function useCreatorAccess() {
   const { address, isConnected } = useAccount()
 

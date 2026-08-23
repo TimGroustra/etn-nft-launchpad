@@ -16,7 +16,7 @@ import { useNetwork } from '@/context/NetworkContext'
 import { formatEther } from 'viem'
 import { FACTORY_ABI, getChainId, getPublishFeeWei, readRequiredPublishFeeWei, resolveDeployedCollectionAddress } from '@/lib/blockchain'
 import { usePlatformConfig, resolveFactoryAddress } from '@/hooks/usePlatformConfig'
-import { useAdmin } from '@/hooks/useAdmin'
+import { useCanAccessCreatorTools } from '@/hooks/useCanAccessCreatorTools'
 import { useCreatorAccess, useRequiredPublishFee } from '@/hooks/useCreatorAccess'
 import { firstIssueMessage, formatMintModeLabel, validateCollectionForPublish } from '@/lib/create-collection-validation'
 import { updateCollection, verifyPublishPayment, verifyCollectionContract, deleteCollection, archiveCollection, restoreCollection } from '@/lib/api'
@@ -78,8 +78,8 @@ function CollectionAccordionItem({
 export function DashboardPage() {
   const { address, isConnected } = useAccount()
   const { isAuthenticated } = useWalletAuth()
-  const { isAdmin } = useAdmin()
-  const { hasDualHolderDiscount, hasCreatorAccess, holdingsLoading } = useCreatorAccess()
+  const { canAccessCreatorTools } = useCanAccessCreatorTools()
+  const { hasDualHolderDiscount, holdingsLoading } = useCreatorAccess()
   const { network, chain } = useNetwork()
   const chainId = getChainId(network)
   const { data: collections = [], refetch: refetchActive } = useCollections(address, chainId, 'active')
@@ -490,7 +490,7 @@ export function DashboardPage() {
     )
   }
 
-  const showCreatorUpsell = !isAdmin && !holdingsLoading && !hasCreatorAccess
+  const showCreatorUpsell = !holdingsLoading && !canAccessCreatorTools
 
   return (
     <div className="space-y-6">
@@ -533,7 +533,7 @@ export function DashboardPage() {
           >
             Archive ({archivedCollections.length})
           </Button>
-          {view === 'active' && isAdmin && (
+          {view === 'active' && canAccessCreatorTools && (
             <Button asChild disabled={isPublishing}>
               <Link to="/create" tabIndex={isPublishing ? -1 : undefined} aria-disabled={isPublishing}>
                 New Collection
@@ -613,7 +613,7 @@ export function DashboardPage() {
                     <>
                       {collection.status === 'draft' && (
                         <>
-                          {isAdmin && (
+                          {canAccessCreatorTools && (
                             <Button variant="outline" asChild disabled={isPublishing}>
                               <Link
                                 to={`/draft/${collection.id}/edit`}

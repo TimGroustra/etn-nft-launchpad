@@ -1,7 +1,7 @@
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { Web3Provider } from '@/components/Web3Provider'
-import { AdminRoute } from '@/components/AdminRoute'
+import { CreatorRoute } from '@/components/CreatorRoute'
 import { Layout } from '@/components/Layout'
 import { IndexPage } from '@/pages/IndexPage'
 import { CreatePage } from '@/pages/CreatePage'
@@ -17,17 +17,17 @@ const router = createBrowserRouter([
       {
         path: 'create',
         element: (
-          <AdminRoute>
+          <CreatorRoute>
             <CreatePage />
-          </AdminRoute>
+          </CreatorRoute>
         ),
       },
       {
         path: 'draft/:collectionId/edit',
         element: (
-          <AdminRoute>
+          <CreatorRoute>
             <EditPage />
-          </AdminRoute>
+          </CreatorRoute>
         ),
       },
       {

@@ -66,7 +66,7 @@ export function hasCreatorNftAccess(holdings: CreatorNftHoldings): boolean {
   return holdings.ownsElectroGem || holdings.ownsClubWatch
 }
 
-/** Whether the wallet qualifies as a creator (NFT gate). Create routes remain admin-only for now. */
+/** Whether the wallet may use creator tools (create, edit drafts, publish). */
 export function canAccessCreatorTools(isAdmin: boolean, holdings: CreatorNftHoldings): boolean {
   return isAdmin || hasCreatorNftAccess(holdings)
 }
