@@ -1,14 +1,21 @@
+import { getAddress } from 'viem'
 import { electroneum } from '@/lib/blockchain'
 
+function resolveCreatorNftAddress(value: string | undefined, fallback: `0x${string}`): `0x${string}` {
+  return getAddress((value ?? fallback) as `0x${string}`)
+}
+
 /** ElectroGems (ElectroGem) ERC-721 on Electroneum mainnet. */
-export const ELECTROGEMS_NFT_ADDRESS = (
-  import.meta.env.VITE_ELECTROGEMS_NFT_ADDRESS ?? '0xcff0d88Ed5311bAB09178b6ec19A464100880984'
-).toLowerCase() as `0x${string}`
+export const ELECTROGEMS_NFT_ADDRESS = resolveCreatorNftAddress(
+  import.meta.env.VITE_ELECTROGEMS_NFT_ADDRESS,
+  '0xcff0d88Ed5311bAB09178b6ec19A464100880984',
+)
 
 /** Club Watch ERC-721 on Electroneum mainnet. */
-export const CLUB_WATCH_NFT_ADDRESS = (
-  import.meta.env.VITE_CLUB_WATCH_NFT_ADDRESS ?? '0x9b852BD6965F050e9AB8eEd4c900742b1d01fdD1'
-).toLowerCase() as `0x${string}`
+export const CLUB_WATCH_NFT_ADDRESS = resolveCreatorNftAddress(
+  import.meta.env.VITE_CLUB_WATCH_NFT_ADDRESS,
+  '0x9b852BD6965F050e9AB8eEd4c900742b1d01fdD1',
+)
 
 export const CREATOR_ACCESS_CHAIN_ID = electroneum.id
 
