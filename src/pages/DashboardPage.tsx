@@ -567,7 +567,7 @@ export function DashboardPage() {
           <CardDescription>
             {view === 'archive'
               ? `No archived collections on ${chain.name}.`
-              : `No collections on ${chain.name} yet. Switch network to test on testnet before going live on mainnet.`}
+              : `No collections on ${chain.name} yet.`}
           </CardDescription>
         </Card>
       ) : (
