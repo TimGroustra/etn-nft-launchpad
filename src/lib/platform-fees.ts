@@ -23,3 +23,28 @@ export function computeTieredPublishFeeWei(maxSupply: number, publishFeePerTenWe
 export function formatPlatformMintFeePercent(): string {
   return `${Number(PLATFORM_MINT_FEE_BPS) / 100}%`
 }
+
+export function supportsPlatformMintFee(platformMintFeeBps: bigint | undefined, readFailed: boolean): boolean {
+  return !readFailed && (platformMintFeeBps ?? 0n) > 0n
+}
+
+export function resolveMintPaymentWei({
+  baseMintWei,
+  platformFeeExempt,
+  supportsPlatformMintFee,
+  requiredMintPaymentWei,
+}: {
+  baseMintWei: bigint
+  platformFeeExempt: boolean
+  supportsPlatformMintFee: boolean
+  requiredMintPaymentWei?: bigint
+}): { totalMintWei: bigint; platformMintFeeWei: bigint } {
+  if (!supportsPlatformMintFee || baseMintWei <= 0n) {
+    return { totalMintWei: baseMintWei, platformMintFeeWei: 0n }
+  }
+
+  const totalMintWei =
+    requiredMintPaymentWei ?? computeRequiredMintPaymentWei(baseMintWei, platformFeeExempt)
+  const platformMintFeeWei = totalMintWei > baseMintWei ? totalMintWei - baseMintWei : 0n
+  return { totalMintWei, platformMintFeeWei }
+}

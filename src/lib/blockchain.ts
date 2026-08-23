@@ -375,6 +375,13 @@ export const NFT_ABI = [
     type: 'function',
   },
   {
+    inputs: [],
+    name: 'platformMintFeeBps',
+    outputs: [{ name: '', type: 'uint96' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
     inputs: [
       { name: 'minter', type: 'address' },
       { name: 'mintCount', type: 'uint256' },

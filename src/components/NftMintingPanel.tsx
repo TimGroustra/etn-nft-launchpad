@@ -30,9 +30,9 @@ import { NFT_ABI, parsePublicMintReceipt } from '@/lib/blockchain'
 
 import { formatPercentFromBps } from '@/lib/create-collection-validation'
 import {
-  computePlatformMintFeeWei,
-  computeRequiredMintPaymentWei,
   formatPlatformMintFeePercent,
+  resolveMintPaymentWei,
+  supportsPlatformMintFee,
 } from '@/lib/platform-fees'
 import { hasCreatorNftAccess } from '@/lib/creator-access'
 
@@ -118,6 +118,30 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
 
 
+  const {
+    data: platformMintFeeBps,
+    isError: platformMintFeeReadFailed,
+    isLoading: platformMintFeeLoading,
+  } = useReadContract({
+
+    address: contractAddress,
+
+    abi: NFT_ABI,
+
+    functionName: 'platformMintFeeBps',
+
+    chainId: targetChainId,
+
+    query: { enabled: Boolean(contractAddress) },
+
+  })
+
+
+
+  const collectionSupportsPlatformMintFee = supportsPlatformMintFee(platformMintFeeBps, platformMintFeeReadFailed)
+
+
+
   const { data: mintableForWallet } = useReadContract({
 
     address: contractAddress,
@@ -154,7 +178,9 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
     chainId: targetChainId,
 
-    query: { enabled: Boolean(contractAddress && address && safeQuantity > 0) },
+    query: {
+      enabled: Boolean(contractAddress && address && safeQuantity > 0 && collectionSupportsPlatformMintFee),
+    },
 
   })
 
@@ -187,14 +213,14 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
   const saleActive = Boolean(isMintable) && maxMintable > 0 && remaining > 0
 
   const baseMintWei = mintPriceWei ? mintPriceWei * BigInt(safeQuantity) : 0n
-  const platformMintFeeWei =
-    requiredMintPaymentWei != null && mintPriceWei
-      ? requiredMintPaymentWei - baseMintWei
-      : computePlatformMintFeeWei(baseMintWei, platformFeeExempt)
-  const totalMintWei =
-    requiredMintPaymentWei ??
-    (mintPriceWei ? computeRequiredMintPaymentWei(mintPriceWei * BigInt(safeQuantity), platformFeeExempt) : 0n)
-  const showPlatformMintFee = platformMintFeeWei > 0n
+  const { totalMintWei, platformMintFeeWei } = resolveMintPaymentWei({
+    baseMintWei,
+    platformFeeExempt,
+    supportsPlatformMintFee: collectionSupportsPlatformMintFee,
+    requiredMintPaymentWei,
+  })
+  const showPlatformMintFee = collectionSupportsPlatformMintFee && platformMintFeeWei > 0n
+  const mintPricingReady = Boolean(mintPriceWei) && !platformMintFeeLoading
 
   const isOwner = Boolean(
 
@@ -208,7 +234,9 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
   const mint = async () => {
 
-    if (!address || !contractAddress || !mintPriceWei || !publicClient) return
+    if (!address || !contractAddress || !publicClient) return
+
+    if (!mintPricingReady || totalMintWei <= 0n) return
 
     if (safeQuantity < 1 || safeQuantity > maxMintable) {
 
@@ -442,7 +470,7 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
             </div>
 
-            <Button className="w-full" disabled={minting} onClick={mint}>
+            <Button className="w-full" disabled={minting || !mintPricingReady} onClick={mint}>
 
               {minting
 
