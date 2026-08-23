@@ -20,6 +20,10 @@ interface IEditableERC721 {
     }
 }
 
+interface IERC721Balance {
+    function balanceOf(address owner) external view returns (uint256);
+}
+
 /// @notice ETN mint/royalty proceeds are wrapped to WETN and swapped for CLUB, then sent to the burn address.
 /// @dev Public mint uses the standard IMintable interface supported by NFT marketplaces (e.g. ElectroSwap).
 contract EditableERC721 is ERC721URIStorage, ERC2981, Ownable2Step, ReentrancyGuard, IEditableERC721, IMintable {
@@ -28,6 +32,10 @@ contract EditableERC721 is ERC721URIStorage, ERC2981, Ownable2Step, ReentrancyGu
     IERC20 public immutable clubToken;
     address public immutable WETN;
     ISwapRouterV3 public immutable swapRouter;
+    address public immutable platformTreasury;
+    uint96 public immutable platformMintFeeBps;
+    address public immutable electroGemsCollection;
+    address public immutable clubWatchCollection;
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
     BurnConfig public burnConfig;
@@ -35,9 +43,14 @@ contract EditableERC721 is ERC721URIStorage, ERC2981, Ownable2Step, ReentrancyGu
     uint256 public mintPrice;
     uint256 public maxMintPerWallet;
     bool public isMintable;
+    bool public randomPublicMint;
     uint256 private _nextTokenId;
     string private _baseTokenURI;
     bool private _suppressRoyaltyBurn;
+
+    mapping(uint256 => bool) private _metadataIndexUsed;
+    uint256[] private _availableMetadataIds;
+    bool private _publicMintPoolReady;
 
     event BaseURIUpdated(string newBaseURI);
     event BurnConfigUpdated(BurnConfig config);
@@ -47,6 +60,8 @@ contract EditableERC721 is ERC721URIStorage, ERC2981, Ownable2Step, ReentrancyGu
     event ClubBurned(uint256 clubBurned, uint256 etnUsed);
     event Withdrawn(address indexed owner, uint256 amount);
     event ERC20Withdrawn(address indexed owner, address indexed token, uint256 amount);
+    event PublicMintAssigned(uint256 indexed tokenId, uint256 indexed metadataIndex);
+    event RandomPublicMintUpdated(bool randomPublicMint);
 
     constructor(
         string memory name_,
@@ -57,14 +72,23 @@ contract EditableERC721 is ERC721URIStorage, ERC2981, Ownable2Step, ReentrancyGu
         address swapRouter_,
         BurnConfig memory config_,
         uint256 maxSupply_,
-        uint96 defaultRoyaltyBps_
+        uint96 defaultRoyaltyBps_,
+        address platformTreasury_,
+        uint96 platformMintFeeBps_,
+        address electroGems_,
+        address clubWatch_
     ) ERC721(name_, symbol_) Ownable(initialOwner) {
         require(config_.royaltyBurnBps <= 10_000, "Invalid royalty burn bps");
         require(config_.mintBurnBps <= 10_000, "Invalid mint burn bps");
         require(defaultRoyaltyBps_ <= 10_000, "Invalid royalty bps");
+        require(platformMintFeeBps_ <= 10_000, "Invalid platform mint fee bps");
         clubToken = IERC20(clubToken_);
         WETN = wetn_;
         swapRouter = ISwapRouterV3(swapRouter_);
+        platformTreasury = platformTreasury_;
+        platformMintFeeBps = platformMintFeeBps_;
+        electroGemsCollection = electroGems_;
+        clubWatchCollection = clubWatch_;
         burnConfig = config_;
         maxSupply = maxSupply_;
         _nextTokenId = 1;
@@ -73,8 +97,21 @@ contract EditableERC721 is ERC721URIStorage, ERC2981, Ownable2Step, ReentrancyGu
     }
 
     function setMintable(bool mintable_) external onlyOwner {
+        if (mintable_ && mintPrice > 0 && randomPublicMint) {
+            _ensurePublicMintPool();
+        }
         isMintable = mintable_;
         emit MintableStatusUpdated(mintable_);
+    }
+
+    /// @notice When enabled, public mint assigns metadata randomly at mint time (anti-snipe). Set before enabling sales.
+    function setRandomPublicMint(bool random_) external onlyOwner {
+        require(_nextTokenId == 1, "Cannot change random mint after tokens exist");
+        if (random_) {
+            _ensurePublicMintPool();
+        }
+        randomPublicMint = random_;
+        emit RandomPublicMintUpdated(random_);
     }
 
     function setMaxMintPerWallet(uint256 maxMintPerWallet_) external onlyOwner {
@@ -141,25 +178,71 @@ contract EditableERC721 is ERC721URIStorage, ERC2981, Ownable2Step, ReentrancyGu
         return walletRemaining < remaining ? walletRemaining : remaining;
     }
 
+    function _isPlatformFeeExempt(address account) internal view returns (bool) {
+        if (platformMintFeeBps == 0 || platformTreasury == address(0)) return true;
+        if (
+            electroGemsCollection != address(0) &&
+            IERC721Balance(electroGemsCollection).balanceOf(account) > 0
+        ) {
+            return true;
+        }
+        if (
+            clubWatchCollection != address(0) &&
+            IERC721Balance(clubWatchCollection).balanceOf(account) > 0
+        ) {
+            return true;
+        }
+        return false;
+    }
+
+    /// @notice Total ETN required to mint, including any launchpad platform fee for non-exempt wallets.
+    function requiredMintPayment(address minter, uint256 mintCount) public view returns (uint256) {
+        if (!isMintable || mintPrice == 0 || mintCount == 0) return 0;
+        uint256 base = mintPrice * mintCount;
+        if (_isPlatformFeeExempt(minter)) return base;
+        return base + (base * uint256(platformMintFeeBps)) / 10_000;
+    }
+
     /// @inheritdoc IMintable
+    /// @dev Accepts exact or overpayment (e.g. marketplace fee bundled into msg.value). Excess ETN is
+    /// refunded to msg.sender so hosts can retain their fee when they forward the full checkout amount.
     function mint(uint256 mintCount) external payable nonReentrant {
         require(isMintable, "Sale not active");
         require(mintCount > 0, "Quantity zero");
         require(bytes(_baseTokenURI).length > 0, "Base URI required");
         require(mintCount <= mintableCount(msg.sender), "Exceeds mintable count");
-        require(msg.value == mintPrice * mintCount, "Incorrect payment");
+
+        uint256 base = mintPrice * mintCount;
+        uint256 required = requiredMintPayment(msg.sender, mintCount);
+        require(msg.value >= required, "Insufficient payment");
+        uint256 platformFee = required - base;
 
         uint256 firstTokenId = _nextTokenId;
         for (uint256 i = 0; i < mintCount; i++) {
-            _mintWithComposedURI(msg.sender);
+            if (randomPublicMint) {
+                _mintWithRandomMetadata(msg.sender);
+            } else {
+                _mintWithComposedURI(msg.sender);
+            }
         }
         if (firstTokenId < _nextTokenId) {
             emit BatchMetadataUpdate(firstTokenId, _nextTokenId - 1);
         }
 
         if (burnConfig.burnOnMint && burnConfig.mintBurnBps > 0) {
-            uint256 burnEtn = (msg.value * uint256(burnConfig.mintBurnBps)) / 10_000;
+            uint256 burnEtn = (base * uint256(burnConfig.mintBurnBps)) / 10_000;
             _swapEtnForClubBurn(burnEtn);
+        }
+
+        if (platformFee > 0) {
+            (bool sentFee, ) = platformTreasury.call{value: platformFee}("");
+            require(sentFee, "Platform fee transfer failed");
+        }
+
+        uint256 excess = msg.value - required;
+        if (excess > 0) {
+            (bool sent, ) = payable(msg.sender).call{value: excess}("");
+            require(sent, "Refund failed");
         }
     }
 
@@ -176,22 +259,134 @@ contract EditableERC721 is ERC721URIStorage, ERC2981, Ownable2Step, ReentrancyGu
         require(_nextTokenId <= maxSupply, "Max supply reached");
         uint256 tokenId = _nextTokenId++;
         _safeMint(to, tokenId);
-        _setTokenURI(tokenId, _composeTokenURI(tokenId));
+        _setTokenURI(tokenId, _composeMetadataSuffix(tokenId));
         return tokenId;
     }
 
-    function _composeTokenURI(uint256 tokenId) internal pure returns (string memory) {
-        return string(abi.encodePacked(Strings.toString(tokenId), ".json"));
+    function _mintWithRandomMetadata(address to) internal returns (uint256 tokenId) {
+        _ensurePublicMintPool();
+        require(_nextTokenId <= maxSupply, "Max supply reached");
+        require(_availableMetadataIds.length > 0, "No metadata remaining");
+
+        tokenId = _nextTokenId++;
+        uint256 metadataIndex = _drawRandomMetadataIndex();
+        _safeMint(to, tokenId);
+        _setTokenURI(tokenId, _composeMetadataSuffix(metadataIndex));
+        emit PublicMintAssigned(tokenId, metadataIndex);
     }
 
-    /// @notice IERC721 metadata for minted tokens; for active public mint sales also exposes
-    /// canonical metadata URLs for unminted token IDs so explorers/marketplaces can index the collection.
+    function _composeMetadataSuffix(uint256 metadataIndex) internal pure returns (string memory) {
+        return string(abi.encodePacked(Strings.toString(metadataIndex), ".json"));
+    }
+
+    function _ensurePublicMintPool() private {
+        if (_publicMintPoolReady) return;
+        for (uint256 i = 1; i <= maxSupply; i++) {
+            if (!_metadataIndexUsed[i]) {
+                _availableMetadataIds.push(i);
+            }
+        }
+        _publicMintPoolReady = true;
+    }
+
+    function _drawRandomMetadataIndex() private returns (uint256 metadataIndex) {
+        uint256 len = _availableMetadataIds.length;
+        require(len > 0, "No metadata remaining");
+
+        uint256 slot = uint256(
+            keccak256(
+                abi.encodePacked(
+                    block.prevrandao,
+                    block.timestamp,
+                    block.number,
+                    msg.sender,
+                    _nextTokenId,
+                    len,
+                    gasleft()
+                )
+            )
+        ) % len;
+
+        metadataIndex = _availableMetadataIds[slot];
+        _availableMetadataIds[slot] = _availableMetadataIds[len - 1];
+        _availableMetadataIds.pop();
+        _metadataIndexUsed[metadataIndex] = true;
+    }
+
+    function _markMetadataIndexUsed(uint256 metadataIndex) internal {
+        require(metadataIndex > 0 && metadataIndex <= maxSupply, "Invalid metadata index");
+        if (_metadataIndexUsed[metadataIndex]) return;
+        _metadataIndexUsed[metadataIndex] = true;
+        if (_publicMintPoolReady) {
+            _removeFromAvailablePool(metadataIndex);
+        }
+    }
+
+    function _removeFromAvailablePool(uint256 metadataIndex) private {
+        uint256 len = _availableMetadataIds.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (_availableMetadataIds[i] == metadataIndex) {
+                _availableMetadataIds[i] = _availableMetadataIds[len - 1];
+                _availableMetadataIds.pop();
+                return;
+            }
+        }
+    }
+
+    function _tryMarkMetadataFromUriSuffix(string calldata uri) internal {
+        if (!_isNumericJsonSuffix(uri)) return;
+        uint256 metadataIndex = _metadataIndexFromUriSuffix(uri);
+        if (metadataIndex > 0 && metadataIndex <= maxSupply) {
+            _markMetadataIndexUsed(metadataIndex);
+        }
+    }
+
+    function _isNumericJsonSuffix(string memory uri) private pure returns (bool) {
+        if (!_endsWithJsonSuffix(uri)) return false;
+        bytes memory uriBytes = bytes(uri);
+        uint256 end = uriBytes.length - 5;
+        if (end == 0) return false;
+        for (uint256 i = 0; i < end; i++) {
+            uint8 charCode = uint8(uriBytes[i]);
+            if (charCode < 48 || charCode > 57) return false;
+        }
+        return true;
+    }
+
+    function _endsWithJsonSuffix(string memory uri) private pure returns (bool) {
+        bytes memory uriBytes = bytes(uri);
+        if (uriBytes.length < 6) return false;
+        return
+            uriBytes[uriBytes.length - 5] == "." &&
+            uriBytes[uriBytes.length - 4] == "j" &&
+            uriBytes[uriBytes.length - 3] == "s" &&
+            uriBytes[uriBytes.length - 2] == "o" &&
+            uriBytes[uriBytes.length - 1] == "n";
+    }
+
+    function _metadataIndexFromUriSuffix(string memory uri) private pure returns (uint256) {
+        bytes memory uriBytes = bytes(uri);
+        uint256 end = uriBytes.length - 5;
+        require(end > 0, "Invalid metadata suffix");
+
+        uint256 value = 0;
+        for (uint256 i = 0; i < end; i++) {
+            uint8 charCode = uint8(uriBytes[i]);
+            require(charCode >= 48 && charCode <= 57, "Invalid metadata suffix");
+            value = value * 10 + (charCode - 48);
+        }
+        require(value > 0, "Invalid metadata suffix");
+        return value;
+    }
+
+    /// @notice IERC721 metadata for minted tokens. Unminted preview URIs are only exposed for sequential public mint.
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         if (_ownerOf(tokenId) != address(0)) {
             return _resolveMintedTokenURI(tokenId);
         }
 
         if (
+            !randomPublicMint &&
             isMintable &&
             mintPrice > 0 &&
             bytes(_baseTokenURI).length > 0 &&
@@ -256,6 +451,7 @@ contract EditableERC721 is ERC721URIStorage, ERC2981, Ownable2Step, ReentrancyGu
 
     function _mintWithURI(address to, string calldata uri) internal returns (uint256) {
         require(_nextTokenId <= maxSupply, "Max supply reached");
+        _tryMarkMetadataFromUriSuffix(uri);
         uint256 tokenId = _nextTokenId++;
         _safeMint(to, tokenId);
         _setTokenURI(tokenId, uri);
@@ -306,6 +502,27 @@ contract EditableERC721 is ERC721URIStorage, ERC2981, Ownable2Step, ReentrancyGu
 
     function totalMinted() external view returns (uint256) {
         return _nextTokenId - 1;
+    }
+
+    /// @notice ElectroSwap EsMinterV2 / marketplace UI compatibility (Club Watches ABI shape).
+    function totalSupply() external view returns (uint256) {
+        return _nextTokenId - 1;
+    }
+
+    function feeReceiver() external view returns (address) {
+        return owner();
+    }
+
+    function MAX_SUPPLY() external view returns (uint256) {
+        return maxSupply;
+    }
+
+    function MAX_MINT_PER_WALLET() external view returns (uint256) {
+        return maxMintPerWallet;
+    }
+
+    function PRICE() external view returns (uint256) {
+        return mintPrice;
     }
 
     function withdraw() external onlyOwner nonReentrant {

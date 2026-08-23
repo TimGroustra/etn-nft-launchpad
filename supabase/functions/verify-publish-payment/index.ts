@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.190.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 import { createPublicClient, http, parseAbi } from 'https://esm.sh/viem@2.21.0'
 import { corsHeaders, normalizeWallet, assertValidTxHash, validateSession } from '../_shared/utils.ts'
+import { resolveRequiredPublishFeeWei } from '../_shared/creator-access.ts'
 
 const CHAIN_RPC: Record<number, string> = {
   52014: 'https://rpc.electroneum.com',
@@ -117,8 +118,16 @@ serve(async (req) => {
     const tx = await publicClient.getTransaction({ hash: normalizedHash as `0x${string}` })
     if (!tx || tx.from?.toLowerCase() !== wallet) throw new Error('Transaction sender mismatch')
 
-    const publishFeeWei = await getPublishFeeWei(supabase, chainId)
-    if (tx.value < publishFeeWei) throw new Error('Insufficient ETN payment')
+    const publishFeePerTenWei = await getPublishFeeWei(supabase, chainId)
+    const factoryAddress = await getFactoryAddress(supabase, chainId)
+    const requiredFeeWei = await resolveRequiredPublishFeeWei(
+      publicClient,
+      factoryAddress,
+      wallet as `0x${string}`,
+      publishFeePerTenWei,
+      Number(collection.max_supply ?? 0),
+    )
+    if (tx.value < requiredFeeWei) throw new Error('Insufficient ETN payment')
 
     await supabase.from('publish_payments').insert({
       transaction_hash: normalizedHash,

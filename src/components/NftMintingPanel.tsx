@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { useAccount, usePublicClient, useReadContract, useWriteContract } from 'wagmi'
+import { formatEther } from 'viem'
 
 import { useAppKit } from '@reown/appkit/react'
 
@@ -23,10 +24,17 @@ import { useNetwork } from '@/context/NetworkContext'
 import { useAdmin } from '@/hooks/useAdmin'
 
 import { useCanAccessCreatorTools } from '@/hooks/useCanAccessCreatorTools'
+import { useCreatorAccess } from '@/hooks/useCreatorAccess'
 
 import { NFT_ABI, parsePublicMintReceipt } from '@/lib/blockchain'
 
 import { formatPercentFromBps } from '@/lib/create-collection-validation'
+import {
+  computePlatformMintFeeWei,
+  computeRequiredMintPaymentWei,
+  formatPlatformMintFeePercent,
+} from '@/lib/platform-fees'
+import { hasCreatorNftAccess } from '@/lib/creator-access'
 
 import { getPublicImageUrl } from '@/lib/supabase'
 
@@ -47,6 +55,8 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
   const { address, isConnected } = useAccount()
 
   const { isAdmin } = useAdmin()
+  const { holdings } = useCreatorAccess()
+  const platformFeeExempt = hasCreatorNftAccess(holdings)
 
   const { open } = useAppKit()
 
@@ -126,6 +136,30 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
 
 
+  const maxMintable = Number(mintableForWallet ?? 0)
+
+  const safeQuantity = Math.min(quantity, Math.max(1, maxMintable || 1))
+
+
+
+  const { data: requiredMintPaymentWei } = useReadContract({
+
+    address: contractAddress,
+
+    abi: NFT_ABI,
+
+    functionName: 'requiredMintPayment',
+
+    args: address ? [address, BigInt(safeQuantity)] : undefined,
+
+    chainId: targetChainId,
+
+    query: { enabled: Boolean(contractAddress && address && safeQuantity > 0) },
+
+  })
+
+
+
   const { data: totalMinted } = useReadContract({
 
     address: contractAddress,
@@ -144,8 +178,6 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
   const previewToken = tokens.find((token) => token.image_storage_path)
 
-  const maxMintable = Number(mintableForWallet ?? 0)
-
   const mintedCount = Number(totalMinted ?? 0)
 
   const remaining = Math.max(0, collection.max_supply - mintedCount)
@@ -154,7 +186,15 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
   const saleActive = Boolean(isMintable) && maxMintable > 0 && remaining > 0
 
-  const safeQuantity = Math.min(quantity, Math.max(1, maxMintable || 1))
+  const baseMintWei = mintPriceWei ? mintPriceWei * BigInt(safeQuantity) : 0n
+  const platformMintFeeWei =
+    requiredMintPaymentWei != null && mintPriceWei
+      ? requiredMintPaymentWei - baseMintWei
+      : computePlatformMintFeeWei(baseMintWei, platformFeeExempt)
+  const totalMintWei =
+    requiredMintPaymentWei ??
+    (mintPriceWei ? computeRequiredMintPaymentWei(mintPriceWei * BigInt(safeQuantity), platformFeeExempt) : 0n)
+  const showPlatformMintFee = platformMintFeeWei > 0n
 
   const isOwner = Boolean(
 
@@ -196,7 +236,7 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
         args: [BigInt(safeQuantity)],
 
-        value: mintPriceWei * BigInt(safeQuantity),
+        value: totalMintWei,
 
         chainId: targetChainId,
 
@@ -291,10 +331,28 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
           <div className="flex justify-between gap-3">
             <dt className="text-slate-400">Price</dt>
             <dd className="text-right">
-              <div>{priceEtn} ETN</div>
+              <div>{priceEtn} ETN each</div>
               <EtnUsdHint etn={priceEtn} align="right" className="mt-0.5" />
             </dd>
           </div>
+          {showPlatformMintFee && (
+            <div className="flex justify-between gap-3">
+              <dt className="text-slate-400">Platform fee ({formatPlatformMintFeePercent()})</dt>
+              <dd className="text-right">
+                <div>{Number(formatEther(platformMintFeeWei)).toLocaleString()} ETN</div>
+                <EtnUsdHint etn={Number(formatEther(platformMintFeeWei))} align="right" className="mt-0.5" />
+              </dd>
+            </div>
+          )}
+          {showPlatformMintFee && (
+            <div className="flex justify-between gap-3 border-t border-slate-800 pt-2">
+              <dt className="text-slate-300">Total</dt>
+              <dd className="text-right font-medium text-white">
+                <div>{Number(formatEther(totalMintWei)).toLocaleString()} ETN</div>
+                <EtnUsdHint etn={Number(formatEther(totalMintWei))} align="right" className="mt-0.5" />
+              </dd>
+            </div>
+          )}
 
           <div className="flex justify-between gap-3">
 
@@ -390,7 +448,7 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
                 ? 'Minting…'
 
-                : `Mint ${safeQuantity} for ${(Number(priceEtn) * safeQuantity).toLocaleString()} ETN`}
+                : `Mint ${safeQuantity} for ${Number(formatEther(totalMintWei)).toLocaleString()} ETN`}
 
             </Button>
 

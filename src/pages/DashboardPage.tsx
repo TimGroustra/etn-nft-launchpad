@@ -17,7 +17,9 @@ import { formatEther } from 'viem'
 import { FACTORY_ABI, getChainId, getPublishFeeWei, readRequiredPublishFeeWei, resolveDeployedCollectionAddress } from '@/lib/blockchain'
 import { usePlatformConfig, resolveFactoryAddress } from '@/hooks/usePlatformConfig'
 import { useCanAccessCreatorTools } from '@/hooks/useCanAccessCreatorTools'
-import { useCreatorAccess, useRequiredPublishFee } from '@/hooks/useCreatorAccess'
+import { useCreatorAccess } from '@/hooks/useCreatorAccess'
+import { resolvePublishFeeWei } from '@/lib/creator-access'
+import { PUBLISH_FEE_SUPPLY_UNIT } from '@/lib/platform-fees'
 import { firstIssueMessage, formatMintModeLabel, validateCollectionForPublish } from '@/lib/create-collection-validation'
 import { updateCollection, verifyPublishPayment, verifyCollectionContract, deleteCollection, archiveCollection, restoreCollection } from '@/lib/api'
 import { configurePublicMint, configureCollectionRoyalty, prepareCollectionMetadata, publishBatchCollection } from '@/lib/publish-collection'
@@ -79,7 +81,7 @@ export function DashboardPage() {
   const { address, isConnected } = useAccount()
   const { isAuthenticated } = useWalletAuth()
   const { canAccessCreatorTools } = useCanAccessCreatorTools()
-  const { hasDualHolderDiscount, holdingsLoading } = useCreatorAccess()
+  const { hasDualHolderDiscount, holdingsLoading, holdings } = useCreatorAccess()
   const { network, chain } = useNetwork()
   const chainId = getChainId(network)
   const { data: collections = [], refetch: refetchActive } = useCollections(address, chainId, 'active')
@@ -115,17 +117,11 @@ export function DashboardPage() {
     chainId: chain.id,
     query: { enabled: Boolean(factoryAddress && factoryAddress !== zeroAddress) },
   })
-  const publishFee = onChainPublishFee ?? getPublishFeeWei(network)
-  const { data: onChainRequiredPublishFee, isLoading: requiredFeeLoading } = useRequiredPublishFee(
-    factoryAddress !== zeroAddress ? (factoryAddress as `0x${string}`) : undefined,
-    chain.id,
-  )
-  const effectivePublishFee = onChainRequiredPublishFee ?? publishFee
-  const publishFeeLabel = formatEther(effectivePublishFee)
-  const basePublishFeeLabel = formatEther(publishFee)
-  const showPublishDiscount = effectivePublishFee < publishFee
-  const publishFeeReady = Boolean(factoryAddress && factoryAddress !== zeroAddress && !requiredFeeLoading)
+  const publishFeePerTen = onChainPublishFee ?? getPublishFeeWei(network)
+  const publishFeeReady = Boolean(factoryAddress && factoryAddress !== zeroAddress)
   const displayedCollections = view === 'archive' ? archivedCollections : collections
+
+  const estimatePublishFee = (maxSupply: number) => resolvePublishFeeWei(publishFeePerTen, maxSupply, holdings)
 
   const refetchAll = () => {
     void refetchActive()
@@ -191,7 +187,8 @@ export function DashboardPage() {
           client,
           factoryAddress as `0x${string}`,
           address,
-          publishFee,
+          collection.max_supply,
+          publishFeePerTen,
         )
 
         onWalletStep('Pay publish fee & deploy collection contract')
@@ -545,19 +542,11 @@ export function DashboardPage() {
 
       {showCreatorUpsell && <CreatorAccessUpsell />}
 
-      {hasDualHolderDiscount && showPublishDiscount && view === 'active' && (
+      {hasDualHolderDiscount && view === 'active' && (
         <Card className="border-emerald-500/30 bg-emerald-500/10 p-4">
           <p className="text-sm text-emerald-100">
-            ElectroGem + Club Watch holder discount active: publish fee is {publishFeeLabel} ETN instead of{' '}
-            {basePublishFeeLabel} ETN (confirmed on-chain).
-          </p>
-        </Card>
-      )}
-      {hasDualHolderDiscount && !showPublishDiscount && publishFeeReady && view === 'active' && (
-        <Card className="border-amber-500/30 bg-amber-500/10 p-4">
-          <p className="text-sm text-amber-100">
-            You hold ElectroGem and Club Watch NFTs, but the factory has not applied a discount for your wallet yet.
-            Publish fee is {publishFeeLabel} ETN.
+            ElectroGem + Club Watch holder discount active: 50% off tiered publish fees ({formatEther(publishFeePerTen)}{' '}
+            ETN per {PUBLISH_FEE_SUPPLY_UNIT} max supply).
           </p>
         </Card>
       )}
@@ -574,6 +563,10 @@ export function DashboardPage() {
         <div className="grid gap-4">
           {displayedCollections.map((collection) => {
             const expanded = expandedId === collection.id
+            const publishEstimate = estimatePublishFee(collection.max_supply)
+            const publishFeeLabel = formatEther(publishEstimate.feeWei)
+            const tierPublishFeeLabel = formatEther(publishEstimate.tierFeeWei)
+            const showPublishDiscount = publishEstimate.discountBps > 0n && publishEstimate.feeWei < publishEstimate.tierFeeWei
             return (
               <CollectionAccordionItem
                 key={collection.id}
@@ -649,7 +642,7 @@ export function DashboardPage() {
                                 : collection.contract_address
                                   ? 'Complete publish'
                                   : showPublishDiscount
-                                    ? `Publish (${publishFeeLabel} ETN, discounted)`
+                                    ? `Publish (${publishFeeLabel} ETN, 50% off ${tierPublishFeeLabel})`
                                     : `Publish (${publishFeeLabel} ETN)`}
                           </Button>
                         </>

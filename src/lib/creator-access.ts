@@ -1,5 +1,6 @@
 import { getAddress } from 'viem'
 import { electroneum } from '@/lib/blockchain'
+import { computeTieredPublishFeeWei } from '@/lib/platform-fees'
 
 function resolveCreatorNftAddress(value: string | undefined, fallback: `0x${string}`): `0x${string}` {
   return getAddress((value ?? fallback) as `0x${string}`)
@@ -82,13 +83,20 @@ export function applyPublishFeeDiscount(baseFeeWei: bigint, discountBps: bigint)
   return (baseFeeWei * (10_000n - discountBps)) / 10_000n
 }
 
-export function resolvePublishFeeWei(baseFeeWei: bigint, holdings: CreatorNftHoldings): {
+export function resolvePublishFeeWei(
+  publishFeePerTenWei: bigint,
+  maxSupply: number,
+  holdings: CreatorNftHoldings,
+): {
   feeWei: bigint
   discountBps: bigint
+  tierFeeWei: bigint
 } {
+  const tierFeeWei = computeTieredPublishFeeWei(maxSupply, publishFeePerTenWei)
   const discountBps = getPublishFeeDiscountBps(holdings)
   return {
-    feeWei: applyPublishFeeDiscount(baseFeeWei, discountBps),
+    tierFeeWei,
     discountBps,
+    feeWei: applyPublishFeeDiscount(tierFeeWei, discountBps),
   }
 }

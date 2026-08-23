@@ -55,7 +55,7 @@ describe('LaunchpadFactory', function () {
     }
 
     const tx = await factory.connect(creator).deployCollection('Test', 'TST', burnConfig, 100, {
-      value: publishFee,
+      value: ethers.parseEther('10'),
     })
     const receipt = await tx.wait()
     const event = receipt.logs.find((log) => log.fragment?.name === 'CollectionDeployed')
@@ -160,10 +160,78 @@ describe('LaunchpadFactory', function () {
 
     await factory.connect(creator).deployCollection('Fee', 'FEE', burnConfig, 1, { value: ethers.parseEther('2') })
   })
+  it('applies dual-holder publish fee discount when configured', async function () {
+    const [owner, creator] = await ethers.getSigners()
+    const { wetn, router } = await deploySwapMocks()
+    const Factory = await ethers.getContractFactory('LaunchpadFactory')
+    const MockHolderNFT = await ethers.getContractFactory('MockHolderNFT')
+    const electroGems = await waitDeployed(await MockHolderNFT.deploy())
+    const clubWatch = await waitDeployed(await MockHolderNFT.deploy())
+
+    const publishFee = ethers.parseEther('1000')
+    const factory = await deployFactory(Factory, [
+      owner.address,
+      owner.address,
+      CLUB_TOKEN,
+      await wetn.getAddress(),
+      await router.getAddress(),
+      publishFee,
+      500,
+    ])
+
+    await factory
+      .connect(owner)
+      .setCreatorAccessConfig(await electroGems.getAddress(), await clubWatch.getAddress(), 5000)
+
+    const burnConfig = { mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }
+    const discountedFee = ethers.parseEther('500')
+
+    await expect(
+      factory.connect(creator).deployCollection('NoDiscount', 'ND', burnConfig, 1, { value: discountedFee }),
+    ).to.be.revertedWith('Insufficient publish fee')
+
+    await electroGems.mint(creator.address, 1)
+    await clubWatch.mint(creator.address, 1)
+
+    expect(await factory.requiredPublishFee(creator.address, 1)).to.equal(discountedFee)
+
+    const tx = await factory
+      .connect(creator)
+      .deployCollection('Discounted', 'DSC', burnConfig, 1, { value: discountedFee })
+    await tx.wait()
+  })
+
+  it('charges tiered publish fee by max supply before dual-holder discount', async function () {
+    const [owner, creator] = await ethers.getSigners()
+    const { wetn, router } = await deploySwapMocks()
+    const Factory = await ethers.getContractFactory('LaunchpadFactory')
+    const publishFeePerTen = ethers.parseEther('1000')
+    const factory = await deployFactory(Factory, [
+      owner.address,
+      owner.address,
+      CLUB_TOKEN,
+      await wetn.getAddress(),
+      await router.getAddress(),
+      publishFeePerTen,
+      500,
+    ])
+
+    const burnConfig = { mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }
+    const tieredFee = ethers.parseEther('3000')
+
+    await expect(
+      factory.connect(creator).deployCollection('Tiered', 'TRD', burnConfig, 25, { value: ethers.parseEther('2000') }),
+    ).to.be.revertedWith('Insufficient publish fee')
+
+    expect(await factory.tieredPublishFee(25)).to.equal(tieredFee)
+    expect(await factory.requiredPublishFee(creator.address, 25)).to.equal(tieredFee)
+
+    await factory.connect(creator).deployCollection('Tiered', 'TRD', burnConfig, 25, { value: tieredFee })
+  })
 })
 
 describe('EditableERC721', function () {
-  async function deployNft(burnConfig, owner) {
+  async function deployNft(burnConfig, owner, platform = {}) {
     const { wetn, club, router } = await deploySwapMocks()
     const NFT = await ethers.getContractFactory('EditableERC721')
     const nft = await waitDeployed(
@@ -177,6 +245,10 @@ describe('EditableERC721', function () {
         burnConfig,
         10,
         500,
+        platform.treasury ?? ethers.ZeroAddress,
+        platform.platformMintFeeBps ?? 0,
+        platform.electroGems ?? ethers.ZeroAddress,
+        platform.clubWatch ?? ethers.ZeroAddress,
       ),
     )
     return { nft, club }
@@ -243,6 +315,65 @@ describe('EditableERC721', function () {
     expect(await ethers.provider.getBalance(nftAddress)).to.equal(ethers.parseEther('0.7'))
   })
 
+  it('charges a platform mint fee for wallets without ElectroGem or Club Watch', async function () {
+    const [owner, treasury, minter] = await ethers.getSigners()
+    const MockHolderNFT = await ethers.getContractFactory('MockHolderNFT')
+    const electroGems = await waitDeployed(await MockHolderNFT.deploy())
+    const clubWatch = await waitDeployed(await MockHolderNFT.deploy())
+
+    const { nft } = await deployNft(
+      { mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 },
+      owner,
+      {
+        treasury: treasury.address,
+        platformMintFeeBps: 300,
+        electroGems: await electroGems.getAddress(),
+        clubWatch: await clubWatch.getAddress(),
+      },
+    )
+
+    await nft.connect(owner).setBaseURI('ipfs://collection/')
+    await nft.connect(owner).setMintPrice(ethers.parseEther('100'))
+    await nft.connect(owner).setMintable(true)
+
+    const required = await nft.requiredMintPayment(minter.address, 1)
+    expect(required).to.equal(ethers.parseEther('103'))
+
+    const treasuryBefore = await ethers.provider.getBalance(treasury.address)
+    await nft.connect(minter).mint(1, { value: required })
+    const treasuryAfter = await ethers.provider.getBalance(treasury.address)
+    expect(treasuryAfter - treasuryBefore).to.equal(ethers.parseEther('3'))
+  })
+
+  it('waives platform mint fee when minter holds ElectroGem or Club Watch', async function () {
+    const [owner, treasury, minter] = await ethers.getSigners()
+    const MockHolderNFT = await ethers.getContractFactory('MockHolderNFT')
+    const electroGems = await waitDeployed(await MockHolderNFT.deploy())
+    const clubWatch = await waitDeployed(await MockHolderNFT.deploy())
+
+    const { nft } = await deployNft(
+      { mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 },
+      owner,
+      {
+        treasury: treasury.address,
+        platformMintFeeBps: 300,
+        electroGems: await electroGems.getAddress(),
+        clubWatch: await clubWatch.getAddress(),
+      },
+    )
+
+    await nft.connect(owner).setBaseURI('ipfs://collection/')
+    await nft.connect(owner).setMintPrice(ethers.parseEther('100'))
+    await nft.connect(owner).setMintable(true)
+    await electroGems.mint(minter.address, 1)
+
+    expect(await nft.requiredMintPayment(minter.address, 1)).to.equal(ethers.parseEther('100'))
+    const treasuryBefore = await ethers.provider.getBalance(treasury.address)
+    await nft.connect(minter).mint(1, { value: ethers.parseEther('100') })
+    const treasuryAfter = await ethers.provider.getBalance(treasury.address)
+    expect(treasuryAfter - treasuryBefore).to.equal(0n)
+  })
+
   it('burns CLUB from paid IMintable mint via ETN swap', async function () {
     const [owner, minter] = await ethers.getSigners()
     const { nft, club } = await deployNft(
@@ -260,6 +391,40 @@ describe('EditableERC721', function () {
     expect(await nft.tokenURI(1)).to.equal('ipfs://collection/1.json')
   })
 
+  it('refunds marketplace overpayment and burns based on mint price only', async function () {
+    const [owner, marketplace] = await ethers.getSigners()
+    const { nft } = await deployNft({ mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }, owner)
+
+    await nft.connect(owner).setBaseURI('ipfs://collection/')
+    await nft.connect(owner).setMintPrice(ethers.parseEther('100'))
+    await nft.connect(owner).setMintable(true)
+
+    const marketplaceBefore = await ethers.provider.getBalance(marketplace.address)
+
+    const tx = await nft.connect(marketplace).mint(1, { value: ethers.parseEther('103') })
+    const receipt = await tx.wait()
+
+    expect(await nft.ownerOf(1)).to.equal(marketplace.address)
+    expect(await ethers.provider.getBalance(nft.target)).to.equal(ethers.parseEther('100'))
+
+    const marketplaceAfter = await ethers.provider.getBalance(marketplace.address)
+    const gasPaid = receipt.gasUsed * receipt.gasPrice
+    expect(marketplaceBefore - marketplaceAfter).to.equal(ethers.parseEther('100') + gasPaid)
+  })
+
+  it('reverts IMintable mint when payment is below mint price', async function () {
+    const [owner, minter] = await ethers.getSigners()
+    const { nft } = await deployNft({ mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }, owner)
+
+    await nft.connect(owner).setBaseURI('ipfs://collection/')
+    await nft.connect(owner).setMintPrice(ethers.parseEther('100'))
+    await nft.connect(owner).setMintable(true)
+
+    await expect(nft.connect(minter).mint(1, { value: ethers.parseEther('99') })).to.be.revertedWith(
+      'Insufficient payment',
+    )
+  })
+
   it('exposes IMintable marketplace helpers', async function () {
     const [owner, buyer] = await ethers.getSigners()
     const { nft } = await deployNft({ mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }, owner)
@@ -273,7 +438,25 @@ describe('EditableERC721', function () {
     expect(await nft.mintableCount(buyer.address)).to.equal(2n)
   })
 
-  it('returns preview tokenURI for unminted IMintable tokens', async function () {
+  it('assigns random metadata when random public mint is enabled', async function () {
+    const [owner, minter] = await ethers.getSigners()
+    const { nft } = await deployNft({ mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }, owner)
+
+    await nft.connect(owner).setBaseURI('ipfs://collection/')
+    await nft.connect(owner).setMintPrice(ethers.parseEther('5'))
+    await nft.connect(owner).setRandomPublicMint(true)
+    await nft.connect(owner).setMintable(true)
+
+    await expect(nft.tokenURI(1)).to.be.reverted
+
+    await nft.connect(minter).mint(1, { value: ethers.parseEther('5') })
+    const uri = await nft.tokenURI(1)
+    expect(uri).to.match(/^ipfs:\/\/collection\/\d+\.json$/)
+
+    await expect(nft.tokenURI(2)).to.be.reverted
+  })
+
+  it('returns preview tokenURI for sequential public mint only', async function () {
     const [owner] = await ethers.getSigners()
     const { nft } = await deployNft({ mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }, owner)
 
@@ -291,5 +474,27 @@ describe('EditableERC721', function () {
     const { nft } = await deployNft({ mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }, owner)
 
     await expect(nft.tokenURI(1)).to.be.reverted
+  })
+
+  it('exposes ElectroSwap marketplace compatibility getters', async function () {
+    const [owner, buyer] = await ethers.getSigners()
+    const { nft } = await deployNft({ mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }, owner)
+
+    await nft.connect(owner).setMintPrice(ethers.parseEther('5'))
+    await nft.connect(owner).setMaxMintPerWallet(2)
+
+    expect(await nft.totalSupply()).to.equal(0n)
+    expect(await nft.totalMinted()).to.equal(0n)
+    expect(await nft.feeReceiver()).to.equal(owner.address)
+    expect(await nft.MAX_SUPPLY()).to.equal(10n)
+    expect(await nft.MAX_MINT_PER_WALLET()).to.equal(2n)
+    expect(await nft.PRICE()).to.equal(ethers.parseEther('5'))
+
+    await nft.connect(owner).setBaseURI('ipfs://collection/')
+    await nft.connect(owner).setMintable(true)
+    await nft.connect(buyer).mint(1, { value: ethers.parseEther('5') })
+
+    expect(await nft.totalSupply()).to.equal(1n)
+    expect(await nft.totalMinted()).to.equal(1n)
   })
 })

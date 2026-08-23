@@ -59,19 +59,27 @@ export function useCreatorAccess() {
     publishFeeDiscountBps,
     hasDualHolderDiscount,
     holdingsLoading: Boolean(address) && balancesLoading,
-    resolvePublishFeeWei: (baseFeeWei: bigint) => resolvePublishFeeWei(baseFeeWei, holdings),
+    resolvePublishFeeWei: (publishFeePerTenWei: bigint, maxSupply: number) =>
+      resolvePublishFeeWei(publishFeePerTenWei, maxSupply, holdings),
   }
 }
 
-/** Read on-chain required publish fee when the factory supports dual-holder discounts. */
-export function useRequiredPublishFee(factoryAddress?: `0x${string}`, chainId?: number) {
+/** Read on-chain required publish fee for a collection max supply. */
+export function useRequiredPublishFee(
+  factoryAddress?: `0x${string}`,
+  chainId?: number,
+  maxSupply?: number,
+) {
   const { address } = useAccount()
 
   return useReadContract({
     address: factoryAddress,
     abi: [
       {
-        inputs: [{ name: 'payer', type: 'address' }],
+        inputs: [
+          { name: 'payer', type: 'address' },
+          { name: 'maxSupply', type: 'uint256' },
+        ],
         name: 'requiredPublishFee',
         outputs: [{ name: '', type: 'uint256' }],
         stateMutability: 'view',
@@ -79,10 +87,10 @@ export function useRequiredPublishFee(factoryAddress?: `0x${string}`, chainId?: 
       },
     ] as const,
     functionName: 'requiredPublishFee',
-    args: address ? [address] : undefined,
+    args: address && maxSupply != null && maxSupply > 0 ? [address, BigInt(maxSupply)] : undefined,
     chainId,
     query: {
-      enabled: Boolean(factoryAddress && address && chainId),
+      enabled: Boolean(factoryAddress && address && chainId && maxSupply != null && maxSupply > 0),
     },
   })
 }

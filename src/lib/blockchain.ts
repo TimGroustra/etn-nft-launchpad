@@ -1,4 +1,5 @@
 import type { CustomRpcUrlMap } from '@reown/appkit-common'
+import { computeTieredPublishFeeWei } from '@/lib/platform-fees'
 import { decodeEventLog, defineChain, getAddress, parseEventLogs, type Log, type PublicClient, type TransactionReceipt } from 'viem'
 
 export const electroneum = defineChain({
@@ -165,8 +166,18 @@ export const FACTORY_ABI = [
     type: 'function',
   },
   {
-    inputs: [{ name: 'payer', type: 'address' }],
+    inputs: [
+      { name: 'payer', type: 'address' },
+      { name: 'maxSupply', type: 'uint256' },
+    ],
     name: 'requiredPublishFee',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'maxSupply', type: 'uint256' }],
+    name: 'tieredPublishFee',
     outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'view',
     type: 'function',
@@ -359,6 +370,16 @@ export const NFT_ABI = [
   {
     inputs: [],
     name: 'mintPrice',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'minter', type: 'address' },
+      { name: 'mintCount', type: 'uint256' },
+    ],
+    name: 'requiredMintPayment',
     outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'view',
     type: 'function',
@@ -578,25 +599,49 @@ export async function readRequiredPublishFeeWei(
   client: PublicClient,
   factoryAddress: `0x${string}`,
   payer: `0x${string}`,
-  fallbackWei: bigint,
+  maxSupply: number,
+  fallbackPerTenWei: bigint,
 ): Promise<bigint> {
   try {
     return await client.readContract({
       address: factoryAddress,
       abi: FACTORY_ABI,
       functionName: 'requiredPublishFee',
-      args: [payer],
+      args: [payer, BigInt(maxSupply)],
     })
   } catch {
     try {
-      return await client.readContract({
+      const perTen = await client.readContract({
         address: factoryAddress,
         abi: FACTORY_ABI,
         functionName: 'publishFee',
       })
+      return computeTieredPublishFeeWei(maxSupply, perTen)
     } catch {
-      return fallbackWei
+      return computeTieredPublishFeeWei(maxSupply, fallbackPerTenWei)
     }
+  }
+}
+
+export async function readRequiredMintPaymentWei(
+  client: PublicClient,
+  collectionAddress: `0x${string}`,
+  minter: `0x${string}`,
+  mintCount: number,
+  fallbackBaseWei: bigint,
+  platformFeeExempt: boolean,
+): Promise<bigint> {
+  try {
+    return await client.readContract({
+      address: collectionAddress,
+      abi: NFT_ABI,
+      functionName: 'requiredMintPayment',
+      args: [minter, BigInt(mintCount)],
+    })
+  } catch {
+    const base = fallbackBaseWei * BigInt(mintCount)
+    if (platformFeeExempt) return base
+    return base + (base * 300n) / 10_000n
   }
 }
 
