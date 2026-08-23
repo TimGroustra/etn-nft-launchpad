@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAccount } from 'wagmi'
 import { toast } from 'sonner'
@@ -12,12 +12,18 @@ import { useNetwork } from '@/context/NetworkContext'
 import { getChainId } from '@/lib/blockchain'
 import {
   canEnablePublicMint,
+  clampRoyaltyBurnPercent,
+  formatMintModeLabel,
+  estimateSellerRemainderPercent,
   getCompleteTokens,
   getTokenAttributesForSave,
   inferDraftResumeStep,
   isTokenRowComplete,
+  isTokenRowEmpty,
   issuesToFieldMap,
   MIN_PUBLIC_MINT_ETN,
+  MIN_ROYALTY_BURN_PERCENT,
+  royaltyBurnBpsFromPercent,
   sanitizeFormForMode,
   validateBeforeSave,
   validateCreateStep,
@@ -29,29 +35,45 @@ import {
   type DraftToken,
   type MintMode,
 } from '@/lib/create-collection-validation'
-import { buildEditableTokenRows, buildDraftRowsFromDb, getRowTokenId } from '@/lib/draft-token-rows'
+import { buildEditableTokenRows, buildDraftRowsFromDb, getRowTokenId, resolveBulkImportMaxSupply } from '@/lib/draft-token-rows'
 import { collectionToForm, saveDraftCollection } from '@/lib/save-draft-collection'
 import { IMAGE_RULES, validateImageFileAsync } from '@/lib/validate-upload-image'
 import { MetadataGuidancePanel } from '@/components/MetadataGuidancePanel'
+import { MintPriceFields } from '@/components/MintPriceFields'
 import { BulkTokenUpload } from '@/components/BulkTokenUpload'
 import { DraftTokenRow } from '@/components/DraftTokenRow'
 import { FieldError, FieldHint } from '@/components/form-fields'
 import { NftPreviewCarousel, type NftPreviewItem } from '@/components/NftPreviewCarousel'
 import { RoyaltyInfoPanel } from '@/components/RoyaltyInfoPanel'
-import { buildDraftMetadataPreview } from '@/lib/nft-metadata'
+import { OperationLockOverlay } from '@/components/OperationLockOverlay'
+import { ScrollToEndFab } from '@/components/ScrollToEndFab'
+import { useNavigationGuard } from '@/hooks/useNavigationGuard'
+import { saveDraftProgress } from '@/lib/operation-progress'
 import { getPublicImageUrl } from '@/lib/supabase'
+import { buildDraftMetadataPreview } from '@/lib/nft-metadata'
+import { cn } from '@/lib/utils'
+const STEPS = ['Details', 'Minting', 'Royalties & burns', 'Artwork', 'Preview', 'Save']
 
-const STEPS = ['Details', 'Minting', 'Burns', 'Artwork', 'Preview', 'Save']
+function PreviewSettingRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="grid gap-0.5 border-b border-slate-800 py-2.5 last:border-b-0 sm:grid-cols-[minmax(0,42%)_1fr] sm:items-start sm:gap-4 sm:py-2">
+      <dt className="text-xs font-medium tracking-wide text-slate-500 uppercase sm:text-sm sm:font-normal sm:normal-case sm:tracking-normal sm:text-slate-400">
+        {label}
+      </dt>
+      <dd className="text-sm text-white sm:text-right">{value}</dd>
+    </div>
+  )
+}
 
 function CreateHero() {
   return (
-    <section className="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-10">
-      <h1 className="text-4xl font-bold">Launch editable NFT collections on Electroneum</h1>
+    <section className="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-6 sm:p-10">
+      <h1 className="text-2xl font-bold sm:text-4xl">Launch editable NFT collections on Electroneum</h1>
       <p className="mt-3 max-w-2xl text-slate-400">
-        Upload artwork, configure CLUB burns, pay ETN to publish, and keep metadata fully editable after launch.
+        Upload artwork, configure CLUB burns, and pay ETN to publish your collection on Electroneum.
         Images and metadata are stored in Supabase — update the token URI anytime to point at your own storage.
       </p>
-      <div className="mt-6 flex gap-3">
+      <div className="mt-6 flex flex-col gap-3 sm:flex-row">
         <Button size="lg" className="pointer-events-none">
           Create Collection
         </Button>
@@ -133,10 +155,12 @@ const INITIAL_FORM: CreateCollectionForm = {
   maxSupply: 100,
   mintBurnPercent: '0',
   burnOnMint: false,
-  royaltyBurnPercent: '0',
+  royaltyBurnPercent: '2',
+  royaltyPercent: '5',
   mintPriceEtn: String(MIN_PUBLIC_MINT_ETN),
   maxMintPerWallet: '0',
   enablePublicMint: false,
+  randomPublicMint: false,
   showOnMintPanel: false,
 }
 
@@ -165,6 +189,16 @@ export function CreatePage() {
     { tokenId: 1, name: 'Token #1', description: '', file: null, attributes: [] },
   ])
   const [previewItems, setPreviewItems] = useState<NftPreviewItem[]>([])
+  const [saveLock, setSaveLock] = useState<{ active: boolean; step: string; progress: number | null }>({
+    active: false,
+    step: '',
+    progress: null,
+  })
+  const isSaving = saveLock.active
+  useNavigationGuard(
+    isSaving,
+    'Your draft is still uploading. Leaving now may leave it incomplete.',
+  )
   const [loadedDraft, setLoadedDraft] = useState(!isEditingDraft)
 
   useEffect(() => {
@@ -205,7 +239,7 @@ export function CreatePage() {
   ])
 
   const completeCount = getCompleteTokens(tokens).length
-  const publicMintAllowed = canEnablePublicMint(form, tokens)
+  const publicMintAllowed = canEnablePublicMint(form)
 
   useEffect(() => {
     const preview: NftPreviewItem[] = []
@@ -229,6 +263,8 @@ export function CreatePage() {
           name: token.name,
           description: token.description,
           attributes: getTokenAttributesForSave(token),
+          royaltyBps: percentToBps(Number(form.royaltyPercent)),
+          feeRecipientPreview: '(your collection contract at publish)',
         }),
       })
     })
@@ -237,7 +273,7 @@ export function CreatePage() {
     return () => {
       objectUrls.forEach((url) => URL.revokeObjectURL(url))
     }
-  }, [tokens])
+  }, [tokens, form.royaltyPercent])
 
   const currentStepIssues = useMemo(
     () => validateCreateStep(step, form, tokens),
@@ -323,7 +359,10 @@ export function CreatePage() {
       return
     }
 
-    setValidatingImages(true)
+    setLoading(true)
+    const { step: validateStep, progress: validateProgress } = saveDraftProgress(0, 0, 'validating')
+    setSaveLock({ active: true, step: validateStep, progress: validateProgress })
+
     try {
       for (let i = 0; i < tokens.length; i++) {
         const file = tokens[i].file
@@ -331,16 +370,15 @@ export function CreatePage() {
         const imageError = await validateImageFileAsync(file)
         if (imageError) {
           toast.error(`Token #${getRowTokenId(tokens[i], i)}: ${imageError}`)
+          setLoading(false)
+          setSaveLock({ active: false, step: '', progress: null })
           return
         }
       }
-    } finally {
-      setValidatingImages(false)
-    }
 
-    setLoading(true)
-    try {
       if (isEditingDraft && collectionId) {
+        const activeCount = tokens.filter((token) => !isTokenRowEmpty(token)).length
+        setSaveLock(saveDraftProgress(0, activeCount, 'uploading'))
         await saveDraftCollection(
           address,
           collectionId,
@@ -348,9 +386,16 @@ export function CreatePage() {
           tokens,
           existingDbTokens,
           existingCollection ?? undefined,
+          (completed, total) => {
+            setSaveLock(saveDraftProgress(completed, total, 'uploading'))
+          },
         )
+        setSaveLock(saveDraftProgress(0, 0, 'finishing'))
         toast.success('Draft updated')
       } else {
+        const { step: createStep, progress: createProgress } = saveDraftProgress(0, 0, 'creating')
+        setSaveLock({ active: true, step: createStep, progress: createProgress })
+
         const sanitized = sanitizeFormForMode(form, tokens)
         const collection = await createCollection(address, {
           name: sanitized.name.trim(),
@@ -360,14 +405,29 @@ export function CreatePage() {
           maxSupply: sanitized.maxSupply,
           mintBurnBps: percentToBps(Number(sanitized.mintBurnPercent)),
           burnOnMint: sanitized.burnOnMint,
-          royaltyBurnBps: Math.min(10000, Math.max(0, Math.round(Number(sanitized.royaltyBurnPercent) * 100))),
+          royaltyBurnBps: royaltyBurnBpsFromPercent(sanitized.royaltyBurnPercent),
+          royaltyBps: percentToBps(Number(sanitized.royaltyPercent)),
           mintPriceEtn: sanitized.enablePublicMint ? Number(sanitized.mintPriceEtn) : 0,
           maxMintPerWallet: Number(sanitized.maxMintPerWallet) || 0,
           showOnMintPanel: sanitized.enablePublicMint && sanitized.showOnMintPanel,
+          randomPublicMint: sanitized.enablePublicMint && sanitized.randomPublicMint,
           chainId: getChainId(network),
         })
         setCollectionId(collection.id)
-        await saveDraftCollection(address, collection.id, form, tokens, [])
+        const activeCount = tokens.filter((token) => !isTokenRowEmpty(token)).length
+        setSaveLock(saveDraftProgress(0, activeCount, 'uploading'))
+        await saveDraftCollection(
+          address,
+          collection.id,
+          form,
+          tokens,
+          [],
+          undefined,
+          (completed, total) => {
+            setSaveLock(saveDraftProgress(completed, total, 'uploading'))
+          },
+        )
+        setSaveLock(saveDraftProgress(0, 0, 'finishing'))
         toast.success('Draft saved')
       }
       navigate('/dashboard')
@@ -375,6 +435,7 @@ export function CreatePage() {
       toast.error(err instanceof Error ? err.message : 'Failed to save draft')
     } finally {
       setLoading(false)
+      setSaveLock({ active: false, step: '', progress: null })
     }
   }
 
@@ -384,9 +445,6 @@ export function CreatePage() {
       ...tokens,
       { tokenId: nextId, name: `Token #${nextId}`, description: '', file: null, attributes: [] },
     ]
-    if (form.mintMode === 'batch' && !form.enablePublicMint) {
-      setForm((prev) => sanitizeFormForMode({ ...prev, maxSupply: next.length }, next))
-    }
     setTokensAndSync(next)
   }
 
@@ -403,7 +461,10 @@ export function CreatePage() {
   }
 
   const handleBulkImport = (imported: DraftToken[]) => {
-    const rows = buildEditableTokenRows(imported, form.maxSupply)
+    const nextMaxSupply = resolveBulkImportMaxSupply(imported)
+    if (nextMaxSupply === 0) return
+
+    const rows = buildEditableTokenRows(imported, nextMaxSupply)
     const existingById = new Map(
       tokens.filter((token) => token.tokenId != null).map((token) => [token.tokenId!, token]),
     )
@@ -416,10 +477,14 @@ export function CreatePage() {
         existingImagePath: row.file ? undefined : (row.existingImagePath ?? existing.existingImagePath),
       }
     })
-    setTokensAndSync(merged)
-    if (form.mintMode === 'batch' && !form.enablePublicMint) {
-      setForm((prev) => sanitizeFormForMode({ ...prev, maxSupply: merged.length }, merged))
+
+    if (nextMaxSupply !== form.maxSupply) {
+      toast.message(`Max supply adjusted to ${nextMaxSupply} to match your bulk upload.`)
     }
+
+    const nextForm = sanitizeFormForMode({ ...form, maxSupply: nextMaxSupply }, merged)
+    setForm(nextForm)
+    setTokensAndSync(merged)
   }
 
   const handleDeleteDraft = async () => {
@@ -473,12 +538,14 @@ export function CreatePage() {
   }
 
   const isBatch = form.mintMode === 'batch'
+  const resaleRoyaltyPercent = Number(formatPercentDisplay(form.royaltyPercent)) || 0
+  const sellerRemainderPercent = estimateSellerRemainderPercent(resaleRoyaltyPercent)
   const nextDisabled = validatingImages || currentStepIssues.length > 0
 
   return (
     <div className="space-y-8">
       {!isEditingDraft && <CreateHero />}
-      <div className="mx-auto max-w-2xl space-y-6">
+      <div className={cn('mx-auto space-y-6', step === 4 ? 'max-w-3xl' : 'max-w-2xl')}>
       <div>
         <h2 className="text-3xl font-bold">{isEditingDraft ? 'Edit Draft Collection' : 'Create Collection'}</h2>
         <p className="text-slate-400">
@@ -487,11 +554,14 @@ export function CreatePage() {
         <p className="text-sm text-slate-500">Creating on {chain.name}</p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:thin]">
         {STEPS.map((label, i) => (
           <div
             key={label}
-            className={`rounded-full px-3 py-1 text-xs ${i <= step ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+            className={cn(
+              'shrink-0 rounded-full px-3 py-1 text-xs whitespace-nowrap',
+              i <= step ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400',
+            )}
           >
             {label}
           </div>
@@ -547,86 +617,79 @@ export function CreatePage() {
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <OptionCard
                 selected={form.mintMode === 'lazy'}
-                title="Lazy mint"
-                description="Upload artwork first, then mint tokens yourself from the dashboard when you are ready."
+                title="Public minting"
+                description="Upload artwork, then mint yourself or enable a paid public sale for collectors."
                 onClick={() => setMintMode('lazy')}
               />
               <OptionCard
                 selected={form.mintMode === 'batch'}
                 title="Batch mint at publish"
-                description="Every token you upload is minted to your wallet automatically when you publish."
+                description="Upload every token upfront. The full collection is minted to your wallet when you publish — no public sale."
                 onClick={() => setMintMode('batch')}
               />
             </div>
           </div>
 
-          <ToggleRow
-            checked={form.enablePublicMint}
-            disabled={!publicMintAllowed}
-            disabledReason={
-              isBatch && !publicMintAllowed
-                ? 'Batch mint already fills max supply. Raise max supply on step 1 or add fewer tokens on Artwork before enabling public mint.'
-                : undefined
-            }
-            onChange={(enablePublicMint) => update('enablePublicMint', enablePublicMint)}
-            label="Enable public mint (IMintable)"
-            description="Lets collectors mint via any marketplace that supports IMintable (e.g. ElectroSwap). Requires at least 1 ETN and complete metadata for every token."
-          />
+          {!isBatch && (
+            <>
+              <ToggleRow
+                checked={form.enablePublicMint}
+                disabled={!publicMintAllowed}
+                onChange={(enablePublicMint) => update('enablePublicMint', enablePublicMint)}
+                label="Enable paid public sale (IMintable)"
+                description="Lets collectors mint via any marketplace that supports IMintable (e.g. ElectroSwap). Requires at least 1 ETN and complete metadata for every token."
+              />
 
-          {form.enablePublicMint && (
-            <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-              <div>
-                <Label>Public mint price (ETN)</Label>
-                <Input
-                  type="number"
-                  min={MIN_PUBLIC_MINT_ETN}
-                  step="0.01"
-                  value={form.mintPriceEtn}
-                  onChange={(e) => update('mintPriceEtn', e.target.value)}
-                />
-                <FieldHint>Minimum {MIN_PUBLIC_MINT_ETN} ETN per NFT on supported marketplaces.</FieldHint>
-                <FieldError message={fieldErrors.mintPriceEtn} />
-              </div>
-              <div>
-                <Label>Max mints per wallet</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={form.maxMintPerWallet}
-                  onChange={(e) => update('maxMintPerWallet', e.target.value)}
-                />
-                <FieldHint>Limit how many NFTs one wallet can mint via public mint. Use 0 for no limit.</FieldHint>
-                <FieldError message={fieldErrors.maxMintPerWallet} />
-              </div>
-            </div>
+              {form.enablePublicMint && (
+                <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                  <MintPriceFields
+                    etnValue={form.mintPriceEtn}
+                    onEtnChange={(mintPriceEtn) => update('mintPriceEtn', mintPriceEtn)}
+                    minEtn={MIN_PUBLIC_MINT_ETN}
+                    etnError={fieldErrors.mintPriceEtn}
+                  />
+                  <div>
+                    <Label>Max mints per wallet</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={form.maxMintPerWallet}
+                      onChange={(e) => update('maxMintPerWallet', e.target.value)}
+                    />
+                    <FieldHint>Limit how many NFTs one wallet can mint via paid sale. Use 0 for no limit.</FieldHint>
+                    <FieldError message={fieldErrors.maxMintPerWallet} />
+                  </div>
+                  <ToggleRow
+                    checked={form.randomPublicMint}
+                    onChange={(randomPublicMint) => update('randomPublicMint', randomPublicMint)}
+                    label="Random mint order"
+                    description="Assigns metadata randomly at mint time so snipers cannot predict the next reveal from mint order."
+                  />
+                </div>
+              )}
+
+              <ToggleRow
+                checked={form.showOnMintPanel}
+                disabled={!form.enablePublicMint}
+                disabledReason="Enable paid public sale (IMintable) before listing on the home page minting panel."
+                onChange={(showOnMintPanel) => update('showOnMintPanel', showOnMintPanel)}
+                label="Show on NFT Minting Panel"
+                description="List this collection on the launchpad home page so anyone can mint directly from their wallet."
+              />
+
+              {form.enablePublicMint && (
+                <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-4 text-sm text-blue-100">
+                  Paid public sale requires artwork and metadata for all {form.maxSupply} tokens before you can save or
+                  publish.
+                </div>
+              )}
+            </>
           )}
 
-          <ToggleRow
-            checked={form.showOnMintPanel}
-            disabled={!form.enablePublicMint}
-            disabledReason="Enable public mint (IMintable) before listing on the home page minting panel."
-            onChange={(showOnMintPanel) => update('showOnMintPanel', showOnMintPanel)}
-            label="Show on NFT Minting Panel"
-            description="List this collection on the launchpad home page so anyone can mint directly from their wallet."
-          />
-
-          {form.enablePublicMint && (
-            <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-4 text-sm text-blue-100">
-              Public mint requires artwork and metadata for all {form.maxSupply} tokens before you can save or publish.
-            </div>
-          )}
-
-          {isBatch && !form.enablePublicMint && (
+          {isBatch && (
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
-              Batch mode without public mint: upload exactly {form.maxSupply} complete token(s). Max supply adjusts to
-              match your artwork count.
-            </div>
-          )}
-
-          {isBatch && form.enablePublicMint && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
-              Batch + public mint: upload metadata for all {form.maxSupply} tokens. Tokens you batch mint at publish
-              plus any unsold supply share the same public mint price.
+              Batch mint requires artwork and metadata for all {form.maxSupply} tokens. Everything is minted to your
+              wallet at publish — paid public sale is not available in this mode.
             </div>
           )}
 
@@ -637,49 +700,124 @@ export function CreatePage() {
       {step === 2 && (
         <Card className="space-y-4">
           <div>
-            <Label>Royalties burn (%)</Label>
+            <CardTitle>Royalties &amp; CLUB burns</CardTitle>
+            <CardDescription className="mt-2 leading-relaxed">
+              {isBatch ? (
+                <>
+                  When someone <strong className="text-slate-300">resells</strong> your NFT, your contract can earn a
+                  royalty and optionally burn part of it as CLUB. Batch collections mint everything to you at publish —
+                  there is no paid public mint step.
+                </>
+              ) : (
+                <>
+                  There are two separate moments: when someone <strong className="text-slate-300">resells</strong> your
+                  NFT, and when someone <strong className="text-slate-300">buys a new mint</strong>. Resale royalty can
+                  be set high (e.g. 96%) — just leave room for the marketplace&apos;s own fee (~3% on ElectroSwap).
+                </>
+              )}
+            </CardDescription>
+          </div>
+
+          <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4 text-sm leading-relaxed text-slate-300">
+            <p className="font-medium text-white">Quick guide</p>
+            <ul className="mt-2 list-inside list-disc space-y-1 text-slate-400">
+              <li>
+                <span className="text-slate-300">Resale royalty</span> — your cut when the NFT is sold again (0–100%).
+                Add the marketplace fee on top — 96% royalty + 3% fee leaves 1% for the seller.
+              </li>
+              <li>
+                <span className="text-slate-300">Burn from resales</span> — how much of that resale income goes to CLUB
+                burns ({MIN_ROYALTY_BURN_PERCENT}–100% minimum). Set 100% if you want it all burned.
+              </li>
+              {!isBatch && (
+                <li>
+                  <span className="text-slate-300">Burn on new mints</span> — only if you turned on paid public sale in
+                  the previous step.
+                </li>
+              )}
+            </ul>
+          </div>
+
+          <div>
+            <Label>Resale royalty (%)</Label>
             <Input
               type="number"
               min={0}
               max={100}
               step="0.01"
-              value={form.royaltyBurnPercent}
-              onChange={(e) => update('royaltyBurnPercent', sanitizePercentInput(e.target.value))}
-              onBlur={() => update('royaltyBurnPercent', formatPercentDisplay(form.royaltyBurnPercent))}
+              value={form.royaltyPercent}
+              onChange={(e) => update('royaltyPercent', sanitizePercentInput(e.target.value))}
+              onBlur={() => update('royaltyPercent', formatPercentDisplay(form.royaltyPercent))}
             />
             <FieldHint>
-              Of ETN royalties received by your collection contract, this percentage is swapped to CLUB and burned.
-              The marketplace royalty rate itself is fixed at 5% on-chain (EIP-2981) — not set in metadata JSON.
+              Your EIP-2981 share of each resale. The marketplace also takes its own fee (ElectroSwap is ~3%). Royalty
+              + marketplace fee must stay at or below 100% or the seller receives little or nothing.
+            </FieldHint>
+            {resaleRoyaltyPercent >= 100 && (
+              <p className="mt-2 text-sm text-amber-300">
+                100% royalty plus a ~3% marketplace fee exceeds the sale price — this caused the 103% fee issue. Try 96%
+                instead so the seller still receives ~1%.
+              </p>
+            )}
+            {resaleRoyaltyPercent > 0 && resaleRoyaltyPercent < 100 && (
+              <p className="mt-2 text-sm text-slate-500">
+                At {formatPercentDisplay(form.royaltyPercent)}% royalty + ~3% marketplace fee, the seller keeps about{' '}
+                {sellerRemainderPercent}% of the sale (e.g. {sellerRemainderPercent}% of 5,000 ETN ={' '}
+                {(5000 * sellerRemainderPercent) / 100} ETN).
+              </p>
+            )}
+            <FieldError message={fieldErrors.royaltyPercent} />
+          </div>
+
+          <div>
+            <Label>Burn from resales (%)</Label>
+            <Input
+              type="number"
+              min={MIN_ROYALTY_BURN_PERCENT}
+              max={100}
+              step="0.01"
+              value={form.royaltyBurnPercent}
+              onChange={(e) => update('royaltyBurnPercent', sanitizePercentInput(e.target.value))}
+              onBlur={() => update('royaltyBurnPercent', clampRoyaltyBurnPercent(form.royaltyBurnPercent))}
+            />
+            <FieldHint>
+              Of the ETN your contract receives from resales, this share is swapped to CLUB and burned (
+              {MIN_ROYALTY_BURN_PERCENT}–100% required). Want everything burned? Set this to 100% — e.g. 96% leaves 4%
+              for you to withdraw.
             </FieldHint>
             <FieldError message={fieldErrors.royaltyBurnPercent} />
           </div>
 
-          <ToggleRow
-            checked={form.burnOnMint}
-            disabled={!form.enablePublicMint}
-            disabledReason="Mint CLUB burn only applies when public mint (IMintable) is enabled."
-            onChange={(burnOnMint) => update('burnOnMint', burnOnMint)}
-            label="Burn CLUB on public mint"
-            description="When someone mints via IMintable on a marketplace, a percentage of their ETN payment is swapped to CLUB and burned."
-          />
-
-          {form.burnOnMint && (
-            <div>
-              <Label>Mint burn (% of mint price)</Label>
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                step="0.01"
-                value={form.mintBurnPercent}
-                onChange={(e) => update('mintBurnPercent', sanitizePercentInput(e.target.value))}
-                onBlur={() => update('mintBurnPercent', formatPercentDisplay(form.mintBurnPercent))}
+          {!isBatch && (
+            <>
+              <ToggleRow
+                checked={form.burnOnMint}
+                disabled={!form.enablePublicMint}
+                disabledReason='Go back to the Minting step and turn on "Enable paid public sale (IMintable)" first. This burn only applies when collectors pay to mint.'
+                onChange={(burnOnMint) => update('burnOnMint', burnOnMint)}
+                label="Burn CLUB when someone buys a new mint"
+                description="A slice of each paid mint is swapped to CLUB and burned. Separate from resale royalties above."
               />
-              <FieldHint>
-                Percentage of each public mint payment swapped to CLUB and burned (e.g. 10% of a 5 ETN mint = 0.5 ETN).
-              </FieldHint>
-              <FieldError message={fieldErrors.mintBurnPercent} />
-            </div>
+
+              {form.burnOnMint && (
+                <div>
+                  <Label>Burn from each mint (% of mint price)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.01"
+                    value={form.mintBurnPercent}
+                    onChange={(e) => update('mintBurnPercent', sanitizePercentInput(e.target.value))}
+                    onBlur={() => update('mintBurnPercent', formatPercentDisplay(form.mintBurnPercent))}
+                  />
+                  <FieldHint>
+                    Example: 100% on a 5 ETN mint burns the full 5 ETN worth of CLUB. 10% would burn 0.5 ETN worth.
+                  </FieldHint>
+                  <FieldError message={fieldErrors.mintBurnPercent} />
+                </div>
+              )}
+            </>
           )}
 
           <FieldError message={fieldErrors.burnOnMint || stepError} />
@@ -696,15 +834,13 @@ export function CreatePage() {
               <FieldHint>
                 Images: PNG, JPEG, WebP, or GIF · {IMAGE_RULES.minWidth}×{IMAGE_RULES.minHeight}px minimum · 10 MB max.
                 Bulk import fills the rows below — you can edit every field before saving.
-                {form.enablePublicMint
+                {form.enablePublicMint || isBatch
                   ? ` All ${form.maxSupply} rows must be complete (name + image).`
-                  : isBatch
-                    ? ` Upload exactly ${form.maxSupply} complete row(s) for batch mint.`
-                    : ' At least one complete row is required for lazy mint.'}
+                  : ' At least one complete row is required for public minting.'}
               </FieldHint>
             </div>
 
-            {form.enablePublicMint && tokens.length < form.maxSupply && (
+            {(form.enablePublicMint || isBatch) && tokens.length < form.maxSupply && (
               <Button variant="outline" onClick={fillRowsToMaxSupply}>
                 Add {form.maxSupply - tokens.length} row(s) to match max supply
               </Button>
@@ -738,69 +874,85 @@ export function CreatePage() {
 
             <FieldError message={fieldErrors.tokens || stepError} />
           </Card>
+          <div id="artwork-step-end" className="h-px" aria-hidden />
+          <ScrollToEndFab itemCount={tokens.length} targetId="artwork-step-end" />
         </div>
       )}
 
       {step === 4 && (
-        <div className="space-y-6">
-          <Card className="space-y-4">
+        <div className="space-y-4 sm:space-y-6">
+          <Card className="space-y-4 p-4 sm:p-6">
             <div>
               <CardTitle>Preview your NFTs</CardTitle>
               <FieldHint>
-                Click through each token to verify the artwork and metadata JSON before saving. This is exactly what
-                collectors and marketplaces will see (royalties are handled separately on-chain).
+                <span className="sm:hidden">Swipe each image to check artwork and metadata before saving.</span>
+                <span className="hidden sm:inline">
+                  Click through each token to verify the artwork and metadata JSON before saving. Royalty fields are
+                  included automatically — <code className="text-slate-400">fee_recipient</code> becomes your collection
+                  contract at publish.
+                </span>
               </FieldHint>
             </div>
             <NftPreviewCarousel tokens={previewItems} collectionName={form.name.trim() || 'Collection'} />
           </Card>
 
-          <RoyaltyInfoPanel creatorWallet={address} royaltyBurnPercent={form.royaltyBurnPercent} />
+          <RoyaltyInfoPanel
+            compact
+            creatorWallet={address}
+            royaltyPercent={form.royaltyPercent}
+            royaltyBurnPercent={form.royaltyBurnPercent}
+          />
 
-          <Card className="space-y-3">
+          <Card className="space-y-3 p-4 sm:p-6">
             <CardTitle>Collection settings</CardTitle>
-            <CardDescription>{form.description || 'No description'}</CardDescription>
-            <dl className="grid gap-2 text-sm">
-              <div className="flex justify-between gap-4 border-b border-slate-800 py-2">
-                <dt className="text-slate-400">Collection</dt>
-                <dd>
-                  {form.name} ({form.symbol})
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4 border-b border-slate-800 py-2">
-                <dt className="text-slate-400">Mint mode</dt>
-                <dd>{isBatch ? 'Batch at publish' : 'Lazy mint'}</dd>
-              </div>
-              <div className="flex justify-between gap-4 border-b border-slate-800 py-2">
-                <dt className="text-slate-400">Max supply</dt>
-                <dd>{form.maxSupply}</dd>
-              </div>
-              <div className="flex justify-between gap-4 border-b border-slate-800 py-2">
-                <dt className="text-slate-400">Public mint</dt>
-                <dd>
-                  {form.enablePublicMint
-                    ? `${form.mintPriceEtn} ETN${Number(form.maxMintPerWallet) > 0 ? ` · max ${form.maxMintPerWallet}/wallet` : ''}`
-                    : 'Disabled'}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-4 border-b border-slate-800 py-2">
-                <dt className="text-slate-400">Minting panel</dt>
-                <dd>{form.enablePublicMint && form.showOnMintPanel ? 'Visible on home page' : 'Hidden'}</dd>
-              </div>
-              <div className="flex justify-between gap-4 border-b border-slate-800 py-2">
-                <dt className="text-slate-400">Royalties burn</dt>
-                <dd>{formatPercentDisplay(form.royaltyBurnPercent)}% of contract royalties</dd>
-              </div>
-              <div className="flex justify-between gap-4 border-b border-slate-800 py-2">
-                <dt className="text-slate-400">Mint CLUB burn</dt>
-                <dd>{form.burnOnMint ? `${formatPercentDisplay(form.mintBurnPercent)}% of mint price → CLUB burn` : 'Off'}</dd>
-              </div>
-              <div className="flex justify-between gap-4 py-2">
-                <dt className="text-slate-400">Artwork</dt>
-                <dd>
-                  {completeCount} complete / {form.maxSupply} required
-                  {form.enablePublicMint ? ' for public mint' : isBatch ? ' for batch mint' : ''}
-                </dd>
-              </div>
+            <CardDescription className="line-clamp-3">{form.description || 'No description'}</CardDescription>
+            <dl className="mt-2">
+              <PreviewSettingRow label="Collection" value={`${form.name} (${form.symbol})`} />
+              <PreviewSettingRow label="Mint mode" value={formatMintModeLabel(form.mintMode)} />
+              <PreviewSettingRow label="Max supply" value={form.maxSupply} />
+              <PreviewSettingRow
+                label="Paid public sale"
+                value={
+                  isBatch
+                    ? 'Not available (batch mint to your wallet)'
+                    : form.enablePublicMint
+                      ? `${form.mintPriceEtn} ETN${Number(form.maxMintPerWallet) > 0 ? ` · max ${form.maxMintPerWallet}/wallet` : ''}${form.randomPublicMint ? ' · random order' : ''}`
+                      : 'Disabled'
+                }
+              />
+              {!isBatch && (
+                <PreviewSettingRow
+                  label="Minting panel"
+                  value={form.enablePublicMint && form.showOnMintPanel ? 'Visible on home page' : 'Hidden'}
+                />
+              )}
+              <PreviewSettingRow
+                label="Resale royalty"
+                value={`${formatPercentDisplay(form.royaltyPercent)}% on resales`}
+              />
+              <PreviewSettingRow
+                label="Burn from resales"
+                value={`${formatPercentDisplay(form.royaltyBurnPercent)}% of resale income`}
+              />
+              <PreviewSettingRow
+                label="Burn on new mints"
+                value={
+                  isBatch
+                    ? 'Not available in batch mode'
+                    : form.burnOnMint
+                      ? `${formatPercentDisplay(form.mintBurnPercent)}% of mint price → CLUB`
+                      : 'Off'
+                }
+              />
+              <PreviewSettingRow
+                label="Artwork"
+                value={
+                  <>
+                    {completeCount} complete / {form.maxSupply} required
+                    {form.enablePublicMint ? ' for paid public sale' : isBatch ? ' for batch mint' : ''}
+                  </>
+                }
+              />
             </dl>
           </Card>
         </div>
@@ -812,17 +964,22 @@ export function CreatePage() {
           <CardDescription className="mt-2">
             {isEditingDraft
               ? 'Save your edits, then publish from the dashboard when you are ready.'
-              : 'Save your collection, then publish from the dashboard. We deploy the contract, upload metadata, and configure public mint (IMintable) for you.'}
+              : 'Save your collection, then publish from the dashboard. We deploy the contract, upload metadata, and configure paid public sale (IMintable) when enabled.'}
           </CardDescription>
-          <Button className="mt-4" onClick={saveDraft} disabled={loading || validatingImages}>
-            {loading ? 'Saving…' : validatingImages ? 'Validating images…' : isEditingDraft ? 'Save changes' : 'Save draft'}
+          <p className="mt-3 text-sm leading-relaxed text-amber-200/90">
+            Saving uploads every image and metadata file. Large collections can take several minutes — keep this tab
+            open until the progress bar finishes. On mobile, stay in the browser while MetaMask asks you to sign;
+            switching apps can disconnect your wallet mid-save.
+          </p>
+          <Button className="mt-4" onClick={saveDraft} disabled={loading || validatingImages || isSaving}>
+            {isSaving || loading ? 'Saving…' : validatingImages ? 'Validating images…' : isEditingDraft ? 'Save changes' : 'Save draft'}
           </Button>
-          {isEditingDraft && (
+          {isEditingDraft && !isSaving && (
             <Button variant="outline" className="mt-3 ml-3" asChild>
               <Link to="/dashboard">Back to dashboard</Link>
             </Button>
           )}
-          {isEditingDraft && (
+          {isEditingDraft && !isSaving && (
             <Button
               variant="outline"
               className="mt-3 ml-3 border-red-900/60 text-red-300 hover:bg-red-950/40 hover:text-red-200"
@@ -841,7 +998,7 @@ export function CreatePage() {
       <div className="flex justify-between">
         <Button
           variant="outline"
-          disabled={step === 0}
+          disabled={step === 0 || isSaving}
           onClick={() => {
             setStepError(null)
             setFieldErrors({})
@@ -851,11 +1008,19 @@ export function CreatePage() {
           Back
         </Button>
         {step < STEPS.length - 1 && (
-          <Button onClick={goNext} disabled={nextDisabled}>
+          <Button onClick={goNext} disabled={nextDisabled || isSaving}>
             {validatingImages ? 'Validating…' : 'Next'}
           </Button>
         )}
       </div>
+
+      <OperationLockOverlay
+        open={isSaving}
+        title={isEditingDraft ? 'Saving draft changes' : 'Saving your draft'}
+        description="We are uploading your collection images and metadata. This is normal for large collections and can take several minutes."
+        currentStep={saveLock.step}
+        progress={saveLock.progress}
+      />
       </div>
     </div>
   )

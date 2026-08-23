@@ -13,48 +13,87 @@ import { MetadataGuidancePanel } from '@/components/MetadataGuidancePanel'
 import { BulkTokenUpload } from '@/components/BulkTokenUpload'
 import { DraftTokenRow } from '@/components/DraftTokenRow'
 import { FieldHint } from '@/components/form-fields'
-import { type DraftToken } from '@/lib/create-collection-validation'
-import { buildDraftRowsFromDb, buildEditableTokenRows, dedupeDbTokensByTokenId, getRowTokenId } from '@/lib/draft-token-rows'
+import {
+  type DraftToken,
+  clampRoyaltyBurnPercent,
+  formatPercentDisplay,
+  isTokenRowEmpty,
+  MIN_ROYALTY_BURN_PERCENT,
+  sanitizePercentInput,
+} from '@/lib/create-collection-validation'
+import { buildDraftRowsFromDb, buildEditableTokenRows, dedupeDbTokensByTokenId, getRowTokenId, resolveBulkImportMaxSupply } from '@/lib/draft-token-rows'
 import { assertStoragePathForCollection } from '@/lib/storage-paths'
 import {
   buildEditCollectionForm,
+  collectionToForm,
   collectionToUpdatePayload,
   getCollectionEditChanges,
   saveDraftCollection,
 } from '@/lib/save-draft-collection'
-import { syncPublishedCollection } from '@/lib/publish-collection'
+import {
+  configureCollectionBurnConfig,
+  configureCollectionRoyalty,
+  syncPublishedCollection,
+} from '@/lib/publish-collection'
 import { updateCollection } from '@/lib/api'
 import { validateImageFileAsync } from '@/lib/validate-upload-image'
+import { Input, Label } from '@/components/ui/input'
+import { OperationLockOverlay, type WalletApprovalStep } from '@/components/OperationLockOverlay'
+import { useNavigationGuard } from '@/hooks/useNavigationGuard'
+import { activateWalletStep, completeWalletSteps, saveDraftProgress } from '@/lib/operation-progress'
 
 export function EditPage() {
-  const { address: contractAddress } = useParams()
+  const { collectionId, address: contractAddress } = useParams()
+  const collectionKey = collectionId ?? contractAddress
   const { address } = useAccount()
   const { isAuthenticated } = useWalletAuth()
   const { chain } = useNetwork()
   const queryClient = useQueryClient()
-  const { data: collection, refetch: refetchCollection } = useCollection(contractAddress)
+  const { data: collection, refetch: refetchCollection } = useCollection(collectionKey)
   const { data: dbTokens = [], refetch: refetchTokens, isFetched } = useCollectionTokens(collection?.id)
   const { writeContractAsync } = useWriteContract()
   const [tokens, setTokens] = useState<DraftToken[]>([])
   const [loaded, setLoaded] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [saveLock, setSaveLock] = useState<{
+    active: boolean
+    step: string
+    progress: number | null
+    walletSteps: WalletApprovalStep[]
+  }>({ active: false, step: '', progress: null, walletSteps: [] })
+  const isSaving = saveLock.active
+  useNavigationGuard(
+    isSaving,
+    'Your collection is still saving. Leaving now may lose unsaved changes.',
+  )
   const [showOnMintPanel, setShowOnMintPanel] = useState(false)
+  const [royaltyPercent, setRoyaltyPercent] = useState('5')
+  const [royaltyBurnPercent, setRoyaltyBurnPercent] = useState('2')
 
   useEffect(() => {
     if (!collection || !isFetched || loaded) return
     setTokens(buildDraftRowsFromDb(dbTokens, collection.max_supply, collection.id))
     setShowOnMintPanel(collection.show_on_mint_panel ?? false)
+    const form = collectionToForm(collection)
+    setRoyaltyPercent(form.royaltyPercent)
+    setRoyaltyBurnPercent(form.royaltyBurnPercent)
     setLoaded(true)
   }, [collection, dbTokens, isFetched, loaded])
 
   const editChanges = useMemo(() => {
     if (!collection || !loaded) return null
-    return getCollectionEditChanges(tokens, dbTokens, collection, showOnMintPanel)
-  }, [collection, dbTokens, loaded, showOnMintPanel, tokens])
+    return getCollectionEditChanges(tokens, dbTokens, collection, {
+      showOnMintPanel,
+      royaltyPercent,
+      royaltyBurnPercent,
+    })
+  }, [collection, dbTokens, loaded, royaltyBurnPercent, royaltyPercent, showOnMintPanel, tokens])
 
   const handleBulkImport = (imported: DraftToken[]) => {
     if (!collection) return
-    const importedRows = buildEditableTokenRows(imported, collection.max_supply)
+    const nextMaxSupply = resolveBulkImportMaxSupply(imported)
+    if (nextMaxSupply === 0) return
+
+    const importedRows = buildEditableTokenRows(imported, nextMaxSupply)
     const dedupedDbTokens = dedupeDbTokensByTokenId(dbTokens)
     const dbByTokenId = new Map(
       dedupedDbTokens
@@ -82,7 +121,11 @@ export function EditPage() {
       }
     })
     setTokens(merged)
-    toast.success('Imported data filled into editable rows below')
+    if (nextMaxSupply !== collection.max_supply) {
+      toast.message(`Imported ${imported.length} token(s). Max supply will be updated to ${nextMaxSupply} when you save.`)
+    } else {
+      toast.success('Imported data filled into editable rows below')
+    }
   }
 
   const handleSave = async () => {
@@ -98,28 +141,77 @@ export function EditPage() {
       return
     }
 
-    setLoading(true)
+    const walletSteps: WalletApprovalStep[] = []
+    if (editChanges.needsOnChainSync) {
+      walletSteps.push({ label: 'Sync on-chain metadata base URI' })
+      if (publicMintEnabled) {
+        walletSteps.push({ label: 'Update public mint settings' })
+      }
+    }
+    if (editChanges.needsRoyaltyOnChainSync) {
+      walletSteps.push({ label: 'Set marketplace royalty (EIP-2981)' })
+    }
+    if (editChanges.needsRoyaltyBurnOnChainSync) {
+      walletSteps.push({ label: 'Update royalties CLUB burn config' })
+    }
+
+    const { step: validateStep, progress: validateProgress } = saveDraftProgress(0, 0, 'validating')
+    setSaveLock({ active: true, step: validateStep, progress: validateProgress, walletSteps })
+
+    const onWalletStep = (label: string) => {
+      setSaveLock((prev) => ({
+        ...prev,
+        step: `Approve in your wallet: ${label}`,
+        walletSteps: activateWalletStep(prev.walletSteps, label),
+      }))
+    }
+
     try {
-      if (editChanges.metadataChanged) {
+      if (editChanges.metadataChanged || editChanges.royaltySettingsChanged) {
         for (let i = 0; i < tokens.length; i++) {
           const file = tokens[i].file
           if (!file) continue
           const imageError = await validateImageFileAsync(file)
           if (imageError) {
             toast.error(`Token #${getRowTokenId(tokens[i], i)}: ${imageError}`)
+            setSaveLock({ active: false, step: '', progress: null, walletSteps: [] })
             return
           }
         }
 
+        const activeTokens = tokens.filter((token) => !isTokenRowEmpty(token))
+        const resolvedMaxSupply = resolveBulkImportMaxSupply(activeTokens) || collection.max_supply
+        const activeCount = activeTokens.length
+
+        setSaveLock((prev) => ({
+          ...prev,
+          ...saveDraftProgress(0, activeCount, 'uploading'),
+        }))
         await saveDraftCollection(
           address,
           collection.id,
-          buildEditCollectionForm(collection, showOnMintPanel),
+          buildEditCollectionForm(collection, {
+            showOnMintPanel,
+            royaltyPercent,
+            royaltyBurnPercent,
+            maxSupply: resolvedMaxSupply,
+          }),
           tokens,
           dbTokens,
           collection,
+          (completed, total) => {
+            setSaveLock((prev) => ({
+              ...prev,
+              ...saveDraftProgress(completed, total, 'uploading'),
+            }))
+          },
         )
       } else if (editChanges.mintPanelChanged) {
+        setSaveLock((prev) => ({
+          ...prev,
+          step: 'Updating mint panel settings…',
+          progress: 50,
+        }))
         await updateCollection(
           address,
           collection.id,
@@ -129,7 +221,12 @@ export function EditPage() {
         )
       }
 
-      await queryClient.invalidateQueries({ queryKey: ['collection', contractAddress] })
+      setSaveLock((prev) => ({
+        ...prev,
+        ...saveDraftProgress(0, 0, 'finishing'),
+      }))
+
+      await queryClient.invalidateQueries({ queryKey: ['collection', collectionKey] })
       await queryClient.invalidateQueries({ queryKey: ['collection-tokens', collection.id] })
       await queryClient.invalidateQueries({ queryKey: ['mint-panel-collections'] })
 
@@ -139,8 +236,59 @@ export function EditPage() {
       setShowOnMintPanel(freshCollection?.show_on_mint_panel ?? showOnMintPanel)
 
       if (editChanges.needsOnChainSync && freshCollection) {
-        toast.message('Syncing metadata on-chain…')
+        setSaveLock((prev) => ({
+          ...prev,
+          step: 'Syncing metadata on-chain — approve wallet transaction(s)…',
+          progress: 85,
+        }))
+        onWalletStep('Sync on-chain metadata base URI')
         await syncPublishedCollection(address, freshCollection, writeContractAsync, chain.id)
+      }
+
+      if (freshCollection?.contract_address) {
+        const onChainAddress = freshCollection.contract_address as `0x${string}`
+        if (editChanges.needsRoyaltyOnChainSync) {
+          setSaveLock((prev) => ({
+            ...prev,
+            step: 'Set marketplace royalty — approve in your wallet…',
+            progress: 92,
+          }))
+          onWalletStep('Set marketplace royalty (EIP-2981)')
+          await configureCollectionRoyalty(
+            writeContractAsync,
+            onChainAddress,
+            freshCollection.royalty_bps ?? 500,
+            chain.id,
+            { onWalletStep },
+          )
+        }
+        if (editChanges.needsRoyaltyBurnOnChainSync) {
+          setSaveLock((prev) => ({
+            ...prev,
+            step: 'Update royalties burn config — approve in your wallet…',
+            progress: 96,
+          }))
+          onWalletStep('Update royalties CLUB burn config')
+          await configureCollectionBurnConfig(
+            writeContractAsync,
+            onChainAddress,
+            freshCollection,
+            chain.id,
+            freshCollection.royalty_burn_bps ?? 0,
+          )
+        }
+      }
+
+      setSaveLock((prev) => ({
+        ...prev,
+        walletSteps: completeWalletSteps(prev.walletSteps),
+      }))
+
+      if (
+        editChanges.needsOnChainSync ||
+        editChanges.needsRoyaltyOnChainSync ||
+        editChanges.needsRoyaltyBurnOnChainSync
+      ) {
         toast.success('Changes saved and synced on-chain')
       } else {
         toast.success('Changes saved')
@@ -148,7 +296,7 @@ export function EditPage() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Save failed')
     } finally {
-      setLoading(false)
+      setSaveLock({ active: false, step: '', progress: null, walletSteps: [] })
     }
   }
 
@@ -175,6 +323,14 @@ export function EditPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
+      <OperationLockOverlay
+        open={isSaving}
+        title="Saving your changes"
+        description="We are uploading images and metadata. Large collections can take several minutes. Published collections may also require wallet approvals for on-chain updates."
+        currentStep={saveLock.step}
+        progress={saveLock.progress}
+        walletSteps={saveLock.walletSteps.length > 0 ? saveLock.walletSteps : undefined}
+      />
       <div>
         <h1 className="text-2xl font-bold">Edit {collection.name}</h1>
         <p className="text-sm text-slate-400">
@@ -193,12 +349,12 @@ export function EditPage() {
         <CardDescription>
           Control whether this collection appears on the launchpad home page for public wallet minting.
         </CardDescription>
-        <label className={`flex items-start gap-3 ${!publicMintEnabled || loading ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
+        <label className={`flex items-start gap-3 ${!publicMintEnabled || isSaving ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
           <input
             type="checkbox"
             className="mt-1"
             checked={showOnMintPanel}
-            disabled={!publicMintEnabled || loading || !isPublished}
+            disabled={!publicMintEnabled || isSaving || !isPublished}
             onChange={(e) => setShowOnMintPanel(e.target.checked)}
           />
           <span>
@@ -219,7 +375,50 @@ export function EditPage() {
         </label>
       </Card>
 
-      <BulkTokenUpload maxSupply={collection.max_supply} onImport={handleBulkImport} />
+      <Card className="space-y-4">
+        <CardTitle>Royalties</CardTitle>
+        <CardDescription>
+          Marketplace resale royalty is enforced on-chain via EIP-2981. Royalties burn applies when you withdraw from
+          the contract.
+        </CardDescription>
+        <div>
+          <Label htmlFor="edit-royalty-percent">Resale royalty (%)</Label>
+          <Input
+            id="edit-royalty-percent"
+            type="number"
+            min={0}
+            max={100}
+            step="0.01"
+            value={royaltyPercent}
+            onChange={(e) => setRoyaltyPercent(sanitizePercentInput(e.target.value))}
+            onBlur={() => setRoyaltyPercent(formatPercentDisplay(royaltyPercent))}
+            disabled={isSaving}
+          />
+          <FieldHint>
+            0–100% on secondary sales. Leave room for the marketplace fee (~3% on ElectroSwap).{' '}
+            {isPublished ? 'Saved to DB and synced on-chain when you click Save.' : 'Applied on publish.'}
+          </FieldHint>
+        </div>
+        <div>
+          <Label htmlFor="edit-royalty-burn-percent">Burn from resales (%)</Label>
+          <Input
+            id="edit-royalty-burn-percent"
+            type="number"
+            min={MIN_ROYALTY_BURN_PERCENT}
+            max={100}
+            step="0.01"
+            value={royaltyBurnPercent}
+            onChange={(e) => setRoyaltyBurnPercent(sanitizePercentInput(e.target.value))}
+            onBlur={() => setRoyaltyBurnPercent(clampRoyaltyBurnPercent(royaltyBurnPercent))}
+            disabled={isSaving}
+          />
+          <FieldHint>
+            {MIN_ROYALTY_BURN_PERCENT}–100% of contract royalties swapped to CLUB and burned on resale income.
+          </FieldHint>
+        </div>
+      </Card>
+
+      <BulkTokenUpload maxSupply={collection.max_supply} onImport={handleBulkImport} disabled={isSaving} />
 
       <Card className="space-y-4">
         <CardTitle>Token metadata</CardTitle>
@@ -231,6 +430,7 @@ export function EditPage() {
             token={token}
             rowIndex={i}
             fieldErrors={{}}
+            disabled={isSaving}
             onChange={(next) => {
               const updated = [...tokens]
               updated[i] = next
@@ -241,12 +441,18 @@ export function EditPage() {
       </Card>
 
       <div className="flex flex-wrap gap-2">
-        <Button onClick={handleSave} disabled={loading || !editChanges?.hasChanges}>
-          {loading ? 'Saving…' : 'Save'}
+        <p className="w-full text-sm leading-relaxed text-amber-200/90">
+          Saving uploads every image and metadata file. Large collections can take several minutes — keep this tab open
+          until the progress bar finishes.
+        </p>
+        <Button onClick={handleSave} disabled={isSaving || !editChanges?.hasChanges}>
+          {isSaving ? 'Saving…' : 'Save'}
         </Button>
-        <Button variant="outline" asChild>
-          <Link to="/dashboard">Back to dashboard</Link>
-        </Button>
+        {!isSaving && (
+          <Button variant="outline" asChild>
+            <Link to="/dashboard">Back to dashboard</Link>
+          </Button>
+        )}
       </div>
     </div>
   )

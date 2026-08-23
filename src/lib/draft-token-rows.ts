@@ -1,7 +1,15 @@
 import type { DraftToken } from '@/lib/create-collection-validation'
 import type { CollectionToken } from '@/types/database'
 import type { NftAttribute } from '@/lib/nft-metadata'
+import { resolveBulkImportMaxSupplyFromIds } from '@/lib/collection-token-readiness'
 import { assertStoragePathForCollection } from '@/lib/storage-paths'
+
+export function resolveBulkImportMaxSupply(imported: DraftToken[]): number {
+  const tokenIds = imported
+    .map((token) => token.tokenId)
+    .filter((id): id is number => id != null && id > 0)
+  return resolveBulkImportMaxSupplyFromIds(tokenIds)
+}
 
 export function getRowTokenId(token: DraftToken, rowIndex: number): number {
   return token.tokenId ?? rowIndex + 1
@@ -36,6 +44,17 @@ export function dedupeDbTokensByTokenId(tokens: CollectionToken[]): CollectionTo
   )
 }
 
+/** Empty slot for max-supply padding — must not look "started" to validation. */
+export function createEmptyTokenRow(tokenId: number): DraftToken {
+  return {
+    tokenId,
+    name: '',
+    description: '',
+    file: null,
+    attributes: [],
+  }
+}
+
 /** Pad sparse bulk imports into editable rows keyed by filename token id. */
 export function buildEditableTokenRows(imported: DraftToken[], maxSupply: number): DraftToken[] {
   if (imported.length === 0) return []
@@ -46,21 +65,13 @@ export function buildEditableTokenRows(imported: DraftToken[], maxSupply: number
   }))
 
   const highestId = Math.max(...withIds.map((token) => token.tokenId!))
-  const rowCount = Math.min(maxSupply, Math.max(highestId, withIds.length))
+  const rowCount = Math.max(maxSupply, highestId, withIds.length)
 
   const byId = new Map(withIds.map((token) => [token.tokenId!, token]))
   const rows: DraftToken[] = []
 
   for (let id = 1; id <= rowCount; id++) {
-    rows.push(
-      byId.get(id) ?? {
-        tokenId: id,
-        name: `Token #${id}`,
-        description: '',
-        file: null,
-        attributes: [],
-      },
-    )
+    rows.push(byId.get(id) ?? createEmptyTokenRow(id))
   }
 
   return rows
@@ -96,7 +107,7 @@ export function buildDraftRowsFromDb(
   const deduped = dedupeDbTokensByTokenId(dbTokens)
 
   if (deduped.length === 0) {
-    return [{ tokenId: 1, name: 'Token #1', description: '', file: null, attributes: [] }]
+    return [createEmptyTokenRow(1)]
   }
 
   const drafts = deduped.map((token) => dbTokenToDraft(token, collectionId))
@@ -110,15 +121,7 @@ export function buildDraftRowsFromDb(
 
   const rows: DraftToken[] = []
   for (let id = 1; id <= rowCount; id++) {
-    rows.push(
-      byId.get(id) ?? {
-        tokenId: id,
-        name: `Token #${id}`,
-        description: '',
-        file: null,
-        attributes: [],
-      },
-    )
+    rows.push(byId.get(id) ?? createEmptyTokenRow(id))
   }
 
   return rows.slice(0, Math.max(rowCount, 1))

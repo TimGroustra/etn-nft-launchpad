@@ -1,9 +1,37 @@
+import {
+  analyzeCollectionTokenCoverage,
+  formatTokenCoverageError,
+} from '@/lib/collection-token-readiness'
 import { validateImageFileSync } from '@/lib/validate-upload-image'
 import { validateAttributesList } from '@/lib/metadata-import'
 import { getRowTokenId } from '@/lib/draft-token-rows'
 import type { NftAttribute } from '@/lib/nft-metadata'
 
 export type MintMode = 'lazy' | 'batch'
+
+export function formatMintModeLabel(mode: MintMode): string {
+  return mode === 'batch' ? 'Batch at publish' : 'Public minting'
+}
+
+/** Rough % the seller keeps after your resale royalty and a marketplace fee (e.g. 96% + 3% → 1%). */
+export function estimateSellerRemainderPercent(
+  royaltyPercent: number,
+  marketplaceFeePercent = TYPICAL_MARKETPLACE_FEE_PERCENT,
+): number {
+  if (!Number.isFinite(royaltyPercent)) return 0
+  return Math.max(0, 100 - royaltyPercent - marketplaceFeePercent)
+}
+
+export function clampRoyaltyBurnPercent(percent: string): string {
+  const num = Number(formatPercentDisplay(percent)) || 0
+  const clamped = Math.max(MIN_ROYALTY_BURN_PERCENT, Math.min(100, num))
+  return formatPercentDisplay(String(clamped))
+}
+
+export function royaltyBurnBpsFromPercent(percent: string): number {
+  const num = Number(clampRoyaltyBurnPercent(percent)) || MIN_ROYALTY_BURN_PERCENT
+  return Math.min(10_000, Math.round(num * 100))
+}
 
 export type CreateCollectionForm = {
   name: string
@@ -14,9 +42,11 @@ export type CreateCollectionForm = {
   mintBurnPercent: string
   burnOnMint: boolean
   royaltyBurnPercent: string
+  royaltyPercent: string
   mintPriceEtn: string
   maxMintPerWallet: string
   enablePublicMint: boolean
+  randomPublicMint: boolean
   showOnMintPanel: boolean
 }
 
@@ -37,6 +67,11 @@ export type ValidationIssue = {
 
 export const MIN_PUBLIC_MINT_ETN = 1
 export const MAX_SUPPLY = 100_000
+/** Typical ElectroSwap marketplace fee on secondary sales — used for seller-payout hints only. */
+export const TYPICAL_MARKETPLACE_FEE_PERCENT = 3
+/** Minimum share of resale royalties swapped to CLUB for new/edited collections. */
+export const MIN_ROYALTY_BURN_PERCENT = 2
+export const MIN_ROYALTY_BURN_BPS = 200
 export const TOKEN_NAME_MAX = 80
 export const TOKEN_DESC_MAX = 2000
 export const COLLECTION_NAME_MAX = 80
@@ -130,40 +165,71 @@ export function getPartialTokens(tokens: DraftToken[]): DraftToken[] {
   return tokens.filter((t) => !isTokenRowEmpty(t) && !isTokenRowComplete(t))
 }
 
+function draftTokensToSavedShape(tokens: DraftToken[]): SavedTokenShape[] {
+  return tokens.map((token, index) => ({
+    token_id: getRowTokenId(token, index),
+    name: token.name,
+    image_storage_path: token.file ? 'pending-upload' : (token.existingImagePath ?? null),
+  }))
+}
+
+function validateDraftTokenCoverage(
+  form: CreateCollectionForm,
+  tokens: DraftToken[],
+  context: 'save' | 'publish',
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = []
+  const savedShape = draftTokensToSavedShape(tokens).map((token) => ({
+    ...token,
+    image_storage_path: token.image_storage_path === 'pending-upload' ? 'ready' : token.image_storage_path,
+  }))
+  const analysis = analyzeCollectionTokenCoverage(form.maxSupply, savedShape)
+
+  if (form.enablePublicMint && analysis.readyCount < form.maxSupply) {
+    const message = formatTokenCoverageError(form.maxSupply, analysis, context)
+    if (message) issues.push({ field: 'tokens', message })
+  } else if (form.mintMode === 'batch' && analysis.readyCount !== form.maxSupply) {
+    issues.push({
+      field: 'tokens',
+      message: `Batch mint requires artwork for all ${form.maxSupply} tokens (${analysis.readyCount} ready). ${formatTokenCoverageError(form.maxSupply, analysis, context) ?? ''}`.trim(),
+    })
+  }
+
+  return issues
+}
+
 export function countPublicMintSlots(form: CreateCollectionForm, tokens: DraftToken[]): number {
   const complete = getCompleteTokens(tokens).length
   return Math.max(0, form.maxSupply - complete)
 }
 
-export function canEnablePublicMint(form: CreateCollectionForm, tokens: DraftToken[]): boolean {
-  if (form.mintMode === 'batch') {
-    return getCompleteTokens(tokens).length < form.maxSupply
-  }
-  return true
+export function canEnablePublicMint(form: CreateCollectionForm): boolean {
+  return form.mintMode !== 'batch'
 }
 
-export function sanitizeFormForMode(form: CreateCollectionForm, tokens: DraftToken[]): CreateCollectionForm {
+export function sanitizeFormForMode(form: CreateCollectionForm, _tokens: DraftToken[]): CreateCollectionForm {
   const next = { ...form }
-  const completeCount = getCompleteTokens(tokens).length
 
   if (next.burnOnMint && !next.enablePublicMint) {
     next.burnOnMint = false
     next.mintBurnPercent = '0'
   }
 
-  if (next.mintMode === 'batch' && !canEnablePublicMint(next, tokens)) {
+  if (next.mintMode === 'batch') {
     next.enablePublicMint = false
-  }
-
-  if (next.mintMode === 'batch' && !next.enablePublicMint && completeCount > 0) {
-    next.maxSupply = completeCount
+    next.showOnMintPanel = false
+    next.burnOnMint = false
+    next.mintBurnPercent = '0'
   }
 
   if (!next.enablePublicMint) {
     next.burnOnMint = false
     next.mintBurnPercent = '0'
     next.showOnMintPanel = false
+    next.randomPublicMint = false
   }
+
+  next.royaltyBurnPercent = clampRoyaltyBurnPercent(next.royaltyBurnPercent)
 
   return next
 }
@@ -252,42 +318,40 @@ function validateMintingRules(
       })
     }
 
-    if (requireTokens) {
-      if (form.mintMode === 'batch' && completeCount >= form.maxSupply) {
-        issues.push({
-          field: 'enablePublicMint',
-          message: 'Public mint is unavailable when batch mint uses the entire max supply. Lower artwork count or raise max supply.',
-        })
-      }
-
-      if (completeCount < form.maxSupply) {
+    if (requireTokens && completeCount < form.maxSupply) {
+      const coverageIssues = validateDraftTokenCoverage(form, tokens, 'save')
+      if (coverageIssues.length > 0) {
+        issues.push(...coverageIssues)
+      } else {
+        const emptySlots = form.maxSupply - completeCount
         issues.push({
           field: 'tokens',
-          message: `Public mint requires metadata for all ${form.maxSupply} tokens. Upload ${form.maxSupply - completeCount} more complete row(s), or lower max supply.`,
+          message: `Public mint requires metadata for all ${form.maxSupply} tokens (${completeCount} complete). Upload ${emptySlots} more token(s) with name + image, or lower max supply.`,
         })
       }
-    }
-  } else if (requireTokens && form.mintMode === 'batch') {
-    if (completeCount !== form.maxSupply) {
-      issues.push({
-        field: 'maxSupply',
-        message: `Batch mint without public sale requires exactly ${completeCount || 'one'} artwork row(s) matching max supply.`,
-      })
     }
   }
 
   if (requireTokens && form.mintMode === 'lazy' && !form.enablePublicMint && completeCount < 1) {
     issues.push({
       field: 'tokens',
-      message: 'Lazy mint requires at least one complete token (name + image).',
+      message: 'Public minting requires at least one complete token (name + image).',
     })
   }
 
   if (requireTokens && form.mintMode === 'batch') {
-    if (completeCount < 1) {
-      issues.push({ field: 'tokens', message: 'Batch mint requires at least one complete token (name + image).' })
+    if (form.enablePublicMint) {
+      issues.push({
+        field: 'enablePublicMint',
+        message: 'Paid public sale is not available in batch mode. Use public minting to sell via IMintable.',
+      })
     }
-    if (completeCount > form.maxSupply) {
+    if (completeCount !== form.maxSupply) {
+      issues.push({
+        field: 'tokens',
+        message: `Batch mint requires exactly ${form.maxSupply} complete tokens (name + image). ${completeCount} ready.`,
+      })
+    } else if (completeCount > form.maxSupply) {
       issues.push({
         field: 'tokens',
         message: `You have ${completeCount} tokens but max supply is ${form.maxSupply}. Remove extras or increase max supply.`,
@@ -334,10 +398,10 @@ export function validateCreateStep(
   if (step === 1) {
     issues.push(...validateMintingRules(f, tokens, false))
 
-    if (f.enablePublicMint && !canEnablePublicMint(f, tokens) && f.mintMode === 'batch') {
+    if (f.mintMode === 'batch' && f.enablePublicMint) {
       issues.push({
         field: 'enablePublicMint',
-        message: 'Add fewer tokens than max supply before enabling public mint in batch mode.',
+        message: 'Paid public sale is not available in batch mode. Use public minting to sell via IMintable.',
       })
     }
 
@@ -350,9 +414,20 @@ export function validateCreateStep(
   }
 
   if (step === 2) {
+    const marketplaceRoyalty = Number(f.royaltyPercent)
+    if (!Number.isFinite(marketplaceRoyalty) || marketplaceRoyalty < 0 || marketplaceRoyalty > 100) {
+      issues.push({
+        field: 'royaltyPercent',
+        message: 'Resale royalty must be between 0 and 100%.',
+      })
+    }
+
     const royalty = Number(f.royaltyBurnPercent)
-    if (!Number.isFinite(royalty) || royalty < 0 || royalty > 100) {
-      issues.push({ field: 'royaltyBurnPercent', message: 'Royalties burn must be between 0 and 100%.' })
+    if (!Number.isFinite(royalty) || royalty < MIN_ROYALTY_BURN_PERCENT || royalty > 100) {
+      issues.push({
+        field: 'royaltyBurnPercent',
+        message: `Burn from resales must be between ${MIN_ROYALTY_BURN_PERCENT}% and 100%.`,
+      })
     }
 
     if (f.burnOnMint && !f.enablePublicMint) {
@@ -439,28 +514,35 @@ export function validateCollectionForPublish(
   collection: SavedCollectionShape,
   tokens: SavedTokenShape[],
 ): ValidationIssue[] {
-  const complete = tokens.filter((t) => t.name.trim() && t.image_storage_path)
   const publicMint = Number(collection.mint_price_etn ?? 0) > 0
   const issues: ValidationIssue[] = []
+  const analysis = analyzeCollectionTokenCoverage(collection.max_supply, tokens)
 
-  if (publicMint && complete.length < collection.max_supply) {
+  if (publicMint && analysis.readyCount < collection.max_supply) {
+    const message = formatTokenCoverageError(collection.max_supply, analysis, 'publish')
+    if (message) issues.push({ field: 'tokens', message })
+  }
+
+  if (collection.mint_mode === 'batch' && publicMint) {
     issues.push({
-      field: 'tokens',
-      message: `Public mint requires metadata for all ${collection.max_supply} tokens (${complete.length} ready). Add artwork in the editor before publishing.`,
+      field: 'enablePublicMint',
+      message: 'Batch mint collections cannot use paid public sale. Switch to public minting or disable paid sale before publishing.',
     })
   }
 
-  if (collection.mint_mode === 'batch' && !publicMint && complete.length !== collection.max_supply) {
+  if (collection.mint_mode === 'batch' && analysis.readyCount !== collection.max_supply) {
     issues.push({
       field: 'tokens',
-      message: `Batch mint requires exactly ${collection.max_supply} tokens with images (${complete.length} ready).`,
+      message: `Batch mint requires artwork for all ${collection.max_supply} tokens (${analysis.readyCount} ready). ${
+        formatTokenCoverageError(collection.max_supply, analysis, 'publish') ?? ''
+      }`.trim(),
     })
   }
 
-  if (collection.mint_mode === 'lazy' && !publicMint && complete.length < 1) {
+  if (collection.mint_mode === 'lazy' && !publicMint && analysis.readyCount < 1) {
     issues.push({
       field: 'tokens',
-      message: 'Lazy mint requires at least one token with artwork before publishing.',
+      message: 'Public minting requires at least one token with artwork before publishing.',
     })
   }
 

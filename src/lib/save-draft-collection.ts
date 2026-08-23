@@ -1,9 +1,32 @@
 import { addToken, deleteToken, updateCollection, updateToken, uploadImage } from '@/lib/api'
+
+const SAVE_CONCURRENCY = 4
+
+async function mapWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<void>,
+): Promise<void> {
+  if (items.length === 0) return
+  let nextIndex = 0
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex++
+      await fn(items[index], index)
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()))
+}
 import {
+  clampRoyaltyBurnPercent,
   getTokenAttributesForSave,
   isTokenRowEmpty,
   MIN_PUBLIC_MINT_ETN,
+  MIN_ROYALTY_BURN_PERCENT,
   percentToBps,
+  royaltyBurnBpsFromPercent,
   sanitizeFormForMode,
   type CreateCollectionForm,
   type DraftToken,
@@ -16,8 +39,11 @@ import type { Collection, CollectionToken } from '@/types/database'
 export type CollectionEditChanges = {
   mintPanelChanged: boolean
   metadataChanged: boolean
+  royaltySettingsChanged: boolean
   hasChanges: boolean
   needsOnChainSync: boolean
+  needsRoyaltyOnChainSync: boolean
+  needsRoyaltyBurnOnChainSync: boolean
 }
 
 function normalizeDbAttributes(attributes: unknown): NftAttribute[] {
@@ -39,9 +65,18 @@ export function getCollectionEditChanges(
   tokens: DraftToken[],
   dbTokens: CollectionToken[],
   collection: Collection,
-  showOnMintPanel: boolean,
+  options: {
+    showOnMintPanel: boolean
+    royaltyPercent: string
+    royaltyBurnPercent: string
+  },
 ): CollectionEditChanges {
-  const mintPanelChanged = showOnMintPanel !== Boolean(collection.show_on_mint_panel)
+  const mintPanelChanged = options.showOnMintPanel !== Boolean(collection.show_on_mint_panel)
+  const royaltyBps = percentToBps(Number(options.royaltyPercent))
+  const royaltyBurnBps = royaltyBurnBpsFromPercent(options.royaltyBurnPercent)
+  const royaltySettingsChanged =
+    royaltyBps !== (collection.royalty_bps ?? 500) ||
+    royaltyBurnBps !== (collection.royalty_burn_bps ?? 0)
 
   const deduped = dedupeDbTokensByTokenId(dbTokens)
   const dbByTokenId = new Map(
@@ -88,19 +123,31 @@ export function getCollectionEditChanges(
     }
   }
 
-  const hasChanges = mintPanelChanged || metadataChanged
+  const hasChanges = mintPanelChanged || metadataChanged || royaltySettingsChanged
   const needsOnChainSync = Boolean(collection.contract_address) && metadataChanged
+  const needsRoyaltyOnChainSync =
+    Boolean(collection.contract_address) && royaltyBps !== (collection.royalty_bps ?? 500)
+  const needsRoyaltyBurnOnChainSync =
+    Boolean(collection.contract_address) && royaltyBurnBps !== (collection.royalty_burn_bps ?? 0)
 
-  return { mintPanelChanged, metadataChanged, hasChanges, needsOnChainSync }
+  return {
+    mintPanelChanged,
+    metadataChanged,
+    royaltySettingsChanged,
+    hasChanges,
+    needsOnChainSync,
+    needsRoyaltyOnChainSync,
+    needsRoyaltyBurnOnChainSync,
+  }
 }
 
 export function buildEditCollectionForm(
   collection: Collection,
-  showOnMintPanel: boolean,
+  overrides: Partial<CreateCollectionForm> = {},
 ): CreateCollectionForm {
   return {
     ...collectionToForm(collection),
-    showOnMintPanel,
+    ...overrides,
   }
 }
 
@@ -111,6 +158,7 @@ export async function saveDraftCollection(
   tokens: DraftToken[],
   existingDbTokens: CollectionToken[] = [],
   collectionMeta?: Pick<Collection, 'chain_id'>,
+  onProgress?: (completed: number, total: number) => void,
 ) {
   const sanitized = sanitizeFormForMode(form, tokens)
   const dedupedExisting = dedupeDbTokensByTokenId(existingDbTokens)
@@ -129,19 +177,28 @@ export async function saveDraftCollection(
     maxSupply: sanitized.maxSupply,
     mintBurnBps: percentToBps(Number(sanitized.mintBurnPercent)),
     burnOnMint: sanitized.burnOnMint,
-    royaltyBurnBps: Math.min(10000, Math.max(0, Math.round(Number(sanitized.royaltyBurnPercent) * 100))),
+    royaltyBurnBps: royaltyBurnBpsFromPercent(sanitized.royaltyBurnPercent),
+    royaltyBps: percentToBps(Number(sanitized.royaltyPercent)),
     mintPriceEtn: sanitized.enablePublicMint ? Number(sanitized.mintPriceEtn) : 0,
     maxMintPerWallet: Number(sanitized.maxMintPerWallet) || 0,
     showOnMintPanel: sanitized.enablePublicMint && sanitized.showOnMintPanel,
+    randomPublicMint: sanitized.enablePublicMint && sanitized.randomPublicMint,
     chainId: collectionMeta?.chain_id ?? undefined,
   })
 
   const keptByTokenId = new Map<number, string>()
+  const activeRows: { token: DraftToken; rowIndex: number }[] = []
 
   for (let rowIndex = 0; rowIndex < tokens.length; rowIndex++) {
     const token = tokens[rowIndex]
     if (isTokenRowEmpty(token)) continue
+    activeRows.push({ token, rowIndex })
+  }
 
+  onProgress?.(0, activeRows.length)
+  let completed = 0
+
+  await mapWithConcurrency(activeRows, SAVE_CONCURRENCY, async ({ token, rowIndex }) => {
     const tokenId = getRowTokenId(token, rowIndex)
     let imagePath = token.existingImagePath ?? undefined
 
@@ -182,14 +239,16 @@ export async function saveDraftCollection(
       })
       keptByTokenId.set(tokenId, created.id)
     }
-  }
 
-  for (const existing of existingDbTokens) {
+    completed += 1
+    onProgress?.(completed, activeRows.length)
+  })
+
+  for (const existing of dedupedExisting) {
     if (existing.token_id == null) continue
     const keptId = keptByTokenId.get(existing.token_id)
-    if (keptId && existing.id !== keptId) {
-      await deleteToken(walletAddress, existing.id)
-    }
+    if (keptId === existing.id) continue
+    await deleteToken(walletAddress, existing.id)
   }
 }
 
@@ -203,9 +262,11 @@ export function collectionToUpdatePayload(collection: Collection, overrides: Rec
     mintBurnBps: collection.mint_burn_bps ?? 0,
     burnOnMint: collection.burn_on_mint,
     royaltyBurnBps: collection.royalty_burn_bps ?? 0,
+    royaltyBps: collection.royalty_bps ?? 500,
     mintPriceEtn: Number(collection.mint_price_etn ?? 0),
     maxMintPerWallet: collection.max_mint_per_wallet ?? 0,
     showOnMintPanel: collection.show_on_mint_panel ?? false,
+    randomPublicMint: collection.random_public_mint ?? false,
     chainId: collection.chain_id,
     ...overrides,
   }
@@ -215,6 +276,7 @@ export function collectionToForm(collection: Collection): CreateCollectionForm {
   const publicMint = Number(collection.mint_price_etn ?? 0) > 0
   const mintBurnBps = Number(collection.mint_burn_bps ?? 0)
   const royaltyBurnBps = Number(collection.royalty_burn_bps ?? 0)
+  const royaltyBps = Number(collection.royalty_bps ?? 500)
 
   return {
     name: collection.name,
@@ -224,10 +286,14 @@ export function collectionToForm(collection: Collection): CreateCollectionForm {
     maxSupply: Number(collection.max_supply),
     mintBurnPercent: mintBurnBps ? String(mintBurnBps / 100) : '0',
     burnOnMint: collection.burn_on_mint,
-    royaltyBurnPercent: royaltyBurnBps ? String(royaltyBurnBps / 100) : '0',
+    royaltyBurnPercent: clampRoyaltyBurnPercent(
+      royaltyBurnBps ? String(royaltyBurnBps / 100) : String(MIN_ROYALTY_BURN_PERCENT),
+    ),
+    royaltyPercent: royaltyBps ? String(royaltyBps / 100) : '5',
     mintPriceEtn: publicMint ? String(Number(collection.mint_price_etn)) : String(MIN_PUBLIC_MINT_ETN),
     maxMintPerWallet: String(Number(collection.max_mint_per_wallet ?? 0)),
     enablePublicMint: publicMint,
+    randomPublicMint: publicMint && (collection.random_public_mint ?? false),
     showOnMintPanel: collection.show_on_mint_panel ?? false,
   }
 }

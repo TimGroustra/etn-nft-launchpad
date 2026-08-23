@@ -1,4 +1,5 @@
-import { defineChain, parseEventLogs, type TransactionReceipt } from 'viem'
+import type { CustomRpcUrlMap } from '@reown/appkit-common'
+import { decodeEventLog, defineChain, getAddress, parseEventLogs, type Log, type PublicClient, type TransactionReceipt } from 'viem'
 
 export const electroneum = defineChain({
   id: 52014,
@@ -29,6 +30,16 @@ export const electroneumTestnet = defineChain({
 export type NetworkKey = 'mainnet' | 'testnet'
 
 export const SUPPORTED_CHAINS = [electroneum, electroneumTestnet] as const
+
+function toCustomRpcUrls(chain: (typeof SUPPORTED_CHAINS)[number]): CustomRpcUrlMap[keyof CustomRpcUrlMap] {
+  return chain.rpcUrls.default.http.map((url) => ({ url }))
+}
+
+/** Reown AppKit balance + wagmi transports for Electroneum RPCs (not in WalletConnect defaults). */
+export const CUSTOM_RPC_URLS: CustomRpcUrlMap = {
+  [`eip155:${electroneum.id}`]: toCustomRpcUrls(electroneum),
+  [`eip155:${electroneumTestnet.id}`]: toCustomRpcUrls(electroneumTestnet),
+}
 
 export function getChainKey(chainId: number): NetworkKey {
   return chainId === electroneumTestnet.id ? 'testnet' : 'mainnet'
@@ -149,6 +160,13 @@ export const FACTORY_ABI = [
   {
     inputs: [],
     name: 'publishFee',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'payer', type: 'address' }],
+    name: 'requiredPublishFee',
     outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'view',
     type: 'function',
@@ -309,6 +327,29 @@ export const NFT_ABI = [
     type: 'function',
   },
   {
+    inputs: [{ name: 'random_', type: 'bool' }],
+    name: 'setRandomPublicMint',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'randomPublicMint',
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'tokenId', type: 'uint256' },
+      { indexed: true, name: 'metadataIndex', type: 'uint256' },
+    ],
+    name: 'PublicMintAssigned',
+    type: 'event',
+  },
+  {
     inputs: [{ name: 'mintCount', type: 'uint256' }],
     name: 'mint',
     outputs: [],
@@ -393,6 +434,40 @@ export const NFT_ABI = [
   },
   {
     inputs: [
+      { name: 'receiver', type: 'address' },
+      { name: 'feeNumerator', type: 'uint96' },
+    ],
+    name: 'setDefaultRoyalty',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'tokenId', type: 'uint256' },
+      { name: 'salePrice', type: 'uint256' },
+    ],
+    name: 'royaltyInfo',
+    outputs: [
+      { name: 'receiver', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'burnConfig',
+    outputs: [
+      { name: 'mintBurnBps', type: 'uint96' },
+      { name: 'burnOnMint', type: 'bool' },
+      { name: 'royaltyBurnBps', type: 'uint96' },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [
       {
         name: 'config_',
         type: 'tuple',
@@ -429,25 +504,166 @@ export const NFT_ABI = [
     stateMutability: 'view',
     type: 'function',
   },
+  {
+    inputs: [],
+    name: 'totalSupply',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'feeReceiver',
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'MAX_SUPPLY',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'MAX_MINT_PER_WALLET',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'PRICE',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
 ] as const
 
+export type ParsedMintAssignment = {
+  onChainTokenId: number
+  metadataIndex: number
+}
+
+/** Resolve on-chain token IDs and metadata indices from a public mint transaction. */
+export function parsePublicMintReceipt(
+  receipt: TransactionReceipt,
+  contractAddress: string,
+  mintedBefore: number,
+  quantity: number,
+): ParsedMintAssignment[] {
+  const normalized = contractAddress.toLowerCase()
+  const events = parseEventLogs({
+    abi: NFT_ABI,
+    logs: receipt.logs.filter((log) => log.address.toLowerCase() === normalized),
+    eventName: 'PublicMintAssigned',
+  })
+
+  if (events.length > 0) {
+    return events.map((event) => ({
+      onChainTokenId: Number(event.args.tokenId),
+      metadataIndex: Number(event.args.metadataIndex),
+    }))
+  }
+
+  return Array.from({ length: quantity }, (_, index) => {
+    const onChainTokenId = mintedBefore + index + 1
+    return { onChainTokenId, metadataIndex: onChainTokenId }
+  })
+}
+
 /** Parse the factory CollectionDeployed event — never use generic log topic heuristics. */
+export async function readRequiredPublishFeeWei(
+  client: PublicClient,
+  factoryAddress: `0x${string}`,
+  payer: `0x${string}`,
+  fallbackWei: bigint,
+): Promise<bigint> {
+  try {
+    return await client.readContract({
+      address: factoryAddress,
+      abi: FACTORY_ABI,
+      functionName: 'requiredPublishFee',
+      args: [payer],
+    })
+  } catch {
+    try {
+      return await client.readContract({
+        address: factoryAddress,
+        abi: FACTORY_ABI,
+        functionName: 'publishFee',
+      })
+    } catch {
+      return fallbackWei
+    }
+  }
+}
+
+function collectionAddressFromDeployLog(log: Log, factoryAddress: string): `0x${string}` | null {
+  if (log.address.toLowerCase() !== factoryAddress.toLowerCase()) return null
+  if (!log.topics[2]) return null
+  try {
+    return getAddress(`0x${log.topics[2].slice(-40)}`)
+  } catch {
+    return null
+  }
+}
+
+function parseCollectionDeployedAddress(receipt: TransactionReceipt, factoryAddress: string): `0x${string}` | null {
+  const factory = factoryAddress.toLowerCase()
+  const candidateLogs = receipt.logs.filter((log) => log.address.toLowerCase() === factory)
+  const logsToScan = candidateLogs.length > 0 ? candidateLogs : receipt.logs
+
+  const events = parseEventLogs({
+    abi: FACTORY_ABI,
+    logs: logsToScan,
+    eventName: 'CollectionDeployed',
+  })
+  const fromParsed = events.at(-1)?.args.collection
+  if (fromParsed) return fromParsed
+
+  for (const log of logsToScan) {
+    try {
+      const event = decodeEventLog({
+        abi: FACTORY_ABI,
+        data: log.data,
+        topics: log.topics,
+      })
+      if (event.eventName === 'CollectionDeployed') {
+        return event.args.collection
+      }
+    } catch {
+      // try next log
+    }
+  }
+
+  for (const log of logsToScan) {
+    const fromTopic = collectionAddressFromDeployLog(log, factory)
+    if (fromTopic) return fromTopic
+  }
+
+  return null
+}
+
 export function resolveDeployedCollectionAddress(
   receipt: TransactionReceipt,
   factoryAddress: string,
   creatorAddress?: string,
 ): `0x${string}` {
-  const factory = factoryAddress.toLowerCase()
-  const candidateLogs = receipt.logs.filter((log) => log.address.toLowerCase() === factory)
-  const events = parseEventLogs({
-    abi: FACTORY_ABI,
-    logs: candidateLogs.length > 0 ? candidateLogs : receipt.logs,
-    eventName: 'CollectionDeployed',
-  })
+  if (receipt.status === 'reverted') {
+    throw new Error(
+      'Deploy transaction reverted on-chain (no collection was created). This usually means the publish fee was too low or the factory rejected the deploy — check the transaction on the block explorer.',
+    )
+  }
 
-  const collection = events.at(-1)?.args.collection
+  const factory = factoryAddress.toLowerCase()
+  const collection = parseCollectionDeployedAddress(receipt, factory)
+
   if (!collection) {
-    throw new Error('Could not find CollectionDeployed event in the deploy transaction.')
+    throw new Error(
+      'Could not find CollectionDeployed event in the deploy transaction. The transaction may have failed, or the RPC returned incomplete logs — open the transaction in your block explorer and contact support with the tx hash if ETN was deducted.',
+    )
   }
 
   if (creatorAddress && collection.toLowerCase() === creatorAddress.toLowerCase()) {

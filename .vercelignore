@@ -1,0 +1,8 @@
+bulk-upload
+.cursor
+contracts
+test
+artifacts
+cache
+coverage
+supabase

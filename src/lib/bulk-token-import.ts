@@ -1,4 +1,5 @@
 import type { DraftToken } from '@/lib/create-collection-validation'
+import { findSequentialImportGaps, resolveBulkImportMaxSupplyFromIds } from '@/lib/collection-token-readiness'
 import { parseMetadataJson, type ParsedTokenMetadata } from '@/lib/metadata-import'
 import { validateImageFileSync } from '@/lib/validate-upload-image'
 
@@ -85,16 +86,33 @@ export async function importBulkTokenFiles(
   }
 
   const sortedIds = [...byId.keys()].sort((a, b) => a - b)
-  if (sortedIds.length > maxSupply) {
+  const gaps = findSequentialImportGaps(sortedIds)
+  if (gaps.length > 0) {
+    errors.push(
+      `Bulk upload is missing numbered files for token${gaps.length === 1 ? '' : 's'} ${gaps
+        .slice(0, 8)
+        .map((id) => `#${id}`)
+        .join(', ')}${gaps.length > 8 ? ` (+${gaps.length - 8} more)` : ''}. Add the missing files or renumber before importing.`,
+    )
+    return { tokens: [], warnings, errors }
+  }
+
+  const highestId = sortedIds[sortedIds.length - 1] ?? 0
+  const resolvedSupply = resolveBulkImportMaxSupplyFromIds(sortedIds)
+  if (resolvedSupply > maxSupply) {
     warnings.push(
-      `Found ${sortedIds.length} token(s) but max supply is ${maxSupply}. Only the first ${maxSupply} will be imported.`,
+      `Found tokens up to #${highestId} — max supply will be raised from ${maxSupply} to ${resolvedSupply}.`,
+    )
+  } else if (resolvedSupply > 0 && resolvedSupply < maxSupply) {
+    warnings.push(
+      `Imported ${sortedIds.length} numbered token(s). Max supply will be lowered from ${maxSupply} to ${resolvedSupply} to match your upload.`,
     )
   }
 
   const tokens: DraftToken[] = []
   const importErrors: string[] = []
 
-  for (const tokenId of sortedIds.slice(0, maxSupply)) {
+  for (const tokenId of sortedIds) {
     const entry = byId.get(tokenId)!
     if (!entry.image) {
       importErrors.push(`Token #${tokenId}: Missing image file (expected ${tokenId}.png or similar).`)

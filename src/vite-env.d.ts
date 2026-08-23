@@ -11,6 +11,10 @@ interface ImportMetaEnv {
   readonly VITE_PUBLISH_FEE_WEI_TESTNET: string
   readonly VITE_WALLETCONNECT_PROJECT_ID: string
   readonly VITE_APP_URL: string
+  readonly VITE_TREASURY_ADDRESS: string
+  readonly VITE_ADMIN_WALLETS: string
+  readonly VITE_ELECTROGEMS_NFT_ADDRESS: string
+  readonly VITE_CLUB_WATCH_NFT_ADDRESS: string
 }
 
 interface ImportMeta {

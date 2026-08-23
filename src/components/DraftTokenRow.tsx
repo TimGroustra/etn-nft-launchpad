@@ -11,9 +11,10 @@ type DraftTokenRowProps = {
   rowIndex: number
   fieldErrors: Record<string, string>
   onChange: (token: DraftToken) => void
+  disabled?: boolean
 }
 
-export function DraftTokenRow({ token, rowIndex, fieldErrors, onChange }: DraftTokenRowProps) {
+export function DraftTokenRow({ token, rowIndex, fieldErrors, onChange, disabled = false }: DraftTokenRowProps) {
   const tokenNum = getRowTokenId(token, rowIndex)
   const fieldPrefix = `token.${tokenNum}`
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -32,7 +33,7 @@ export function DraftTokenRow({ token, rowIndex, fieldErrors, onChange }: DraftT
   }, [token.file, token.existingImagePath])
 
   return (
-    <div className="space-y-3 rounded-lg border border-slate-800 p-4">
+    <div className={`space-y-3 rounded-lg border border-slate-800 p-4 ${disabled ? 'pointer-events-none opacity-50' : ''}`}>
       <div className="flex items-start justify-between gap-3">
         <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Token #{tokenNum}</p>
         {previewUrl && (
@@ -47,12 +48,14 @@ export function DraftTokenRow({ token, rowIndex, fieldErrors, onChange }: DraftT
         value={token.name}
         onChange={(e) => onChange({ ...token, name: e.target.value })}
         placeholder="Token name"
+        disabled={disabled}
       />
       <FieldError message={fieldErrors[`${fieldPrefix}.name`]} />
       <Textarea
         value={token.description}
         onChange={(e) => onChange({ ...token, description: e.target.value })}
         placeholder="Description (optional)"
+        disabled={disabled}
       />
       <FieldError message={fieldErrors[`${fieldPrefix}.description`]} />
       <div className="space-y-1">
@@ -60,6 +63,7 @@ export function DraftTokenRow({ token, rowIndex, fieldErrors, onChange }: DraftT
           type="file"
           accept="image/png,image/jpeg,image/webp,image/gif"
           onChange={(e) => onChange({ ...token, file: e.target.files?.[0] ?? null })}
+          disabled={disabled}
         />
         {token.file && (
           <p className="text-xs text-slate-500">

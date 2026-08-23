@@ -24,9 +24,11 @@ export interface Database {
           club_burn_amount: number
           burn_on_mint: boolean
           royalty_burn_bps: number
+          royalty_bps: number
           mint_price_etn: number
           max_mint_per_wallet: number
           show_on_mint_panel: boolean
+          random_public_mint: boolean
           storage_provider: 'supabase'
           base_uri: string | null
           publish_tx_hash: string | null

@@ -7,7 +7,7 @@ export function NetworkToggle() {
   if (!canSwitchNetwork) return null
 
   return (
-    <div className="flex rounded-lg border border-slate-700 p-0.5 text-xs">
+    <div className="flex shrink-0 flex-wrap rounded-lg border border-slate-700 p-0.5 text-xs">
       <Button
         type="button"
         size="sm"

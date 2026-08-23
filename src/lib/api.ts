@@ -12,9 +12,11 @@ export interface CollectionInput {
   mintBurnBps: number
   burnOnMint: boolean
   royaltyBurnBps: number
+  royaltyBps: number
   mintPriceEtn?: number
   maxMintPerWallet?: number
   showOnMintPanel?: boolean
+  randomPublicMint?: boolean
   storageProvider?: 'supabase'
   chainId?: number
 }
@@ -137,7 +139,13 @@ export async function verifyCollectionContract(
   collectionId: string,
   contractAddress: string,
   chainId: number,
-): Promise<{ success: boolean; status?: string; message?: string }> {
+): Promise<{
+  success: boolean
+  status?: string
+  message?: string
+  displayName?: string
+  explorerName?: string
+}> {
   return invokeFunction('verify-collection-contract', {
     walletAddress,
     collectionId,

@@ -5,13 +5,49 @@
   font-family: Inter, system-ui, sans-serif;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  overflow-x: clip;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
+  overflow-x: clip;
   background: #020617;
   color: #f8fafc;
 }
 
+#root {
+  min-width: 0;
+  overflow-x: clip;
+}
+
 * {
   box-sizing: border-box;
+}
+
+/* iOS Safari zooms focused inputs below 16px — keep form controls readable at 16px on mobile. */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+img,
+video,
+canvas,
+svg {
+  max-width: 100%;
+}
+
+@keyframes operation-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
 }

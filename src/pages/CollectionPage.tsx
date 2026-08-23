@@ -3,7 +3,7 @@ import { useCollection, useCollectionTokens } from '@/hooks/useCollections'
 import { getPublicImageUrl } from '@/lib/supabase'
 import { getExplorerContractUrl } from '@/lib/blockchain'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
-import { formatPercentFromBps } from '@/lib/create-collection-validation'
+import { formatMintModeLabel, formatPercentFromBps } from '@/lib/create-collection-validation'
 import { shortenAddress } from '@/lib/utils'
 
 export function CollectionPage() {
@@ -17,7 +17,7 @@ export function CollectionPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">{collection.name}</h1>
+        <h1 className="text-2xl font-bold sm:text-3xl">{collection.name}</h1>
         <p className="text-slate-400">{collection.description}</p>
         <p className="mt-2 text-sm text-slate-500">
           Contract:{' '}
@@ -41,8 +41,9 @@ export function CollectionPage() {
           </p>
         )}
         <p className="text-sm text-slate-500">
-          Mint: {collection.mint_mode}
-          {Number(collection.mint_price_etn) > 0 && ` · Public mint: ${collection.mint_price_etn} ETN`}
+          Mint: {formatMintModeLabel(collection.mint_mode)}
+          {Number(collection.mint_price_etn) > 0 &&
+            ` · Paid sale: ${collection.mint_price_etn} ETN${collection.random_public_mint ? ' (random order)' : ''}`}
           {collection.chain_id === 5201420 ? ' · Testnet' : collection.chain_id === 52014 ? ' · Mainnet' : ''}
         </p>
         {(collection.burn_on_mint || Number(collection.royalty_burn_bps ?? 0) > 0) && (
@@ -69,9 +70,6 @@ export function CollectionPage() {
             )}
             <CardTitle>{token.name}</CardTitle>
             <CardDescription>{token.description}</CardDescription>
-            <p className="mt-2 text-xs text-slate-500">
-              #{token.token_id} · {token.minted ? 'Minted' : 'Unminted'}
-            </p>
           </Card>
         ))}
       </div>

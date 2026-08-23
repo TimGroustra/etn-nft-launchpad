@@ -10,6 +10,8 @@
     "preview": "vite preview",
     "compile": "hardhat compile",
     "export:verification": "node scripts/export-verification-artifact.mjs",
+    "export:verification:legacy": "node scripts/export-factory-verification-artifact.mjs",
+    "export:verification:current": "node scripts/export-verification-artifact.mjs",
     "test:contracts": "hardhat test",
     "deploy:testnet": "hardhat run scripts/deploy.cjs --network electroneumTestnet",
     "deploy:mainnet": "hardhat run scripts/deploy.cjs --network electroneum",

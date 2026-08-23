@@ -1,8 +1,11 @@
 import { Link, NavLink, Outlet } from 'react-router-dom'
+import { useAccount } from 'wagmi'
 import { Rocket } from 'lucide-react'
 import { NetworkToggle } from './NetworkToggle'
+import { WalletBalance } from './WalletBalance'
 import { WalletConnectButton } from './WalletConnectButton'
 import { useNetwork } from '@/context/NetworkContext'
+import { useAdmin } from '@/hooks/useAdmin'
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   `rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
@@ -11,33 +14,46 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
 
 export function Layout() {
   const { chain } = useNetwork()
+  const { isAdmin } = useAdmin()
+  const { isConnected } = useAccount()
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
+    <div className="min-h-screen overflow-x-clip bg-slate-950 text-white">
       <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
-          <div className="flex min-w-0 items-center gap-6">
-            <Link to="/" className="flex shrink-0 items-center gap-2 font-semibold">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 sm:gap-x-4 sm:px-4 sm:py-4">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-6">
+            <Link
+              to="/"
+              className="flex shrink-0 items-center rounded-md p-1.5 font-semibold transition-colors hover:bg-slate-900"
+              aria-label="ETN NFT Launchpad home"
+            >
               <Rocket className="h-5 w-5 text-blue-400" />
-              ETN NFT Launchpad
             </Link>
-            <nav className="flex items-center gap-1">
-              <NavLink to="/create" className={navLinkClass}>
-                Create
+            <nav className="flex flex-wrap items-center gap-1">
+              {isConnected && isAdmin && (
+                <NavLink to="/create" className={navLinkClass}>
+                  Create
+                </NavLink>
+              )}
+              <NavLink to="/dashboard" className={navLinkClass}>
+                Dashboard
               </NavLink>
-              <NavLink to="/" end className={navLinkClass}>
-                Mint
-              </NavLink>
+              {isConnected && (
+                <NavLink to="/" end className={navLinkClass}>
+                  Mint
+                </NavLink>
+              )}
             </nav>
           </div>
-          <div className="flex shrink-0 items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-x-1.5 gap-y-2 sm:ml-auto sm:gap-x-3">
             <span className="hidden text-xs text-slate-500 sm:inline">{chain.name}</span>
+            <WalletBalance />
             <NetworkToggle />
             <WalletConnectButton />
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-8">
+      <main className="mx-auto max-w-6xl px-3 py-5 sm:px-4 sm:py-8">
         <Outlet />
       </main>
     </div>

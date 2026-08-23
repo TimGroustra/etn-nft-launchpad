@@ -7,9 +7,10 @@ import { importBulkTokenFiles } from '@/lib/bulk-token-import'
 type BulkTokenUploadProps = {
   maxSupply: number
   onImport: (tokens: DraftToken[]) => void
+  disabled?: boolean
 }
 
-export function BulkTokenUpload({ maxSupply, onImport }: BulkTokenUploadProps) {
+export function BulkTokenUpload({ maxSupply, onImport, disabled = false }: BulkTokenUploadProps) {
   const folderInputRef = useRef<HTMLInputElement>(null)
   const filesInputRef = useRef<HTMLInputElement>(null)
   const [importing, setImporting] = useState(false)
@@ -25,9 +26,6 @@ export function BulkTokenUpload({ maxSupply, onImport }: BulkTokenUploadProps) {
         if (result.errors.length > 1) {
           toast.message(`${result.errors.length - 1} more issue(s) — check file naming and JSON format.`)
         }
-      }
-      if (result.tokens.length === 0) {
-        if (result.errors.length === 0) toast.error('Nothing imported.')
         return
       }
       onImport(result.tokens)
@@ -40,7 +38,7 @@ export function BulkTokenUpload({ maxSupply, onImport }: BulkTokenUploadProps) {
   }
 
   return (
-    <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/40 p-4 space-y-3">
+    <div className={`rounded-xl border border-dashed border-slate-700 bg-slate-950/40 p-4 space-y-3 ${disabled ? 'pointer-events-none opacity-50' : ''}`}>
       <div>
         <p className="font-medium text-white">Bulk upload</p>
         <p className="mt-1 text-sm text-slate-400">
@@ -55,7 +53,7 @@ export function BulkTokenUpload({ maxSupply, onImport }: BulkTokenUploadProps) {
         <Button
           type="button"
           variant="outline"
-          disabled={importing}
+          disabled={importing || disabled}
           onClick={() => folderInputRef.current?.click()}
         >
           {importing ? 'Importing…' : 'Choose folder'}
@@ -63,7 +61,7 @@ export function BulkTokenUpload({ maxSupply, onImport }: BulkTokenUploadProps) {
         <Button
           type="button"
           variant="outline"
-          disabled={importing}
+          disabled={importing || disabled}
           onClick={() => filesInputRef.current?.click()}
         >
           Choose files
