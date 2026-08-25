@@ -34,6 +34,8 @@ const bundles = {
     ['_shared/utils.ts', read('_shared/utils.ts')],
     ['_shared/contract-verification.ts', read('_shared/contract-verification.ts')],
     ['_shared/editable-erc721-verification.json', read('_shared/editable-erc721-verification.json')],
+    ['_shared/editable-erc721-v2-verification.json', read('_shared/editable-erc721-v2-verification.json')],
+    ['_shared/editable-erc1155-verification.json', read('_shared/editable-erc1155-verification.json')],
   ],
 }
 

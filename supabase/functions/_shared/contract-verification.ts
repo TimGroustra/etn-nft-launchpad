@@ -64,14 +64,21 @@ async function loadVerificationBundle(
   if (!promise) {
     promise = (async () => {
       const file = BUNDLE_FILES[kind]
-      try {
-        const bundled = await Deno.readTextFile(new URL(`./${file}`, import.meta.url))
-        return JSON.parse(bundled) as VerificationBundle
-      } catch {
-        const res = await fetch(getVerificationBundleUrl(kind))
-        if (!res.ok) throw new Error(`Failed to load verification bundle (${res.status})`)
-        return (await res.json()) as VerificationBundle
+      const candidates = [
+        new URL(`./${file}`, import.meta.url),
+        new URL(`../_shared/${file}`, import.meta.url),
+      ]
+      for (const candidate of candidates) {
+        try {
+          const bundled = await Deno.readTextFile(candidate)
+          return JSON.parse(bundled) as VerificationBundle
+        } catch {
+          // try next path
+        }
       }
+      const res = await fetch(getVerificationBundleUrl(kind))
+      if (!res.ok) throw new Error(`Failed to load verification bundle (${res.status})`)
+      return (await res.json()) as VerificationBundle
     })()
     bundlePromises.set(kind, promise)
   }
@@ -401,7 +408,10 @@ export async function submitCollectionVerification(
   if (!api) throw new Error('Unsupported chain')
   const bundle = await loadVerificationBundle(kind)
   const displayName = sanitizeSolidityContractName(collectionName)
-  const namedBundle = buildNamedVerificationBundle(bundle, collectionName, kind)
+  // Renaming the contract in source changes the metadata hash and breaks bytecode match.
+  // ERC-1155 / V2 collections verify under the canonical implementation name.
+  const namedBundle =
+    kind === 'erc1155' || kind === 'erc721_v2' ? bundle : buildNamedVerificationBundle(bundle, collectionName, kind)
 
   const form = new URLSearchParams()
   form.set('module', 'contract')
@@ -466,12 +476,16 @@ export async function verifyCollectionOnExplorer(
   const verified = await isContractVerified(chainId, contractAddress)
 
   if (verified) {
+    const collectionLabel =
+      kind === 'erc1155'
+        ? options?.collectionName ?? baseContractLabel
+        : constructorArgs.name
     return {
       status: 'already_verified' as const,
       displayName: explorerName ?? baseContractLabel,
       message: explorerName && explorerName !== desiredName
-        ? `Contract is verified on the explorer as "${explorerName}". Your collection name is "${constructorArgs.name}".`
-        : `Contract is verified on the explorer as ${baseContractLabel}. Your collection name is "${constructorArgs.name}".`,
+        ? `Contract is verified on the explorer as "${explorerName}". Your collection name is "${collectionLabel}".`
+        : `Contract is verified on the explorer as ${baseContractLabel}. Your collection name is "${collectionLabel}".`,
     }
   }
 
