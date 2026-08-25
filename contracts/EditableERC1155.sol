@@ -41,6 +41,8 @@ contract EditableERC1155 is
     uint256 public mintPrice;
     uint256 public maxMintPerWallet;
     bool public isMintable;
+    string private _name;
+    string private _symbol;
     string private _baseTokenURI;
     bool private _suppressRoyaltyBurn;
 
@@ -64,6 +66,8 @@ contract EditableERC1155 is
     event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
 
     constructor(
+        string memory name_,
+        string memory symbol_,
         string memory uri_,
         address initialOwner,
         address clubToken_,
@@ -77,6 +81,8 @@ contract EditableERC1155 is
         address electroGems_,
         address clubWatch_
     ) ERC1155(uri_) Ownable(initialOwner) {
+        require(bytes(name_).length > 0, "Name required");
+        require(bytes(symbol_).length > 0, "Symbol required");
         require(config_.royaltyBurnBps <= 10_000, "Invalid royalty burn bps");
         require(config_.mintBurnBps <= 10_000, "Invalid mint burn bps");
         require(defaultRoyaltyBps_ <= 10_000, "Invalid royalty bps");
@@ -88,11 +94,21 @@ contract EditableERC1155 is
         platformMintFeeBps = platformMintFeeBps_;
         electroGemsCollection = electroGems_;
         clubWatchCollection = clubWatch_;
+        _name = name_;
+        _symbol = symbol_;
         burnConfig = config_;
         maxSupply = maxSupply_;
         _nextTokenId = 1;
         isMintable = false;
         _setDefaultRoyalty(address(this), defaultRoyaltyBps_);
+    }
+
+    function name() public view returns (string memory) {
+        return _name;
+    }
+
+    function symbol() public view returns (string memory) {
+        return _symbol;
     }
 
     function setMintable(bool mintable_) external onlyOwner {

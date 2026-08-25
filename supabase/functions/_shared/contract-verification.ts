@@ -106,6 +106,8 @@ const COLLECTION_ERC721_ABI = parseAbi([
 ])
 
 const COLLECTION_ERC1155_ABI = parseAbi([
+  'function name() view returns (string)',
+  'function symbol() view returns (string)',
   'function owner() view returns (address)',
   'function clubToken() view returns (address)',
   'function WETN() view returns (address)',
@@ -238,8 +240,10 @@ export async function readCollectionConstructorArgs(
   }
 
   if (kind === 'erc1155') {
-    const [owner, clubToken, wetn, swapRouter, burnConfig, maxSupply, platformTreasury, platformMintFeeBps, electroGemsCollection, clubWatchCollection] =
+    const [name, symbol, owner, clubToken, wetn, swapRouter, burnConfig, maxSupply, platformTreasury, platformMintFeeBps, electroGemsCollection, clubWatchCollection] =
       await Promise.all([
+        client.readContract({ address: contractAddress, abi: COLLECTION_ERC1155_ABI, functionName: 'name' }),
+        client.readContract({ address: contractAddress, abi: COLLECTION_ERC1155_ABI, functionName: 'symbol' }),
         client.readContract({ address: contractAddress, abi: COLLECTION_ERC1155_ABI, functionName: 'owner' }),
         client.readContract({ address: contractAddress, abi: COLLECTION_ERC1155_ABI, functionName: 'clubToken' }),
         client.readContract({ address: contractAddress, abi: COLLECTION_ERC1155_ABI, functionName: 'WETN' }),
@@ -254,7 +258,8 @@ export async function readCollectionConstructorArgs(
 
     return {
       kind,
-      name: collectionName?.trim() || 'ERC1155Collection',
+      name,
+      symbol,
       uri: '',
       owner,
       clubToken,
@@ -310,9 +315,11 @@ export function encodeCollectionConstructorArgs(
   if (args.kind === 'erc1155') {
     const encoded = encodeAbiParameters(
       parseAbiParameters(
-        'string, address, address, address, address, (uint96 mintBurnBps, bool burnOnMint, uint96 royaltyBurnBps), uint256, uint96, address, uint96, address, address',
+        'string, string, string, address, address, address, address, (uint96 mintBurnBps, bool burnOnMint, uint96 royaltyBurnBps), uint256, uint96, address, uint96, address, address',
       ),
       [
+        args.name,
+        args.symbol,
         args.uri ?? '',
         args.owner,
         args.clubToken,

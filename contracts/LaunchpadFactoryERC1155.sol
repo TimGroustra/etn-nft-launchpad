@@ -107,6 +107,8 @@ contract LaunchpadFactoryERC1155 is Ownable2Step {
         require(msg.value >= requiredPublishFee(msg.sender, maxSupply), "Insufficient publish fee");
         collection = address(
             new EditableERC1155(
+                name,
+                symbol,
                 "",
                 msg.sender,
                 clubToken,
