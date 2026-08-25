@@ -7,6 +7,8 @@ import { CardDescription, CardTitle } from '@/components/ui/card'
 import { NFT_ABI } from '@/lib/blockchain'
 import { syncTokenUri, updateToken } from '@/lib/api'
 import { getOnChainTokenUriSuffix } from '@/lib/collection-metadata'
+import { getCollectionTokenStandard } from '@/lib/collection-contract'
+import { configureErc1155EditionCaps } from '@/lib/publish-collection'
 import { formatPercentDisplay } from '@/lib/create-collection-validation'
 import { useCollectionTokens } from '@/hooks/useCollections'
 import type { Collection } from '@/types/database'
@@ -87,6 +89,7 @@ export function CollectionOwnerPanel({ collection, chainId, onUpdated }: Collect
   })
 
   const [ownerMinting, setOwnerMinting] = useState(false)
+  const [syncingCaps, setSyncingCaps] = useState(false)
 
   if (!contractAddress) return null
 
@@ -101,6 +104,9 @@ export function CollectionOwnerPanel({ collection, chainId, onUpdated }: Collect
     royaltyInfo?.[1] !== undefined
       ? formatPercentDisplay(String(Number((royaltyInfo[1] * 10_000n) / parseEther('100')) / 100))
       : '…'
+
+  const isErc1155Lazy =
+    getCollectionTokenStandard(collection) === 'erc1155' && collection.mint_mode === 'lazy'
 
   const ownerMintNext = async () => {
     if (!address || nextOnChainTokenId == null || !nextDbToken?.token_id) {
@@ -126,6 +132,22 @@ export function CollectionOwnerPanel({ collection, chainId, onUpdated }: Collect
       toast.error(err instanceof Error ? err.message : 'Owner mint failed')
     } finally {
       setOwnerMinting(false)
+    }
+  }
+
+  const syncEditionCaps = async () => {
+    if (!contractAddress) return
+    setSyncingCaps(true)
+    try {
+      await configureErc1155EditionCaps(writeContractAsync, contractAddress, collection.id, chainId, {
+        onWalletStep: (label) => toast.message(label),
+      })
+      toast.success('Edition caps synced on-chain')
+      onUpdated?.()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to sync edition caps')
+    } finally {
+      setSyncingCaps(false)
     }
   }
 
@@ -214,6 +236,24 @@ export function CollectionOwnerPanel({ collection, chainId, onUpdated }: Collect
           ) : (
             <p className="text-xs text-slate-500">All tokens minted on-chain.</p>
           )}
+        </section>
+      )}
+
+      {isErc1155Lazy && (
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold text-slate-200">ERC-1155 edition caps</h3>
+          <p className="text-xs text-slate-500">
+            Public minting needs on-chain edition caps per type. Caps start at 0 until you sync them from your
+            metadata (e.g. Blossom = 10 copies). Required before buyers can mint specific types.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void syncEditionCaps()}
+            disabled={syncingCaps || isPending}
+          >
+            {syncingCaps ? 'Syncing…' : 'Sync edition caps'}
+          </Button>
         </section>
       )}
 

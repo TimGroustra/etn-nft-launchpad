@@ -15,6 +15,7 @@ export type MintedTokenInfo = {
   tokenId: number
   name: string
   imageUrl: string | null
+  amount?: number
 }
 
 type MintSuccessModalProps = {
@@ -58,7 +59,9 @@ export function MintSuccessModal({
           <DialogTitle>Mint successful</DialogTitle>
           <DialogDescription>
             {count === 1
-              ? `You minted ${single?.name} from ${collectionName}.`
+              ? single?.amount && single.amount > 1
+                ? `You minted ${single.amount} × ${single.name} from ${collectionName}.`
+                : `You minted ${single?.name} from ${collectionName}.`
               : `You minted ${count} NFTs from ${collectionName}.`}
           </DialogDescription>
         </DialogHeader>

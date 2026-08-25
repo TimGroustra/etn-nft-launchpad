@@ -219,6 +219,30 @@ export async function publishBatchCollection(
   return baseUri
 }
 
+export async function configureErc1155EditionCaps(
+  writeContractAsync: WriteContract,
+  contractAddress: `0x${string}`,
+  collectionId: string,
+  chainId: number,
+  options?: { onWalletStep?: (label: string) => void },
+) {
+  const tokenRecords = await listCollectionTokenRecords(collectionId)
+  const abi = [{ inputs: [{ name: 'tokenId', type: 'uint256' }, { name: 'cap', type: 'uint256' }], name: 'setEditionCap', outputs: [], stateMutability: 'nonpayable', type: 'function' }] as const
+
+  for (const token of tokenRecords) {
+    if (token.token_id == null) continue
+    const cap = Math.max(1, token.edition_size ?? 1)
+    options?.onWalletStep?.(`Set edition cap for type #${token.token_id} (${cap} copies)`)
+    await writeContractAsync({
+      address: contractAddress,
+      abi,
+      functionName: 'setEditionCap',
+      args: [BigInt(token.token_id), BigInt(cap)],
+      chainId,
+    })
+  }
+}
+
 export async function configurePublicMint(
   writeContractAsync: WriteContract,
   contractAddress: `0x${string}`,
@@ -227,6 +251,8 @@ export async function configurePublicMint(
   options?: { onWalletStep?: (label: string) => void },
 ) {
   const baseUri = getCollectionMetadataBaseUri(collection.id)
+  const isErc1155 =
+    (collection.contract_version ?? 1) !== 1 && collection.token_standard === 'erc1155'
 
   options?.onWalletStep?.('Set on-chain metadata base URI')
   await writeContractAsync({
@@ -236,6 +262,10 @@ export async function configurePublicMint(
     args: [baseUri],
     chainId,
   })
+
+  if (isErc1155 && collection.mint_mode === 'lazy') {
+    await configureErc1155EditionCaps(writeContractAsync, contractAddress, collection.id, chainId, options)
+  }
 
   const mintPriceWei = parseEther(String(collection.mint_price_etn ?? 0))
   if (mintPriceWei > 0n) {

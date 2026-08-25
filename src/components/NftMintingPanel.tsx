@@ -39,6 +39,8 @@ import { hasCreatorNftAccess } from '@/lib/creator-access'
 import { getPublicImageUrl } from '@/lib/supabase'
 
 import type { Collection } from '@/types/database'
+import { Erc1155PublicMintCard } from '@/components/Erc1155PublicMintCard'
+import { getCollectionTokenStandard } from '@/lib/collection-contract'
 
 
 
@@ -575,13 +577,13 @@ export function NftMintingPanel() {
       ) : (
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-
-          {collections.map((collection) => (
-
-            <PublicMintCard key={collection.id} collection={collection} />
-
-          ))}
-
+          {collections.map((collection) =>
+            getCollectionTokenStandard(collection) === 'erc1155' ? (
+              <Erc1155PublicMintCard key={collection.id} collection={collection} />
+            ) : (
+              <PublicMintCard key={collection.id} collection={collection} />
+            ),
+          )}
         </div>
 
       )}

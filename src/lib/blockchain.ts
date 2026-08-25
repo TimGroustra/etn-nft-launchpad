@@ -670,13 +670,73 @@ const ERC1155_BATCH_MINT = {
   type: 'function',
 } as const
 
+const ERC1155_EDITION_ABI = [
+  {
+    inputs: [{ name: 'tokenId', type: 'uint256' }],
+    name: 'editionCap',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'tokenId', type: 'uint256' }],
+    name: 'editionMinted',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'supportsMintEdition',
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'pure',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'tokenId', type: 'uint256' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    name: 'mintEdition',
+    outputs: [],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'tokenId', type: 'uint256' },
+      { name: 'cap', type: 'uint256' },
+    ],
+    name: 'setEditionCap',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'to', type: 'address' },
+      { name: 'tokenId', type: 'uint256' },
+      { name: 'amount', type: 'uint256' },
+      { name: 'tokenUri', type: 'string' },
+    ],
+    name: 'ownerMint',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+] as const
+
 export function getCollectionContractAbi(collection: {
   token_standard?: 'erc721' | 'erc1155' | null
   contract_version?: number | null
 }) {
   const isErc1155 = (collection.contract_version ?? 1) !== 1 && collection.token_standard === 'erc1155'
   if (!isErc1155) return NFT_ABI
-  return [...NFT_ABI.filter((entry) => !('name' in entry && entry.name === 'batchMint')), ERC1155_BATCH_MINT]
+  return [
+    ...NFT_ABI.filter((entry) => !('name' in entry && (entry.name === 'batchMint' || entry.name === 'ownerMint'))),
+    ERC1155_BATCH_MINT,
+    ...ERC1155_EDITION_ABI,
+  ]
 }
 
 export type ParsedMintAssignment = {

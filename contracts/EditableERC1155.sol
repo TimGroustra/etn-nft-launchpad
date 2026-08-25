@@ -59,6 +59,7 @@ contract EditableERC1155 is
     event Withdrawn(address indexed owner, uint256 amount);
     event ERC20Withdrawn(address indexed owner, address indexed token, uint256 amount);
     event EditionCapUpdated(uint256 indexed tokenId, uint256 cap);
+    event EditionMinted(address indexed minter, uint256 indexed tokenId, uint256 amount);
     event MetadataUpdate(uint256 _tokenId);
     event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
 
@@ -208,6 +209,39 @@ contract EditableERC1155 is
 
         _publicMintCount[msg.sender] += mintCount;
         _settleMintPayment(mintCount, required);
+    }
+
+    /// @notice Public mint of a specific ERC-1155 type (token ID) and quantity.
+    function supportsMintEdition() external pure returns (bool) {
+        return true;
+    }
+
+    function mintEdition(uint256 tokenId, uint256 amount) external payable nonReentrant {
+        require(isMintable, "Sale not active");
+        require(tokenId > 0 && tokenId <= maxSupply, "Invalid token id");
+        require(amount > 0, "Quantity zero");
+        require(editionCap[tokenId] > 0, "Type not listed");
+        require(editionMinted[tokenId] + amount <= editionCap[tokenId], "Exceeds edition cap");
+        require(bytes(_baseTokenURI).length > 0, "Base URI required");
+
+        if (maxMintPerWallet > 0) {
+            require(_publicMintCount[msg.sender] + amount <= maxMintPerWallet, "Exceeds wallet limit");
+        }
+
+        uint256 required = requiredMintPayment(msg.sender, amount);
+        require(msg.value >= required, "Insufficient payment");
+
+        if (bytes(_tokenURISuffix[tokenId]).length == 0) {
+            _tokenURISuffix[tokenId] = _composeMetadataSuffix(tokenId);
+        }
+
+        editionMinted[tokenId] += amount;
+        _mint(msg.sender, tokenId, amount, "");
+        emit MetadataUpdate(tokenId);
+        emit EditionMinted(msg.sender, tokenId, amount);
+
+        _publicMintCount[msg.sender] += amount;
+        _settleMintPayment(amount, required);
     }
 
     function uri(uint256 tokenId) public view override returns (string memory) {
