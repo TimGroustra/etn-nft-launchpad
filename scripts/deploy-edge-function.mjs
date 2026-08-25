@@ -7,7 +7,7 @@ const root = path.join(__dirname, '..')
 const envPath = path.join(root, '.env')
 
 if (fs.existsSync(envPath)) {
-  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
     const match = line.match(/^\s*([^#=]+)=(.*)$/)
     if (match) process.env[match[1].trim()] = match[2].trim()
   }
