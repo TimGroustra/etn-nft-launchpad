@@ -5,6 +5,7 @@ import {
 import { validateImageFileSync } from '@/lib/validate-upload-image'
 import { validateAttributesList } from '@/lib/metadata-import'
 import { getRowTokenId } from '@/lib/draft-token-rows'
+import { isErc1155 } from '@/lib/token-standard-ui'
 import type { NftAttribute } from '@/lib/nft-metadata'
 
 export type MintMode = 'lazy' | 'batch'
@@ -242,6 +243,10 @@ export function sanitizeFormForMode(form: CreateCollectionForm, _tokens: DraftTo
     next.randomPublicMint = false
   }
 
+  if (isErc1155(next.tokenStandard)) {
+    next.randomPublicMint = false
+  }
+
   if (next.mintMode === 'lazy') {
     next.burnOnMint = true
     next.mintBurnPercent = clampMintBurnPercent(next.mintBurnPercent || String(MIN_MINT_BURN_PERCENT))
@@ -252,7 +257,11 @@ export function sanitizeFormForMode(form: CreateCollectionForm, _tokens: DraftTo
   return next
 }
 
-function validateTokenMetadata(tokens: DraftToken[], prefix: string): ValidationIssue[] {
+function validateTokenMetadata(
+  tokens: DraftToken[],
+  prefix: string,
+  tokenStandard: CreateCollectionForm['tokenStandard'] = 'erc721',
+): ValidationIssue[] {
   const issues: ValidationIssue[] = []
   const names = new Set<string>()
 
@@ -295,6 +304,16 @@ function validateTokenMetadata(tokens: DraftToken[], prefix: string): Validation
     } else {
       const attrError = validateAttributesList(filledAttributes, `Token #${rowNum}`)
       if (attrError) issues.push({ field: `${row}.attributes`, message: attrError })
+    }
+
+    if (isErc1155(tokenStandard)) {
+      const editionSize = token.editionSize ?? 1
+      if (!Number.isInteger(editionSize) || editionSize < 1) {
+        issues.push({
+          field: `${row}.editionSize`,
+          message: 'Edition size must be a whole number of at least 1.',
+        })
+      }
     }
   })
 
@@ -341,10 +360,11 @@ function validateMintingRules(
       if (coverageIssues.length > 0) {
         issues.push(...coverageIssues)
       } else {
+        const unit = isErc1155(form.tokenStandard) ? 'types' : 'tokens'
         const emptySlots = form.maxSupply - completeCount
         issues.push({
           field: 'tokens',
-          message: `Public mint requires metadata for all ${form.maxSupply} tokens (${completeCount} complete). Upload ${emptySlots} more token(s) with name + image, or lower max supply.`,
+          message: `Public mint requires metadata for all ${form.maxSupply} ${unit} (${completeCount} complete). Upload ${emptySlots} more with name + image, or lower ${isErc1155(form.tokenStandard) ? 'the type count' : 'max supply'}.`,
         })
       }
     }
@@ -365,9 +385,10 @@ function validateMintingRules(
       })
     }
     if (completeCount !== form.maxSupply) {
+      const unit = isErc1155(form.tokenStandard) ? 'types' : 'tokens'
       issues.push({
         field: 'tokens',
-        message: `Batch mint requires exactly ${form.maxSupply} complete tokens (name + image). ${completeCount} ready.`,
+        message: `Batch mint requires exactly ${form.maxSupply} complete ${unit} (name + image). ${completeCount} ready.`,
       })
     } else if (completeCount > form.maxSupply) {
       issues.push({
@@ -475,7 +496,7 @@ export function validateCreateStep(
 
   if (step === 3) {
     issues.push(...validateMintingRules(f, tokens, true))
-    issues.push(...validateTokenMetadata(getActiveTokens(tokens), 'token.'))
+    issues.push(...validateTokenMetadata(getActiveTokens(tokens), 'token.', f.tokenStandard))
   }
 
   return issues

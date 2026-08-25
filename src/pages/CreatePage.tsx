@@ -58,6 +58,14 @@ import {
   resolveTokenStandardForCreate,
 } from '@/lib/launchpad-v2'
 import { buildDraftMetadataPreview } from '@/lib/nft-metadata'
+import {
+  countCompleteEditionSizes,
+  getSupplyFieldHint,
+  getSupplyFieldLabel,
+  isErc1155,
+  sumEditionSizes,
+  supportsRandomPublicMint,
+} from '@/lib/token-standard-ui'
 import { cn } from '@/lib/utils'
 const STEPS = ['Details', 'Minting', 'Royalties & burns', 'Artwork', 'Preview', 'Save']
 
@@ -206,7 +214,11 @@ export function CreatePage() {
     'Your draft is still uploading. Leaving now may leave it incomplete.',
   )
   const { canUseLaunchpadV2, platformConfig } = useLaunchpadV2()
-  const showEditionSizes = canUseLaunchpadV2 && form.tokenStandard === 'erc1155'
+  const erc1155 = isErc1155(form.tokenStandard)
+  const totalEditionCopies = useMemo(
+    () => countCompleteEditionSizes(tokens, isTokenRowComplete),
+    [tokens],
+  )
 
   useEffect(() => {
     if (!canUseLaunchpadV2 && form.tokenStandard !== 'erc721') {
@@ -298,6 +310,9 @@ export function CreatePage() {
       const next = { ...prev, [key]: value }
       if (key === 'enablePublicMint' && value === false) {
         next.showOnMintPanel = false
+      }
+      if (key === 'tokenStandard' && value === 'erc1155') {
+        next.randomPublicMint = false
       }
       return sanitizeFormForMode(next, tokens)
     })
@@ -643,14 +658,14 @@ export function CreatePage() {
           </div>
           )}
           <div>
-            <Label>Max supply</Label>
+            <Label>{getSupplyFieldLabel(form.tokenStandard)}</Label>
             <Input
               type="number"
               min={1}
               value={form.maxSupply}
               onChange={(e) => update('maxSupply', Number(e.target.value))}
             />
-            <FieldHint>Total number of NFTs that can ever exist in this collection.</FieldHint>
+            <FieldHint>{getSupplyFieldHint(form.tokenStandard)}</FieldHint>
             <FieldError message={fieldErrors.maxSupply} />
           </div>
           {stepError && !Object.keys(fieldErrors).length && <FieldError message={stepError} />}
@@ -659,19 +674,36 @@ export function CreatePage() {
 
       {step === 1 && (
         <Card className="space-y-5">
+          {erc1155 && (
+            <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-4 text-sm text-blue-100">
+              <p className="font-medium text-blue-50">ERC-1155 minting</p>
+              <p className="mt-1 text-blue-100/90">
+                Collectors mint <strong className="text-white">copies</strong> of a chosen type. Random mint order is
+                not used — each type has one metadata URI and an edition cap you set on Artwork.
+              </p>
+            </div>
+          )}
           <div>
             <Label>How should minting work?</Label>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <OptionCard
                 selected={form.mintMode === 'lazy'}
                 title="Public minting"
-                description="Upload artwork, then mint yourself or enable a paid public sale for collectors."
+                description={
+                  erc1155
+                    ? 'Upload artwork by type, then enable paid minting so collectors buy copies of each type.'
+                    : 'Upload artwork, then mint yourself or enable a paid public sale for collectors.'
+                }
                 onClick={() => setMintMode('lazy')}
               />
               <OptionCard
                 selected={form.mintMode === 'batch'}
                 title="Batch mint at publish"
-                description="Upload every token upfront. The full collection is minted to your wallet when you publish — no public sale."
+                description={
+                  erc1155
+                    ? 'Mint the full edition run to your wallet at publish — every copy of every type, using edition sizes from Artwork.'
+                    : 'Upload every token upfront. The full collection is minted to your wallet when you publish — no public sale.'
+                }
                 onClick={() => setMintMode('batch')}
               />
             </div>
@@ -684,7 +716,11 @@ export function CreatePage() {
                 disabled={!publicMintAllowed}
                 onChange={(enablePublicMint) => update('enablePublicMint', enablePublicMint)}
                 label="Enable paid public sale (IMintable)"
-                description="Lets collectors mint via any marketplace that supports IMintable (e.g. ElectroSwap). Requires at least 1 ETN and complete metadata for every token."
+                description={
+                  erc1155
+                    ? 'Lets collectors mint copies via IMintable (e.g. ElectroSwap). Requires artwork and edition size for every type.'
+                    : 'Lets collectors mint via any marketplace that supports IMintable (e.g. ElectroSwap). Requires at least 1 ETN and complete metadata for every token.'
+                }
               />
 
               {form.enablePublicMint && (
@@ -703,15 +739,21 @@ export function CreatePage() {
                       value={form.maxMintPerWallet}
                       onChange={(e) => update('maxMintPerWallet', e.target.value)}
                     />
-                    <FieldHint>Limit how many NFTs one wallet can mint via paid sale. Use 0 for no limit.</FieldHint>
+                    <FieldHint>
+                      {erc1155
+                        ? 'Limit total copies one wallet can mint across the collection. Use 0 for no limit.'
+                        : 'Limit how many NFTs one wallet can mint via paid sale. Use 0 for no limit.'}
+                    </FieldHint>
                     <FieldError message={fieldErrors.maxMintPerWallet} />
                   </div>
-                  <ToggleRow
-                    checked={form.randomPublicMint}
-                    onChange={(randomPublicMint) => update('randomPublicMint', randomPublicMint)}
-                    label="Random mint order"
-                    description="Assigns metadata randomly at mint time so snipers cannot predict the next reveal from mint order."
-                  />
+                  {supportsRandomPublicMint(form.tokenStandard) && (
+                    <ToggleRow
+                      checked={form.randomPublicMint}
+                      onChange={(randomPublicMint) => update('randomPublicMint', randomPublicMint)}
+                      label="Random mint order"
+                      description="Assigns metadata randomly at mint time so snipers cannot predict the next reveal from mint order."
+                    />
+                  )}
                 </div>
               )}
 
@@ -726,8 +768,9 @@ export function CreatePage() {
 
               {form.enablePublicMint && (
                 <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-4 text-sm text-blue-100">
-                  Paid public sale requires artwork and metadata for all {form.maxSupply} tokens before you can save or
-                  publish.
+                  {erc1155
+                    ? `Paid public sale requires artwork and edition size for all ${form.maxSupply} types before you can save or publish.`
+                    : `Paid public sale requires artwork and metadata for all ${form.maxSupply} tokens before you can save or publish.`}
                 </div>
               )}
             </>
@@ -735,8 +778,9 @@ export function CreatePage() {
 
           {isBatch && (
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
-              Batch mint requires artwork and metadata for all {form.maxSupply} tokens. Everything is minted to your
-              wallet at publish — paid public sale is not available in this mode.
+              {erc1155
+                ? `Batch mint requires artwork for all ${form.maxSupply} types with edition sizes set. Every copy is minted to your wallet at publish — paid public sale is not available in this mode.`
+                : `Batch mint requires artwork and metadata for all ${form.maxSupply} tokens. Everything is minted to your wallet at publish — paid public sale is not available in this mode.`}
             </div>
           )}
 
@@ -861,23 +905,57 @@ export function CreatePage() {
 
       {step === 3 && (
         <div className="space-y-4">
-          <MetadataGuidancePanel />
-          <BulkTokenUpload maxSupply={form.maxSupply} onImport={handleBulkImport} />
+          <MetadataGuidancePanel tokenStandard={form.tokenStandard} />
+          <BulkTokenUpload
+            maxSupply={form.maxSupply}
+            onImport={handleBulkImport}
+            tokenStandard={form.tokenStandard}
+          />
           <Card className="space-y-4">
             <div>
-              <CardTitle>{isBatch ? 'Upload your full collection' : 'Upload artwork'}</CardTitle>
+              <CardTitle>
+                {erc1155
+                  ? isBatch
+                    ? 'Upload artwork by type'
+                    : 'Artwork by type'
+                  : isBatch
+                    ? 'Upload your full collection'
+                    : 'Upload artwork'}
+              </CardTitle>
               <FieldHint>
                 Images: PNG, JPEG, WebP, or GIF · {IMAGE_RULES.minWidth}×{IMAGE_RULES.minHeight}px minimum · 10 MB max.
-                Bulk import fills the rows below — you can edit every field before saving.
+                {erc1155 ? (
+                  <>
+                    {' '}
+                    Each row is one <strong className="text-slate-300">type</strong> (shared metadata). Set edition size
+                    for how many copies exist — you do not upload per copy.
+                  </>
+                ) : (
+                  <> Bulk import fills the rows below — you can edit every field before saving.</>
+                )}
                 {form.enablePublicMint || isBatch
-                  ? ` All ${form.maxSupply} rows must be complete (name + image).`
-                  : ' At least one complete row is required for public minting.'}
+                  ? erc1155
+                    ? ` All ${form.maxSupply} types must be complete (name + image + edition size).`
+                    : ` All ${form.maxSupply} rows must be complete (name + image).`
+                  : erc1155
+                    ? ' At least one complete type is required.'
+                    : ' At least one complete row is required for public minting.'}
               </FieldHint>
+              {erc1155 && completeCount > 0 && (
+                <p className="mt-2 text-sm text-slate-400">
+                  {completeCount} type(s) ready · {totalEditionCopies.toLocaleString()} total copies across complete
+                  rows
+                  {completeCount < form.maxSupply
+                    ? ` · ${form.maxSupply - completeCount} type(s) still needed`
+                    : ''}
+                </p>
+              )}
             </div>
 
             {(form.enablePublicMint || isBatch) && tokens.length < form.maxSupply && (
               <Button variant="outline" onClick={fillRowsToMaxSupply}>
-                Add {form.maxSupply - tokens.length} row(s) to match max supply
+                Add {form.maxSupply - tokens.length} {erc1155 ? 'type' : 'row'}(s) to match{' '}
+                {erc1155 ? 'type count' : 'max supply'}
               </Button>
             )}
 
@@ -887,24 +965,24 @@ export function CreatePage() {
                 token={token}
                 rowIndex={i}
                 fieldErrors={fieldErrors}
+                tokenStandard={form.tokenStandard}
                 onChange={(next) => {
                   const updated = [...tokens]
                   updated[i] = next
                   setTokensAndSync(updated)
                 }}
-                showEditionSize={showEditionSizes}
               />
             ))}
 
             {!isBatch && tokens.length < form.maxSupply && (
               <Button variant="outline" onClick={addTokenRow}>
-                Add another token ({completeCount}/{form.maxSupply} complete)
+                Add another {erc1155 ? 'type' : 'token'} ({completeCount}/{form.maxSupply} complete)
               </Button>
             )}
 
             {isBatch && tokens.length < form.maxSupply && (
               <Button variant="outline" onClick={addTokenRow}>
-                Add token ({tokens.length} / {form.maxSupply} max)
+                Add {erc1155 ? 'type' : 'token'} ({tokens.length} / {form.maxSupply} max)
               </Button>
             )}
 
@@ -944,8 +1022,21 @@ export function CreatePage() {
             <CardDescription className="line-clamp-3">{form.description || 'No description'}</CardDescription>
             <dl className="mt-2">
               <PreviewSettingRow label="Collection" value={`${form.name} (${form.symbol})`} />
+              {canUseLaunchpadV2 && (
+                <PreviewSettingRow
+                  label="Token standard"
+                  value={erc1155 ? 'ERC-1155 (editioned types)' : 'ERC-721 (unique tokens)'}
+                />
+              )}
               <PreviewSettingRow label="Mint mode" value={formatMintModeLabel(form.mintMode)} />
-              <PreviewSettingRow label="Max supply" value={form.maxSupply} />
+              <PreviewSettingRow
+                label={getSupplyFieldLabel(form.tokenStandard)}
+                value={
+                  erc1155
+                    ? `${form.maxSupply} types · ${sumEditionSizes(tokens.filter(isTokenRowComplete)).toLocaleString()} copies (complete rows)`
+                    : form.maxSupply
+                }
+              />
               <PreviewSettingRow
                 label="Paid public sale"
                 value={
@@ -981,10 +1072,20 @@ export function CreatePage() {
               <PreviewSettingRow
                 label="Artwork"
                 value={
-                  <>
-                    {completeCount} complete / {form.maxSupply} required
-                    {form.enablePublicMint ? ' for paid public sale' : isBatch ? ' for batch mint' : ''}
-                  </>
+                  erc1155 ? (
+                    <>
+                      {completeCount} type(s) complete / {form.maxSupply} required
+                      {completeCount > 0 && (
+                        <> · {totalEditionCopies.toLocaleString()} copies across complete types</>
+                      )}
+                      {form.enablePublicMint ? ' for paid public sale' : isBatch ? ' for batch mint' : ''}
+                    </>
+                  ) : (
+                    <>
+                      {completeCount} complete / {form.maxSupply} required
+                      {form.enablePublicMint ? ' for paid public sale' : isBatch ? ' for batch mint' : ''}
+                    </>
+                  )
                 }
               />
             </dl>

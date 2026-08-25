@@ -21,6 +21,7 @@ import {
   MIN_ROYALTY_BURN_PERCENT,
   sanitizePercentInput,
 } from '@/lib/create-collection-validation'
+import { getCollectionTokenStandard } from '@/lib/collection-contract'
 import { buildDraftRowsFromDb, buildEditableTokenRows, dedupeDbTokensByTokenId, getRowTokenId, resolveBulkImportMaxSupply } from '@/lib/draft-token-rows'
 import { assertStoragePathForCollection } from '@/lib/storage-paths'
 import {
@@ -320,6 +321,7 @@ export function EditPage() {
 
   const isPublished = Boolean(collection.contract_address)
   const publicMintEnabled = Number(collection.mint_price_etn ?? 0) > 0
+  const tokenStandard = getCollectionTokenStandard(collection)
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -341,7 +343,7 @@ export function EditPage() {
         </p>
       </div>
 
-      <MetadataGuidancePanel compact showIpfs />
+      <MetadataGuidancePanel compact showIpfs tokenStandard={tokenStandard} />
       {collection.contract_address && <CollectionWithdraw contractAddress={collection.contract_address} />}
 
       <Card className="space-y-4">
@@ -418,11 +420,20 @@ export function EditPage() {
         </div>
       </Card>
 
-      <BulkTokenUpload maxSupply={collection.max_supply} onImport={handleBulkImport} disabled={isSaving} />
+      <BulkTokenUpload
+        maxSupply={collection.max_supply}
+        onImport={handleBulkImport}
+        disabled={isSaving}
+        tokenStandard={tokenStandard}
+      />
 
       <Card className="space-y-4">
-        <CardTitle>Token metadata</CardTitle>
-        <CardDescription>Edit any row, or bulk import numbered files to populate fields automatically.</CardDescription>
+        <CardTitle>{tokenStandard === 'erc1155' ? 'Type metadata' : 'Token metadata'}</CardTitle>
+        <CardDescription>
+          {tokenStandard === 'erc1155'
+            ? 'Each row is one type (shared metadata). Edit edition size per row, or bulk import numbered files.'
+            : 'Edit any row, or bulk import numbered files to populate fields automatically.'}
+        </CardDescription>
 
         {tokens.map((token, i) => (
           <DraftTokenRow
@@ -431,6 +442,7 @@ export function EditPage() {
             rowIndex={i}
             fieldErrors={{}}
             disabled={isSaving}
+            tokenStandard={tokenStandard}
             onChange={(next) => {
               const updated = [...tokens]
               updated[i] = next
