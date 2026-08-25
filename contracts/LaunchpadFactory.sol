@@ -174,17 +174,20 @@ contract LaunchpadFactory is Ownable2Step {
             clubWatchCollection
         );
 
+        address deployed = address(collection);
         require(collection.owner() == msg.sender, "Owner transfer failed");
 
-        deployedCollections.push(address(collection));
+        deployedCollections.push(deployed);
+        emit CollectionDeployed(msg.sender, deployed, name, symbol, burnConfig, maxSupply);
+        _forwardPublishFee(msg.value);
+        return deployed;
+    }
 
-        if (msg.value > 0) {
-            (bool sent, ) = treasury.call{value: msg.value}("");
+    function _forwardPublishFee(uint256 amount) private {
+        if (amount > 0) {
+            (bool sent, ) = treasury.call{value: amount}("");
             require(sent, "Treasury transfer failed");
         }
-
-        emit CollectionDeployed(msg.sender, address(collection), name, symbol, burnConfig, maxSupply);
-        return address(collection);
     }
 
     function deployedCollectionsCount() external view returns (uint256) {

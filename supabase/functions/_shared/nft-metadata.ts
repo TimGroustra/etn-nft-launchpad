@@ -1,12 +1,14 @@
 export const DEFAULT_ROYALTY_BPS = 500
 
-export const FORBIDDEN_METADATA_ROYALTY_KEYS = [
+export const USER_METADATA_ROYALTY_KEYS = [
   'seller_fee_basis_points',
   'fee_recipient',
   'royalty_info',
   'royalties',
   'primary_sale_recipient',
 ] as const
+
+export const FORBIDDEN_METADATA_ROYALTY_KEYS = USER_METADATA_ROYALTY_KEYS
 
 export type NftAttribute = {
   trait_type: string
@@ -21,6 +23,8 @@ export type NftMetadata = {
   description: string
   image: string
   attributes: NftAttribute[]
+  seller_fee_basis_points?: number
+  fee_recipient?: string
 }
 
 export function buildNftMetadata(input: {
@@ -28,27 +32,38 @@ export function buildNftMetadata(input: {
   description?: string | null
   attributes?: NftAttribute[]
   imageUrl: string
+  royaltyBps?: number
+  feeRecipient?: string
 }): NftMetadata {
-  return {
+  const metadata: NftMetadata = {
     name: input.name.trim(),
     description: (input.description ?? '').trim(),
     image: input.imageUrl,
     attributes: input.attributes ?? [],
   }
+
+  const royaltyBps = input.royaltyBps ?? 0
+  const feeRecipient = input.feeRecipient?.trim()
+  if (royaltyBps > 0 && feeRecipient) {
+    metadata.seller_fee_basis_points = Math.min(10_000, Math.max(0, Math.round(royaltyBps)))
+    metadata.fee_recipient = feeRecipient.toLowerCase()
+  }
+
+  return metadata
 }
 
 export function sanitizeMetadataRecord(metadata: Record<string, unknown>): Record<string, unknown> {
   const next: Record<string, unknown> = { ...metadata }
-  for (const key of FORBIDDEN_METADATA_ROYALTY_KEYS) {
+  for (const key of USER_METADATA_ROYALTY_KEYS) {
     delete next[key]
   }
   return next
 }
 
 export function validateNoMetadataRoyaltyFields(metadata: Record<string, unknown>): string | null {
-  for (const key of FORBIDDEN_METADATA_ROYALTY_KEYS) {
+  for (const key of USER_METADATA_ROYALTY_KEYS) {
     if (key in metadata && metadata[key] != null && metadata[key] !== '') {
-      return `Metadata must not include "${key}". Royalties are configured on-chain (EIP-2981), not in JSON files.`
+      return `Metadata must not include "${key}". Royalty fields are set automatically when you sync.`
     }
   }
 
@@ -62,7 +77,7 @@ export function validateNoMetadataRoyaltyFields(metadata: Record<string, unknown
         trait.includes('royalty') ||
         trait.includes('seller_fee')
       ) {
-        return 'Attributes cannot encode royalty wallet or fee settings. Royalties are configured on-chain only.'
+        return 'Attributes cannot encode royalty wallet or fee settings.'
       }
     }
   }

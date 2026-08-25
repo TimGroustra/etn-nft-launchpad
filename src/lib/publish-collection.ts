@@ -1,7 +1,7 @@
 import { parseEther } from 'viem'
 import type { WriteContractParameters } from 'wagmi/actions'
 import type { Collection } from '@/types/database'
-import { NFT_ABI } from '@/lib/blockchain'
+import { getCollectionContractAbi, NFT_ABI } from '@/lib/blockchain'
 import { getCollectionMetadataBaseUri, getOnChainTokenUriSuffix, listCollectionTokens } from '@/lib/collection-metadata'
 import { analyzeCollectionTokenCoverage } from '@/lib/collection-token-readiness'
 import { syncTokenUri, updateToken } from '@/lib/api'
@@ -94,27 +94,50 @@ export async function batchMintCollectionToCreator(
   creatorAddress: `0x${string}`,
   maxSupply: number,
   chainId: number,
+  collection?: Collection,
   options?: {
     onWalletStep?: (label: string) => void
     onProgress?: (completed: number, total: number) => void
+    editionSizesByTokenId?: Map<number, number>
   },
 ) {
+  const abi = collection ? getCollectionContractAbi(collection) : NFT_ABI
+  const isErc1155 =
+    Boolean(collection) &&
+    (collection!.contract_version ?? 1) !== 1 &&
+    collection!.token_standard === 'erc1155'
   let lastTxHash: `0x${string}` | undefined
 
   for (let start = 1; start <= maxSupply; start += BATCH_MINT_CHUNK_SIZE) {
     const end = Math.min(start + BATCH_MINT_CHUNK_SIZE - 1, maxSupply)
     const count = end - start + 1
-    const recipients = Array.from({ length: count }, () => creatorAddress)
     const uris = Array.from({ length: count }, (_, index) => getOnChainTokenUriSuffix(start + index))
 
     options?.onWalletStep?.(`Batch mint tokens ${start}–${end} of ${maxSupply}`)
-    lastTxHash = await writeContractAsync({
-      address: contractAddress,
-      abi: NFT_ABI,
-      functionName: 'batchMint',
-      args: [recipients, uris],
-      chainId,
-    })
+    if (isErc1155) {
+      const tokenIds = Array.from({ length: count }, (_, index) => BigInt(start + index))
+      const amounts = Array.from({ length: count }, (_, index) => {
+        const tokenId = start + index
+        const editionSize = options?.editionSizesByTokenId?.get(tokenId) ?? 1
+        return BigInt(Math.max(1, editionSize))
+      })
+      lastTxHash = await writeContractAsync({
+        address: contractAddress,
+        abi,
+        functionName: 'batchMint',
+        args: [creatorAddress, tokenIds, amounts, uris],
+        chainId,
+      })
+    } else {
+      const recipients = Array.from({ length: count }, () => creatorAddress)
+      lastTxHash = await writeContractAsync({
+        address: contractAddress,
+        abi,
+        functionName: 'batchMint',
+        args: [recipients, uris],
+        chainId,
+      })
+    }
     options?.onProgress?.(end, maxSupply)
   }
 
@@ -124,11 +147,20 @@ export async function batchMintCollectionToCreator(
 async function listCollectionTokenRecords(collectionId: string): Promise<CollectionToken[]> {
   const { data, error } = await supabase
     .from('collection_tokens')
-    .select('id, token_id, name, image_storage_path, minted, updated_at')
+    .select('id, token_id, name, image_storage_path, minted, updated_at, edition_size')
     .eq('collection_id', collectionId)
     .order('token_id', { ascending: true })
   if (error) throw error
   return dedupeDbTokensByTokenId((data ?? []) as CollectionToken[])
+}
+
+function buildEditionSizesByTokenId(tokens: CollectionToken[]): Map<number, number> {
+  const map = new Map<number, number>()
+  for (const token of tokens) {
+    if (token.token_id == null) continue
+    map.set(token.token_id, Math.max(1, token.edition_size ?? 1))
+  }
+  return map
 }
 
 async function markCollectionTokensMinted(
@@ -169,13 +201,17 @@ export async function publishBatchCollection(
     options,
   )
 
+  const tokenRecords = await listCollectionTokenRecords(collection.id)
+  const editionSizesByTokenId = buildEditionSizesByTokenId(tokenRecords)
+
   const mintTxHash = await batchMintCollectionToCreator(
     writeContractAsync,
     contractAddress,
     walletAddress as `0x${string}`,
     collection.max_supply,
     chainId,
-    options,
+    collection,
+    { ...options, editionSizesByTokenId },
   )
 
   await markCollectionTokensMinted(walletAddress, collection.id, mintTxHash)

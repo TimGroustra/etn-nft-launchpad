@@ -1,14 +1,15 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 import { corsHeaders, validateSession, normalizeWallet } from '../_shared/utils.ts'
-import {
-  buildNftMetadata,
-  validateNoMetadataRoyaltyFields,
-} from '../_shared/nft-metadata.ts'
+import { buildNftMetadata } from '../_shared/nft-metadata.ts'
 import {
   assertStoragePathForCollection,
   buildCollectionMetadataPath,
 } from '../_shared/storage-paths.ts'
+import {
+  getPublicImageUrlFromPath,
+  getPublicMetadataUrl,
+} from '../_shared/metadata-public-urls.ts'
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
@@ -20,7 +21,7 @@ serve(async (req) => {
     )
 
     const sessionToken = req.headers.get('x-session-token') ?? ''
-    const { collectionId, tokenId, walletAddress } = await req.json()
+    const { collectionId, tokenId, walletAddress, contractAddress: contractAddressOverride } = await req.json()
     if (!collectionId || tokenId === undefined || !walletAddress) throw new Error('Missing parameters')
 
     const wallet = normalizeWallet(walletAddress)
@@ -50,20 +51,25 @@ serve(async (req) => {
       if (pathError) throw new Error(pathError)
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const imageUrl = token.image_storage_path
-      ? `${supabaseUrl}/storage/v1/object/public/collection-images/${token.image_storage_path}`
+      ? getPublicImageUrlFromPath(token.image_storage_path)
       : ''
+
+    const contractAddress =
+      (typeof contractAddressOverride === 'string' && contractAddressOverride.trim()) ||
+      collection.contract_address
+    if (!contractAddress) {
+      throw new Error('Collection contract address is required to write royalty metadata.')
+    }
 
     const metadata = buildNftMetadata({
       name: token.name,
       description: token.description,
       attributes: (token.attributes ?? []) as { trait_type: string; value: string | number }[],
       imageUrl,
+      royaltyBps: Number(collection.royalty_bps ?? 0),
+      feeRecipient: contractAddress,
     })
-
-    const royaltyError = validateNoMetadataRoyaltyFields(metadata as unknown as Record<string, unknown>)
-    if (royaltyError) throw new Error(royaltyError)
 
     const metadataPath = buildCollectionMetadataPath(collectionId, tokenId)
     const { error: uploadError } = await supabase.storage
@@ -74,7 +80,7 @@ serve(async (req) => {
       })
     if (uploadError) throw uploadError
 
-    const tokenUri = `${supabaseUrl}/storage/v1/object/public/collection-metadata/${metadataPath}`
+    const tokenUri = getPublicMetadataUrl(collectionId, tokenId)
     const onChainTokenUri = `${tokenId}.json`
 
     await supabase
@@ -89,7 +95,7 @@ serve(async (req) => {
       JSON.stringify({
         tokenUri,
         onChainTokenUri,
-        contractAddress: collection.contract_address,
+        contractAddress: collection.contract_address ?? contractAddress,
         functionName: 'setTokenURI',
         args: [tokenId, onChainTokenUri],
       }),

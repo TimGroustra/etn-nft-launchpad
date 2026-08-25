@@ -15,10 +15,9 @@ export function MetadataGuidancePanel({ compact, showIpfs = true }: MetadataGuid
     <div className={`rounded-xl border border-slate-800 bg-slate-900/50 ${compact ? 'p-4' : 'p-5'}`}>
       <h3 className="font-medium text-white">Metadata & image compatibility</h3>
       <p className="mt-2 text-sm leading-relaxed text-slate-400">
-        Follow these rules so wallets, marketplaces, and IMintable hosts read your collection correctly. The platform
-        builds JSON for you — upload images manually or use bulk import with numbered{' '}
-        <code className="text-slate-300">1.png</code>/<code className="text-slate-300">1.json</code> pairs. Add
-        attributes per token or include them in JSON files.
+        Upload images in Artwork — we generate metadata JSON and public image URLs for you. Use bulk import with
+        numbered <code className="text-slate-300">1.png</code> files and optional{' '}
+        <code className="text-slate-300">1.json</code> for name, description, and attributes (not image URLs).
       </p>
 
       <div className={`mt-4 grid gap-3 ${compact ? '' : 'md:grid-cols-2'}`}>
@@ -40,10 +39,12 @@ export function MetadataGuidancePanel({ compact, showIpfs = true }: MetadataGuid
           <h4 className="font-medium text-white">Metadata JSON</h4>
           <ul className="mt-2 list-inside list-disc space-y-1 text-slate-400">
             <li>
-              Fields: <code className="text-slate-300">name</code>,{' '}
+              Fields you set: <code className="text-slate-300">name</code>,{' '}
               <code className="text-slate-300">description</code>,{' '}
-              <code className="text-slate-300">image</code>,{' '}
               <code className="text-slate-300">attributes</code>
+            </li>
+            <li>
+              <code className="text-slate-300">image</code> URL is generated when you save — do not paste your own
             </li>
             <li>Name max 80 chars · description max 2000 chars</li>
             <li>Token IDs are 1-based (#1, #2, …)</li>
@@ -64,8 +65,9 @@ export function MetadataGuidancePanel({ compact, showIpfs = true }: MetadataGuid
 
       {showIpfs && (
         <p className="mt-3 text-xs leading-relaxed text-slate-500">
-          Using IPFS later? Name files <code className="text-slate-400">1.json</code>,{' '}
-          <code className="text-slate-400">2.json</code> under your folder so public mint base URI resolves correctly.
+          Bulk JSON files are optional — use <code className="text-slate-400">1.json</code>,{' '}
+          <code className="text-slate-400">2.json</code> for names and traits only; pair each with{' '}
+          <code className="text-slate-400">1.png</code>, <code className="text-slate-400">2.png</code>, etc.
         </p>
       )}
 
@@ -90,7 +92,7 @@ export function MetadataGuidancePanel({ compact, showIpfs = true }: MetadataGuid
             download="ipfs-folder-structure.txt"
             className="inline-flex items-center rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-medium text-slate-200 hover:border-slate-500 hover:text-white"
           >
-            IPFS folder guide
+            Bulk import guide
           </a>
         )}
         <a

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Input, Textarea } from '@/components/ui/input'
+import { Label } from '@/components/ui/input'
 import { FieldError } from '@/components/form-fields'
 import { TokenAttributesEditor } from '@/components/TokenAttributesEditor'
 import type { DraftToken } from '@/lib/create-collection-validation'
@@ -12,9 +13,17 @@ type DraftTokenRowProps = {
   fieldErrors: Record<string, string>
   onChange: (token: DraftToken) => void
   disabled?: boolean
+  showEditionSize?: boolean
 }
 
-export function DraftTokenRow({ token, rowIndex, fieldErrors, onChange, disabled = false }: DraftTokenRowProps) {
+export function DraftTokenRow({
+  token,
+  rowIndex,
+  fieldErrors,
+  onChange,
+  disabled = false,
+  showEditionSize = false,
+}: DraftTokenRowProps) {
   const tokenNum = getRowTokenId(token, rowIndex)
   const fieldPrefix = `token.${tokenNum}`
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -58,6 +67,20 @@ export function DraftTokenRow({ token, rowIndex, fieldErrors, onChange, disabled
         disabled={disabled}
       />
       <FieldError message={fieldErrors[`${fieldPrefix}.description`]} />
+      {showEditionSize && (
+        <div>
+          <Label>Edition size</Label>
+          <Input
+            type="number"
+            min={1}
+            value={token.editionSize ?? 1}
+            onChange={(e) =>
+              onChange({ ...token, editionSize: Math.max(1, Number(e.target.value) || 1) })
+            }
+            disabled={disabled}
+          />
+        </div>
+      )}
       <div className="space-y-1">
         <Input
           type="file"

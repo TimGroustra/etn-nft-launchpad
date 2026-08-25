@@ -21,10 +21,13 @@ async function mapWithConcurrency<T>(
 }
 import {
   clampRoyaltyBurnPercent,
+  clampMintBurnPercent,
   getTokenAttributesForSave,
   isTokenRowEmpty,
+  MIN_MINT_BURN_PERCENT,
   MIN_PUBLIC_MINT_ETN,
   MIN_ROYALTY_BURN_PERCENT,
+  mintBurnBpsFromPercent,
   percentToBps,
   royaltyBurnBpsFromPercent,
   sanitizeFormForMode,
@@ -175,7 +178,10 @@ export async function saveDraftCollection(
     description: sanitized.description,
     mintMode: sanitized.mintMode,
     maxSupply: sanitized.maxSupply,
-    mintBurnBps: percentToBps(Number(sanitized.mintBurnPercent)),
+    mintBurnBps:
+      sanitized.mintMode === 'lazy'
+        ? mintBurnBpsFromPercent(sanitized.mintBurnPercent)
+        : percentToBps(Number(sanitized.mintBurnPercent)),
     burnOnMint: sanitized.burnOnMint,
     royaltyBurnBps: royaltyBurnBpsFromPercent(sanitized.royaltyBurnPercent),
     royaltyBps: percentToBps(Number(sanitized.royaltyPercent)),
@@ -218,6 +224,7 @@ export async function saveDraftCollection(
       description: token.description.trim(),
       attributes: getTokenAttributesForSave(token),
       imageStoragePath: imagePath,
+      editionSize: Math.max(1, Number(token.editionSize ?? 1)),
     }
 
     const existingRow =
@@ -282,10 +289,16 @@ export function collectionToForm(collection: Collection): CreateCollectionForm {
     name: collection.name,
     symbol: collection.symbol,
     description: collection.description ?? '',
+    tokenStandard: collection.token_standard === 'erc1155' ? 'erc1155' : 'erc721',
     mintMode: collection.mint_mode,
     maxSupply: Number(collection.max_supply),
-    mintBurnPercent: mintBurnBps ? String(mintBurnBps / 100) : '0',
-    burnOnMint: collection.burn_on_mint,
+    mintBurnPercent:
+      collection.mint_mode === 'lazy'
+        ? clampMintBurnPercent(mintBurnBps ? String(mintBurnBps / 100) : String(MIN_MINT_BURN_PERCENT))
+        : mintBurnBps
+          ? String(mintBurnBps / 100)
+          : '0',
+    burnOnMint: collection.mint_mode === 'lazy' ? true : collection.burn_on_mint,
     royaltyBurnPercent: clampRoyaltyBurnPercent(
       royaltyBurnBps ? String(royaltyBurnBps / 100) : String(MIN_ROYALTY_BURN_PERCENT),
     ),

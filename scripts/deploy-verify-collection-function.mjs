@@ -38,19 +38,36 @@ if (!token) {
   process.exit(1)
 }
 
-const response = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/functions/deploy?slug=verify-collection-contract`, {
-  method: 'POST',
-  headers: {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
+const form = new FormData()
+form.append(
+  'metadata',
+  new Blob(
+    [
+      JSON.stringify({
+        name: 'verify-collection-contract',
+        entrypoint_path: 'index.ts',
+        verify_jwt: true,
+      }),
+    ],
+    { type: 'application/json' },
+  ),
+)
+
+for (const file of files) {
+  const type = file.name.endsWith('.json') ? 'application/json' : 'application/typescript'
+  form.append('file', new Blob([file.content], { type }), file.name)
+}
+
+const response = await fetch(
+  `https://api.supabase.com/v1/projects/${projectRef}/functions/deploy?slug=verify-collection-contract`,
+  {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: form,
   },
-  body: JSON.stringify({
-    name: 'verify-collection-contract',
-    entrypoint_path: 'index.ts',
-    verify_jwt: true,
-    files,
-  }),
-})
+)
 
 const body = await response.text()
 console.log('status', response.status)

@@ -1,5 +1,4 @@
 import { getAddress } from 'viem'
-import { electroneum } from '@/lib/blockchain'
 import { computeTieredPublishFeeWei } from '@/lib/platform-fees'
 
 function resolveCreatorNftAddress(value: string | undefined, fallback: `0x${string}`): `0x${string}` {
@@ -18,7 +17,8 @@ export const CLUB_WATCH_NFT_ADDRESS = resolveCreatorNftAddress(
   '0x9b852BD6965F050e9AB8eEd4c900742b1d01fdD1',
 )
 
-export const CREATOR_ACCESS_CHAIN_ID = electroneum.id
+/** Electroneum mainnet — creator-access NFTs are mainnet-only. */
+export const CREATOR_ACCESS_CHAIN_ID = 52014
 
 /** 50% off publish fee when the wallet holds at least one NFT from each collection. */
 export const DUAL_HOLDER_DISCOUNT_BPS = 5000n

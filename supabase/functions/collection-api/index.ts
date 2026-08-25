@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.190.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 import { corsHeaders, validateSession, normalizeWallet, normalizeContractAddress } from '../_shared/utils.ts'
 import { validateCollectionPayload, validateTokenPayload } from '../_shared/collection-validation.ts'
+import { canUseLaunchpadV2 } from '../_shared/admin.ts'
 import {
   buildCollectionImagePath,
   extensionFromContentType,
@@ -55,6 +56,11 @@ serve(async (req) => {
       const collectionError = validateCollectionPayload(body)
       if (collectionError) throw new Error(collectionError)
 
+      const v2Allowed = await canUseLaunchpadV2(supabase, wallet)
+      const contractVersion = v2Allowed && Number(body.contractVersion ?? 2) !== 1 ? 2 : 1
+      const tokenStandard =
+        v2Allowed && body.tokenStandard === 'erc1155' ? 'erc1155' : 'erc721'
+
       const { data, error } = await supabase
         .from('collections')
         .insert({
@@ -68,9 +74,13 @@ serve(async (req) => {
           mint_burn_bps: body.mintBurnBps ?? 0,
           burn_on_mint: body.burnOnMint ?? false,
           royalty_burn_bps: body.royaltyBurnBps ?? 0,
+          royalty_bps: body.royaltyBps ?? 500,
           mint_price_etn: body.mintPriceEtn ?? 0,
           max_mint_per_wallet: body.maxMintPerWallet ?? 0,
           show_on_mint_panel: Boolean(body.showOnMintPanel) && Number(body.mintPriceEtn ?? 0) > 0,
+          random_public_mint: Boolean(body.randomPublicMint) && Number(body.mintPriceEtn ?? 0) > 0,
+          token_standard: tokenStandard,
+          contract_version: contractVersion,
           storage_provider: body.storageProvider ?? 'supabase',
           chain_id: body.chainId ?? 52014,
         })
@@ -94,10 +104,14 @@ serve(async (req) => {
       if (body.mintBurnBps !== undefined) updates.mint_burn_bps = body.mintBurnBps
       if (body.burnOnMint !== undefined) updates.burn_on_mint = body.burnOnMint
       if (body.royaltyBurnBps !== undefined) updates.royalty_burn_bps = body.royaltyBurnBps
+      if (body.royaltyBps !== undefined) updates.royalty_bps = body.royaltyBps
       if (body.mintPriceEtn !== undefined) updates.mint_price_etn = body.mintPriceEtn
       if (body.maxMintPerWallet !== undefined) updates.max_mint_per_wallet = body.maxMintPerWallet
       if (typeof body.showOnMintPanel === 'boolean') {
         updates.show_on_mint_panel = body.showOnMintPanel && Number(body.mintPriceEtn ?? 0) > 0
+      }
+      if (typeof body.randomPublicMint === 'boolean') {
+        updates.random_public_mint = body.randomPublicMint && Number(body.mintPriceEtn ?? 0) > 0
       }
       if (typeof body.contractAddress === 'string') {
         updates.contract_address = normalizeContractAddress(body.contractAddress)
@@ -191,6 +205,7 @@ serve(async (req) => {
             attributes: body.attributes ?? [],
             image_storage_path: body.imageStoragePath,
             token_id: body.tokenId,
+            edition_size: Math.max(1, Number(body.editionSize ?? 1)),
           })
           .eq('id', existing.id)
           .select()
@@ -210,6 +225,7 @@ serve(async (req) => {
           description: body.description ?? '',
           attributes: body.attributes ?? [],
           image_storage_path: body.imageStoragePath,
+          edition_size: Math.max(1, Number(body.editionSize ?? 1)),
         })
         .select()
         .single()
@@ -258,6 +274,7 @@ serve(async (req) => {
       if (body.tokenUri !== undefined) updates.token_uri = body.tokenUri
       if (body.minted !== undefined) updates.minted = body.minted
       if (body.mintTxHash !== undefined) updates.mint_tx_hash = body.mintTxHash
+      if (body.editionSize !== undefined) updates.edition_size = Math.max(1, Number(body.editionSize))
 
       if (Object.keys(updates).length === 0) {
         throw new Error('No token fields to update.')

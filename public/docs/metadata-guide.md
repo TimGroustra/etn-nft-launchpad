@@ -1,6 +1,6 @@
 # Metadata & artwork guide for creators
 
-This launchpad stores NFT images and JSON metadata in a format compatible with OpenSea, wallets, and IMintable marketplaces. Follow these rules for the smoothest publish and mint experience.
+This launchpad stores NFT images and JSON metadata in a format compatible with OpenSea, wallets, and IMintable marketplaces. **You upload artwork; we build the metadata JSON for you** — you do not need to host images or write image URLs yourself.
 
 ## Quick checklist
 
@@ -8,14 +8,25 @@ This launchpad stores NFT images and JSON metadata in a format compatible with O
 - [ ] **PNG, JPEG, WebP, or GIF** — max **10 MB** each
 - [ ] **Unique token name** per row (max 80 characters)
 - [ ] **Optional description** per token (max 2000 characters)
-- [ ] **One image per token row** in the Artwork step
-- [ ] **No royalty fields** in JSON (`fee_recipient`, `seller_fee_basis_points`, etc.)
+- [ ] **One image file per token** in the Artwork step (or paired `1.png` + optional `1.json` in bulk import)
+- [ ] **No royalty fields** in imported JSON (`fee_recipient`, `seller_fee_basis_points`, etc.)
 
-Download templates:
+Download reference templates:
 
 - [/templates/token-metadata.template.json](/templates/token-metadata.template.json)
 - [/templates/example-token-1.json](/templates/example-token-1.json)
-- [/templates/ipfs-folder-structure.txt](/templates/ipfs-folder-structure.txt)
+
+---
+
+## What you provide vs what we generate
+
+| You provide | We generate |
+|-------------|-------------|
+| Image file per token | Public image URL in Supabase Storage |
+| Name, description, attributes (in the wizard or optional bulk JSON) | Full metadata JSON per token |
+| Collection settings (mint mode, burns, royalties) | On-chain `tokenURI` / base URI at publish |
+
+You **never** type an image URL in the create wizard. After you save, each token’s JSON includes a public `image` URL pointing at the file you uploaded.
 
 ---
 
@@ -34,34 +45,38 @@ Download templates:
 1. **Use consistent dimensions** across the collection (e.g. all 1024×1024).
 2. **Prefer PNG or WebP** for sharp art; use JPEG for photos.
 3. **Avoid tiny images** — upscaling after mint looks bad on marketplaces.
-4. **Original filenames do not matter** — the platform assigns token IDs when you save (1, 2, 3…).
+4. **Bulk import:** name files `1.png`, `2.png`, … (optional matching `1.json` for name/description/attributes only).
 5. **Keep file sizes reasonable** — large GIFs may hit the 10 MB limit.
 
 ---
 
 ## Metadata JSON schema
 
-Each token gets one JSON file. The platform generates this automatically when you use the create wizard; you only need to understand the schema if you host metadata yourself (IPFS, Arweave, etc.).
+Each token gets one JSON file when you save or publish. The create wizard **Preview** step shows the shape below. The `image` value is a placeholder until save; we replace it with the real public URL automatically.
 
 ```json
 {
   "name": "Token name",
   "description": "Optional description",
-  "image": "https://full-url-to-image.png",
+  "image": "(we generate this from your uploaded image)",
   "attributes": []
 }
 ```
 
 | Field | Required | Limits | Notes |
 |-------|----------|--------|-------|
-| `name` | Yes | 80 chars | Shown in wallets and marketplaces |
-| `description` | No | 2000 chars | Empty string if omitted |
-| `image` | Yes | Full URL | Must be publicly reachable (HTTPS or `ipfs://`) |
-| `attributes` | No | Array | Trait list; wizard currently writes `[]` |
+| `name` | Yes | 80 chars | You enter this in Artwork (or in bulk `N.json`) |
+| `description` | No | 2000 chars | Optional; empty string if omitted |
+| `image` | Yes (in final JSON) | — | **Do not supply a URL yourself** — we set this from your uploaded image when you save |
+| `attributes` | No | Array | Add traits in the wizard or in bulk `N.json` |
 
-### Forbidden fields (never include)
+### Bulk import JSON (`1.json`, `2.json`, …)
 
-Royalties are **on-chain only** (EIP-2981, fixed 5% at deploy). Do not put these in JSON:
+Optional JSON files only need **name**, **description**, and **attributes**. Pair each JSON with a matching image (`1.json` + `1.png`). Any `image` field inside imported JSON is **ignored** — the paired image file is always used.
+
+### Forbidden fields (never include in imported JSON)
+
+Royalties are **on-chain only** (EIP-2981). Do not put these in JSON:
 
 - `seller_fee_basis_points`
 - `fee_recipient`
@@ -83,6 +98,12 @@ After you save a draft, files are stored in Supabase:
 | Metadata JSON | `{collectionId}/{tokenId}.json` |
 
 Token IDs are **1-based** (first token is `#1`, not `#0`).
+
+Example **generated** `image` value after save:
+
+```
+https://YOUR-PROJECT.supabase.co/storage/v1/object/public/collection-images/{collectionId}/1.png
+```
 
 Example metadata URL after publish:
 
@@ -108,30 +129,22 @@ A row is **complete** when it has a **name** and an **image file**.
 
 If public mint is enabled, the contract uses a **base URI** pointing at your metadata folder. Token `#1` resolves to `{baseURI}1.json`, token `#2` to `{baseURI}2.json`, and so on.
 
-That is why filenames must follow `{tokenId}.json` when you host metadata yourself.
-
 ---
 
-## Custom storage (IPFS / Arweave / your CDN)
+## Editing after publish
 
-By default the launchpad hosts everything in Supabase. After publish you can switch per token in **Edit metadata**:
+Use **Edit** on your dashboard to change names, descriptions, attributes, or artwork for tokens you have not minted yet. Saving re-uploads images and regenerates metadata JSON with updated public URLs, then syncs on-chain when needed.
 
-1. Pin your images and JSON (you handle pinning/hosting).
-2. Paste the full metadata URL (`ipfs://…` or `https://…`) in **Metadata / token URI**.
-3. Click **Save & Sync On-Chain**.
-
-Leave the URI **blank** to keep using auto-generated Supabase JSON.
-
-See [/templates/ipfs-folder-structure.txt](/templates/ipfs-folder-structure.txt) for folder naming.
+There is no separate “edit metadata URL” screen — artwork and traits are edited in the collection editor; URLs are always generated for you.
 
 ---
 
 ## Recommended workflow
 
 1. Prepare **square** artwork files locally (consistent size).
-2. In **Artwork**, fill one row per token with name + image.
-3. Use **Preview** to check the generated JSON for each token.
+2. In **Artwork**, add one row per token: upload the image and enter name (and optional description/traits).
+3. Use **Preview** to check the generated JSON for each token (image will show as a placeholder until save).
 4. Save draft → publish from dashboard.
 5. Mint from dashboard (lazy/batch) or enable public mint for collectors.
 
-For large collections, prepare a spreadsheet of token names/descriptions first, then upload images row by row in order.
+For large collections, use bulk import with numbered `1.png` / `1.json` pairs, or prepare names/descriptions in optional JSON files alongside your images.

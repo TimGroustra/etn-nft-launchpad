@@ -29,6 +29,8 @@ export interface Database {
           max_mint_per_wallet: number
           show_on_mint_panel: boolean
           random_public_mint: boolean
+          token_standard: 'erc721' | 'erc1155'
+          contract_version: number
           storage_provider: 'supabase'
           base_uri: string | null
           publish_tx_hash: string | null
@@ -56,6 +58,7 @@ export interface Database {
           token_uri: string | null
           minted: boolean
           mint_tx_hash: string | null
+          edition_size: number
           created_at: string
           updated_at: string
         }

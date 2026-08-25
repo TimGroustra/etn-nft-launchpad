@@ -6,6 +6,8 @@ export type MintMode = 'lazy' | 'batch'
 
 export const MIN_PUBLIC_MINT_ETN = 1
 export const MAX_SUPPLY = 100_000
+export const MIN_ROYALTY_BURN_BPS = 1000
+export const MIN_MINT_BURN_BPS = 500
 export const TOKEN_NAME_MAX = 80
 export const TOKEN_DESC_MAX = 2000
 export const COLLECTION_NAME_MAX = 80
@@ -22,9 +24,11 @@ export type CollectionPayload = {
   mintBurnBps?: number
   burnOnMint?: boolean
   royaltyBurnBps?: number
+  royaltyBps?: number
   mintPriceEtn?: number
   maxMintPerWallet?: number
   showOnMintPanel?: boolean
+  randomPublicMint?: boolean
 }
 
 export type TokenPayload = {
@@ -64,8 +68,17 @@ export function validateCollectionPayload(body: CollectionPayload): string | nul
   const royaltyBurnBps = Number(body.royaltyBurnBps ?? 0)
   const maxMintPerWallet = Number(body.maxMintPerWallet ?? 0)
 
-  if (royaltyBurnBps < 0 || royaltyBurnBps > 10000) {
+  if (royaltyBurnBps < MIN_ROYALTY_BURN_BPS) {
+    return `Royalties burn must be at least ${MIN_ROYALTY_BURN_BPS / 100}%.`
+  }
+
+  if (royaltyBurnBps > 10_000) {
     return 'Royalties burn must be between 0 and 100%.'
+  }
+
+  const royaltyBps = Number(body.royaltyBps ?? 500)
+  if (royaltyBps < 0 || royaltyBps > 10000) {
+    return 'Marketplace royalty must be between 0 and 100%.'
   }
 
   if (mintPriceEtn > 0) {
@@ -78,11 +91,15 @@ export function validateCollectionPayload(body: CollectionPayload): string | nul
     if (maxMintPerWallet > maxSupply) {
       return 'Max mints per wallet cannot exceed max supply.'
     }
-  } else if (burnOnMint) {
+  } else if (burnOnMint && mintMode !== 'lazy') {
     return 'Mint CLUB burn requires a public mint price.'
   }
 
-  if (burnOnMint && mintBurnBps <= 0) {
+  if (mintMode === 'lazy') {
+    if (!burnOnMint || mintBurnBps < MIN_MINT_BURN_BPS) {
+      return `Public minting collections require at least ${MIN_MINT_BURN_BPS / 100}% of mint price burned as CLUB.`
+    }
+  } else if (burnOnMint && mintBurnBps <= 0) {
     return 'Mint CLUB burn requires a percentage greater than 0.'
   }
 
@@ -94,8 +111,16 @@ export function validateCollectionPayload(body: CollectionPayload): string | nul
     return 'Invalid mint mode.'
   }
 
+  if (mintMode === 'batch' && mintPriceEtn > 0) {
+    return 'Batch mint collections cannot enable paid public sale. Use public minting for collector sales.'
+  }
+
   if (body.showOnMintPanel && mintPriceEtn <= 0) {
-    return 'Public mint must be enabled before listing on the NFT Minting Panel.'
+    return 'Paid public sale must be enabled before listing on the NFT Minting Panel.'
+  }
+
+  if (body.randomPublicMint && mintPriceEtn <= 0) {
+    return 'Random mint order requires a paid public sale.'
   }
 
   return null

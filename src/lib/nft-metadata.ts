@@ -63,7 +63,7 @@ export function buildDraftMetadataPreview(input: {
     name: input.name,
     description: input.description,
     attributes: input.attributes,
-    imageUrl: '(uploaded when you save — public URL generated automatically)',
+    imageUrl: '(we generate this from your uploaded image)',
     royaltyBps: input.royaltyBps,
     feeRecipient: input.feeRecipientPreview,
   })

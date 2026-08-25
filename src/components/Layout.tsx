@@ -30,17 +30,15 @@ export function Layout() {
               <Rocket className="h-5 w-5 text-blue-400" />
             </Link>
             <nav className="flex flex-wrap items-center gap-1">
-              {isConnected && (holdingsLoading || canAccessCreatorTools) && (
-                <NavLink to="/create" className={navLinkClass}>
-                  Create
-                </NavLink>
-              )}
+              <NavLink to="/" end className={navLinkClass}>
+                Mint
+              </NavLink>
               <NavLink to="/dashboard" className={navLinkClass}>
                 Dashboard
               </NavLink>
-              {isConnected && (
-                <NavLink to="/" end className={navLinkClass}>
-                  Mint
+              {isConnected && !holdingsLoading && canAccessCreatorTools && (
+                <NavLink to="/create" className={navLinkClass}>
+                  Create
                 </NavLink>
               )}
             </nav>

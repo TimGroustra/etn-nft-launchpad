@@ -67,7 +67,7 @@ export function EditPage() {
   )
   const [showOnMintPanel, setShowOnMintPanel] = useState(false)
   const [royaltyPercent, setRoyaltyPercent] = useState('5')
-  const [royaltyBurnPercent, setRoyaltyBurnPercent] = useState('2')
+  const [royaltyBurnPercent, setRoyaltyBurnPercent] = useState('10')
 
   useEffect(() => {
     if (!collection || !isFetched || loaded) return

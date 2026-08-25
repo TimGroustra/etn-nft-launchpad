@@ -1,13 +1,20 @@
 {
   "electroneum": {
-    "LaunchpadFactory": "0x85ceB5f1D66c1B5e7661B4cABfB4ecCF5d80673a",
+    "LaunchpadFactory": "0x8b4cd006B36F033D18B9d079D1bfD13Ef8252b1A",
     "note": "Run `npm run deploy:mainnet` with DEPLOYER_PRIVATE_KEY set, then update VITE_FACTORY_ADDRESS",
-    "deployedAt": "2026-08-22T08:21:35.664Z",
+    "deployedAt": "2026-08-23T10:35:29.772Z",
     "deployer": "0x126aa663BdeDd6Ae477fd28a7d0b624b8109D15d",
-    "txHash": "0x3ba6221e0e186852f422720d3c1f2ea338b84004057e4dd7474008e57a8c5f93"
+    "txHash": "0x00a07990053962fea20e924ecd29c5852c4a6aa21c7519f7426525ae86439a38",
+    "swapRouter": "0x5A3AB7e9f405250B36e7e0a4654c1052EADC1F07",
+    "LaunchpadFactoryERC721V2": "0xaaAe79CB57aAe3bD89d22FC7ADd19C1B0780c63C",
+    "LaunchpadFactoryERC1155": "0x2fc2e1b25F038d9d5b353D366D2D601dF1be6ee1",
+    "v2DeployedAt": "2026-08-25T15:01:17.267Z"
   },
   "electroneumTestnet": {
     "LaunchpadFactory": "0x368Fe607F06ab5Ee022755Db854e0CC49f7469e7",
+    "LaunchpadFactoryERC721V2": "0xD8E8A07BEF5482E1bFe69658cDfB83Af79ea992b",
+    "LaunchpadFactoryERC1155": "0x410eb6aEF0b4a6BDA4A84c60f51bcc096E3616bf",
+    "v2DeployedAt": "2026-08-25T14:50:00.000Z",
     "deployedAt": "2026-08-21T22:04:56.454Z",
     "deployer": "0x126aa663BdeDd6Ae477fd28a7d0b624b8109D15d",
     "txHash": "0xdc72eb00ea646c88830c71bae7600824c1bf824d8ab09efd3a93351ac418cfd6",

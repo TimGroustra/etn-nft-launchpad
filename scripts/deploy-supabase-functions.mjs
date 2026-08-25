@@ -14,21 +14,26 @@ const bundles = {
     ['index.ts', read('collection-api/index.ts').replaceAll("'../_shared/", "'./_shared/")],
     ['_shared/utils.ts', read('_shared/utils.ts')],
     ['_shared/collection-validation.ts', read('_shared/collection-validation.ts')],
+    ['_shared/nft-metadata.ts', read('_shared/nft-metadata.ts')],
     ['_shared/storage-paths.ts', read('_shared/storage-paths.ts')],
   ],
   'sync-token-uri': [
-    ['index.ts', read('sync-token-uri/index.ts')],
-    ['../_shared/utils.ts', read('_shared/utils.ts')],
-    ['../_shared/nft-metadata.ts', read('_shared/nft-metadata.ts')],
+    ['index.ts', read('sync-token-uri/index.ts').replaceAll("'../_shared/", "'./_shared/")],
+    ['_shared/utils.ts', read('_shared/utils.ts')],
+    ['_shared/nft-metadata.ts', read('_shared/nft-metadata.ts')],
+    ['_shared/storage-paths.ts', read('_shared/storage-paths.ts')],
+    ['_shared/metadata-public-urls.ts', read('_shared/metadata-public-urls.ts')],
   ],
   'verify-publish-payment': [
     ['index.ts', read('verify-publish-payment/index.ts')],
     ['../_shared/utils.ts', read('_shared/utils.ts')],
+    ['../_shared/creator-access.ts', read('_shared/creator-access.ts')],
   ],
   'verify-collection-contract': [
     ['index.ts', read('verify-collection-contract/index.ts').replaceAll("'../_shared/", "'./_shared/")],
     ['_shared/utils.ts', read('_shared/utils.ts')],
     ['_shared/contract-verification.ts', read('_shared/contract-verification.ts')],
+    ['_shared/editable-erc721-verification.json', read('_shared/editable-erc721-verification.json')],
   ],
 }
 

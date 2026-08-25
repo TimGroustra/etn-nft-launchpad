@@ -11,14 +11,15 @@ import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
 import { CollectionOwnerPanel } from '@/components/CollectionOwnerPanel'
 import { CreatorAccessUpsell } from '@/components/CreatorAccessUpsell'
+import { DraftPublishButton } from '@/components/DraftPublishButton'
 import { WalletConnectButton } from '@/components/WalletConnectButton'
 import { useNetwork } from '@/context/NetworkContext'
 import { formatEther } from 'viem'
-import { FACTORY_ABI, getChainId, getPublishFeeWei, readRequiredPublishFeeWei, resolveDeployedCollectionAddress } from '@/lib/blockchain'
-import { usePlatformConfig, resolveFactoryAddress } from '@/hooks/usePlatformConfig'
+import { FACTORY_ABI, FACTORY_V2_ABI, getChainId, getPublishFeeWei, readRequiredPublishFeeWei, resolveDeployedCollectionAddress } from '@/lib/blockchain'
+import { usePlatformConfig, resolveFactoryAddress, resolveFactoryV2Address } from '@/hooks/usePlatformConfig'
+import { getCollectionTokenStandard, getFactoryDeployFunction, usesFactoryV2 } from '@/lib/collection-contract'
 import { useCanAccessCreatorTools } from '@/hooks/useCanAccessCreatorTools'
 import { useCreatorAccess } from '@/hooks/useCreatorAccess'
-import { resolvePublishFeeWei } from '@/lib/creator-access'
 import { PUBLISH_FEE_SUPPLY_UNIT } from '@/lib/platform-fees'
 import { firstIssueMessage, formatMintModeLabel, validateCollectionForPublish } from '@/lib/create-collection-validation'
 import { updateCollection, verifyPublishPayment, verifyCollectionContract, deleteCollection, archiveCollection, restoreCollection } from '@/lib/api'
@@ -121,8 +122,6 @@ export function DashboardPage() {
   const publishFeeReady = Boolean(factoryAddress && factoryAddress !== zeroAddress)
   const displayedCollections = view === 'archive' ? archivedCollections : collections
 
-  const estimatePublishFee = (maxSupply: number) => resolvePublishFeeWei(publishFeePerTen, maxSupply, holdings)
-
   const refetchAll = () => {
     void refetchActive()
     void refetchArchived()
@@ -183,12 +182,30 @@ export function DashboardPage() {
 
       if (!contractAddress) {
         if (!address) return
+        const usesV2 = usesFactoryV2(collection)
+        const tokenStandard = getCollectionTokenStandard(collection)
+        const deployFactoryAddress = usesV2
+          ? resolveFactoryV2Address(network, platformConfig, tokenStandard)
+          : (factoryAddress as `0x${string}`)
+        const deployAbi = usesV2 ? FACTORY_V2_ABI : FACTORY_ABI
+        const deployFunctionName = getFactoryDeployFunction(collection)
+
+        if (deployFactoryAddress === zeroAddress) {
+          toast.error(
+            usesV2
+              ? 'Factory V2 is not configured yet. Deploy LaunchpadFactoryV2 and set factory_address_v2 in platform config.'
+              : 'Factory is not configured for this network.',
+          )
+          return
+        }
+
         const deployValue = await readRequiredPublishFeeWei(
           client,
-          factoryAddress as `0x${string}`,
+          deployFactoryAddress,
           address,
           collection.max_supply,
           publishFeePerTen,
+          holdings,
         )
 
         onWalletStep('Pay publish fee & deploy collection contract')
@@ -198,9 +215,9 @@ export function DashboardPage() {
           progress: 15,
         }))
         const hash = await writeContractAsync({
-          address: factoryAddress,
-          abi: FACTORY_ABI,
-          functionName: 'deployCollection',
+          address: deployFactoryAddress,
+          abi: deployAbi,
+          functionName: deployFunctionName,
           args: [collectionName, collectionSymbol, burnConfig, BigInt(collection.max_supply)],
           value: deployValue,
           chainId: chain.id,
@@ -213,7 +230,7 @@ export function DashboardPage() {
           progress: 28,
         }))
         const receipt: TransactionReceipt = await client.waitForTransactionReceipt({ hash })
-        contractAddress = resolveDeployedCollectionAddress(receipt, factoryAddress, address)
+        contractAddress = resolveDeployedCollectionAddress(receipt, deployFactoryAddress, address)
 
         await updateCollection(address, collection.id, {
           contractAddress,
@@ -563,10 +580,6 @@ export function DashboardPage() {
         <div className="grid gap-4">
           {displayedCollections.map((collection) => {
             const expanded = expandedId === collection.id
-            const publishEstimate = estimatePublishFee(collection.max_supply)
-            const publishFeeLabel = formatEther(publishEstimate.feeWei)
-            const tierPublishFeeLabel = formatEther(publishEstimate.tierFeeWei)
-            const showPublishDiscount = publishEstimate.discountBps > 0n && publishEstimate.feeWei < publishEstimate.tierFeeWei
             return (
               <CollectionAccordionItem
                 key={collection.id}
@@ -625,26 +638,17 @@ export function DashboardPage() {
                           >
                             {deletingId === collection.id ? 'Deleting…' : 'Delete'}
                           </Button>
-                          <Button
-                            onClick={() => publish(collection)}
-                            disabled={
-                              isPublishing ||
-                              publishingId === collection.id ||
-                              confirming ||
-                              !publishFeeReady ||
-                              factoryAddress === '0x0000000000000000000000000000000000000000'
-                            }
-                          >
-                            {publishingId === collection.id
-                              ? 'Publishing...'
-                              : !publishFeeReady
-                                ? 'Loading fee…'
-                                : collection.contract_address
-                                  ? 'Complete publish'
-                                  : showPublishDiscount
-                                    ? `Publish (${publishFeeLabel} ETN, 50% off ${tierPublishFeeLabel})`
-                                    : `Publish (${publishFeeLabel} ETN)`}
-                          </Button>
+                          <DraftPublishButton
+                            collection={collection}
+                            factoryAddress={factoryAddress as `0x${string}`}
+                            chainId={chain.id}
+                            fallbackPerTenWei={publishFeePerTen}
+                            publishFeeReady={publishFeeReady}
+                            isPublishing={isPublishing}
+                            publishingId={publishingId}
+                            confirming={confirming}
+                            onPublish={publish}
+                          />
                         </>
                       )}
                       {collection.contract_address && (

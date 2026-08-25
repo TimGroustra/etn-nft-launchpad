@@ -17,6 +17,8 @@ export interface CollectionInput {
   maxMintPerWallet?: number
   showOnMintPanel?: boolean
   randomPublicMint?: boolean
+  tokenStandard?: 'erc721' | 'erc1155'
+  contractVersion?: number
   storageProvider?: 'supabase'
   chainId?: number
 }

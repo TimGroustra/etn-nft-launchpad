@@ -4,10 +4,10 @@ Launch editable NFT collections on the Electroneum blockchain. Creators upload i
 
 ## Storage model
 
-- **Default:** Images and metadata JSON live in Supabase Storage (`collection-images`, `collection-metadata`).
-- **Custom storage:** Creators can paste their own metadata URL (`ipfs://`, `https://`, etc.) in the editor and sync it on-chain via `setTokenURI`. The platform does not pin or host IPFS.
+- **Default:** Images and metadata JSON live in Supabase Storage (`collection-images`, `collection-metadata`). You upload image files; the app generates public URLs and metadata JSON.
+- **Bulk import:** Optional numbered `N.json` files supply name, description, and attributes only — image URLs are always generated from your uploaded files.
 
-See **[docs/metadata-guide.md](docs/metadata-guide.md)** for image specs, JSON schema, templates, and IPFS folder layout. Templates are also in `public/templates/`.
+See **[docs/metadata-guide.md](docs/metadata-guide.md)** for image specs, JSON schema, and download templates in `public/templates/`.
 
 ## Features
 

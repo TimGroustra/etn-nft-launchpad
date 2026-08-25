@@ -28,6 +28,26 @@ const FACTORY_REQUIRED_FEE_ABI = [
   },
 ] as const
 
+const LEGACY_REQUIRED_PUBLISH_FEE_ABI = [
+  {
+    inputs: [{ name: 'payer', type: 'address' }],
+    name: 'requiredPublishFee',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const
+
+const PUBLISH_FEE_ABI = [
+  {
+    inputs: [],
+    name: 'publishFee',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const
+
 const ERC721_BALANCE_ABI = [
   {
     inputs: [{ name: 'owner', type: 'address' }],
@@ -102,11 +122,40 @@ export async function resolveRequiredPublishFeeWei(
       })
       return BigInt(required)
     } catch {
+      // New tiered factory not available — try legacy flat fee with on-chain dual-holder discount.
+    }
+  }
+
+  if (factoryAddress) {
+    try {
+      const required = await client.readContract({
+        address: factoryAddress as `0x${string}`,
+        abi: LEGACY_REQUIRED_PUBLISH_FEE_ABI,
+        functionName: 'requiredPublishFee',
+        args: [wallet],
+      })
+      return BigInt(required)
+    } catch {
       // Fall through to local tiered estimate.
     }
   }
 
-  const tierFeeWei = computeTieredPublishFeeWei(maxSupply, publishFeePerTenWei)
+  let perTenWei = publishFeePerTenWei
+  if (factoryAddress) {
+    try {
+      perTenWei = BigInt(
+        await client.readContract({
+          address: factoryAddress as `0x${string}`,
+          abi: PUBLISH_FEE_ABI,
+          functionName: 'publishFee',
+        }),
+      )
+    } catch {
+      // Use caller-provided fallback.
+    }
+  }
+
+  const tierFeeWei = computeTieredPublishFeeWei(maxSupply, perTenWei)
   const holdings = await readNftHoldings(client, wallet)
   const discountBps = resolvePublishFeeDiscountBps(holdings)
   return applyPublishFeeDiscount(tierFeeWei, discountBps)

@@ -2,17 +2,33 @@ import { serve } from 'https://deno.land/std@0.190.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 import { corsHeaders, normalizeWallet, validateSession } from '../_shared/utils.ts'
 import {
-  encodeCollectionConstructorArgs,
-  isContractVerified,
-  readCollectionConstructorArgs,
-  submitCollectionVerification,
+  verifyCollectionOnExplorer,
 } from '../_shared/contract-verification.ts'
 
 async function getFactoryAddress(
   supabase: ReturnType<typeof createClient>,
   chainId: number,
+  collection: { contract_version?: number | null; token_standard?: string | null },
 ): Promise<string | null> {
-  const key = chainId === 5201420 ? 'factory_address_testnet' : 'factory_address_mainnet'
+  const isTestnet = chainId === 5201420
+  const version = collection.contract_version ?? 1
+  if (version === 2) {
+    const is1155 = collection.token_standard === 'erc1155'
+    const keys = is1155
+      ? isTestnet
+        ? ['factory_address_v2_erc1155_testnet', 'factory_address_v2_testnet']
+        : ['factory_address_v2_erc1155_mainnet', 'factory_address_v2_mainnet']
+      : isTestnet
+        ? ['factory_address_v2_erc721_testnet', 'factory_address_v2_testnet']
+        : ['factory_address_v2_erc721_mainnet', 'factory_address_v2_mainnet']
+    for (const key of keys) {
+      const { data } = await supabase.from('platform_config').select('value').eq('key', key).maybeSingle()
+      const value = data?.value?.trim()
+      if (value && value !== '0x0000000000000000000000000000000000000000') return value
+    }
+  }
+
+  const key = isTestnet ? 'factory_address_testnet' : 'factory_address_mainnet'
   const { data } = await supabase.from('platform_config').select('value').eq('key', key).maybeSingle()
   const value = data?.value?.trim()
   if (!value || value === '0x0000000000000000000000000000000000000000') return null
@@ -37,7 +53,7 @@ serve(async (req) => {
 
     const { data: collection } = await supabase
       .from('collections')
-      .select('id, creator_wallet, contract_address, chain_id')
+      .select('id, creator_wallet, contract_address, chain_id, contract_version, token_standard')
       .eq('id', collectionId)
       .eq('creator_wallet', wallet)
       .maybeSingle()
@@ -50,20 +66,11 @@ serve(async (req) => {
     }
 
     const targetChainId = Number(chainId)
-    if (await isContractVerified(targetChainId, address)) {
-      return new Response(JSON.stringify({ success: true, status: 'already_verified' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    const factoryAddress = await getFactoryAddress(supabase, targetChainId)
-    const constructorArgs = await readCollectionConstructorArgs(
-      address as `0x${string}`,
-      targetChainId,
-      factoryAddress,
-    )
-    const encodedArgs = encodeCollectionConstructorArgs(constructorArgs)
-    const result = await submitCollectionVerification(targetChainId, address, encodedArgs)
+    const factoryAddress = await getFactoryAddress(supabase, targetChainId, collection)
+    const result = await verifyCollectionOnExplorer(targetChainId, address, factoryAddress, {
+      contractVersion: collection.contract_version,
+      tokenStandard: collection.token_standard,
+    })
 
     return new Response(JSON.stringify({ success: true, ...result }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

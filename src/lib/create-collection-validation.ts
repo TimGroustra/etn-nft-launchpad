@@ -28,8 +28,19 @@ export function clampRoyaltyBurnPercent(percent: string): string {
   return formatPercentDisplay(String(clamped))
 }
 
+export function clampMintBurnPercent(percent: string): string {
+  const num = Number(formatPercentDisplay(percent)) || 0
+  const clamped = Math.max(MIN_MINT_BURN_PERCENT, Math.min(100, num))
+  return formatPercentDisplay(String(clamped))
+}
+
 export function royaltyBurnBpsFromPercent(percent: string): number {
   const num = Number(clampRoyaltyBurnPercent(percent)) || MIN_ROYALTY_BURN_PERCENT
+  return Math.min(10_000, Math.round(num * 100))
+}
+
+export function mintBurnBpsFromPercent(percent: string): number {
+  const num = Number(clampMintBurnPercent(percent)) || MIN_MINT_BURN_PERCENT
   return Math.min(10_000, Math.round(num * 100))
 }
 
@@ -37,6 +48,7 @@ export type CreateCollectionForm = {
   name: string
   symbol: string
   description: string
+  tokenStandard: 'erc721' | 'erc1155'
   mintMode: MintMode
   maxSupply: number
   mintBurnPercent: string
@@ -58,6 +70,7 @@ export type DraftToken = {
   file: File | null
   existingImagePath?: string | null
   attributes: NftAttribute[]
+  editionSize?: number
 }
 
 export type ValidationIssue = {
@@ -70,8 +83,11 @@ export const MAX_SUPPLY = 100_000
 /** Typical ElectroSwap marketplace fee on secondary sales — used for seller-payout hints only. */
 export const TYPICAL_MARKETPLACE_FEE_PERCENT = 3
 /** Minimum share of resale royalties swapped to CLUB for new/edited collections. */
-export const MIN_ROYALTY_BURN_PERCENT = 2
-export const MIN_ROYALTY_BURN_BPS = 200
+export const MIN_ROYALTY_BURN_PERCENT = 10
+export const MIN_ROYALTY_BURN_BPS = 1000
+/** Minimum share of mint price swapped to CLUB for public-minting (lazy) collections. */
+export const MIN_MINT_BURN_PERCENT = 5
+export const MIN_MINT_BURN_BPS = 500
 export const TOKEN_NAME_MAX = 80
 export const TOKEN_DESC_MAX = 2000
 export const COLLECTION_NAME_MAX = 80
@@ -210,11 +226,6 @@ export function canEnablePublicMint(form: CreateCollectionForm): boolean {
 export function sanitizeFormForMode(form: CreateCollectionForm, _tokens: DraftToken[]): CreateCollectionForm {
   const next = { ...form }
 
-  if (next.burnOnMint && !next.enablePublicMint) {
-    next.burnOnMint = false
-    next.mintBurnPercent = '0'
-  }
-
   if (next.mintMode === 'batch') {
     next.enablePublicMint = false
     next.showOnMintPanel = false
@@ -223,10 +234,17 @@ export function sanitizeFormForMode(form: CreateCollectionForm, _tokens: DraftTo
   }
 
   if (!next.enablePublicMint) {
-    next.burnOnMint = false
-    next.mintBurnPercent = '0'
+    if (next.mintMode !== 'lazy') {
+      next.burnOnMint = false
+      next.mintBurnPercent = '0'
+    }
     next.showOnMintPanel = false
     next.randomPublicMint = false
+  }
+
+  if (next.mintMode === 'lazy') {
+    next.burnOnMint = true
+    next.mintBurnPercent = clampMintBurnPercent(next.mintBurnPercent || String(MIN_MINT_BURN_PERCENT))
   }
 
   next.royaltyBurnPercent = clampRoyaltyBurnPercent(next.royaltyBurnPercent)
@@ -430,14 +448,21 @@ export function validateCreateStep(
       })
     }
 
-    if (f.burnOnMint && !f.enablePublicMint) {
-      issues.push({
-        field: 'burnOnMint',
-        message: 'Mint CLUB burn only applies when public mint (IMintable) is enabled.',
-      })
-    }
-
-    if (f.burnOnMint) {
+    if (f.mintMode === 'lazy') {
+      if (!f.burnOnMint) {
+        issues.push({
+          field: 'burnOnMint',
+          message: 'Public minting collections require a CLUB burn on each paid mint.',
+        })
+      }
+      const mintBurn = Number(f.mintBurnPercent)
+      if (!Number.isFinite(mintBurn) || mintBurn < MIN_MINT_BURN_PERCENT || mintBurn > 100) {
+        issues.push({
+          field: 'mintBurnPercent',
+          message: `Mint CLUB burn must be between ${MIN_MINT_BURN_PERCENT}% and 100% for public minting collections.`,
+        })
+      }
+    } else if (f.burnOnMint) {
       const mintBurn = Number(f.mintBurnPercent)
       if (!Number.isFinite(mintBurn) || mintBurn <= 0 || mintBurn > 100) {
         issues.push({
@@ -502,6 +527,7 @@ export type SavedCollectionShape = {
   mint_price_etn: number | null
   burn_on_mint: boolean
   mint_burn_bps: number | null
+  royalty_burn_bps?: number | null
 }
 
 export type SavedTokenShape = {
@@ -553,14 +579,29 @@ export function validateCollectionForPublish(
     })
   }
 
-  if (collection.burn_on_mint && !publicMint) {
+  if (collection.burn_on_mint && !publicMint && collection.mint_mode !== 'lazy') {
     issues.push({
       field: 'burnOnMint',
       message: 'Mint CLUB burn is configured but public mint is disabled. Update burn settings or enable public mint.',
     })
   }
 
-  if (collection.burn_on_mint && Number(collection.mint_burn_bps ?? 0) <= 0) {
+  const royaltyBurnBps = Number(collection.royalty_burn_bps ?? 0)
+  if (royaltyBurnBps < MIN_ROYALTY_BURN_BPS) {
+    issues.push({
+      field: 'royaltyBurnPercent',
+      message: `Burn from resales must be at least ${MIN_ROYALTY_BURN_PERCENT}%.`,
+    })
+  }
+
+  if (collection.mint_mode === 'lazy') {
+    if (!collection.burn_on_mint || Number(collection.mint_burn_bps ?? 0) < MIN_MINT_BURN_BPS) {
+      issues.push({
+        field: 'mintBurnPercent',
+        message: `Public minting collections require at least ${MIN_MINT_BURN_PERCENT}% of mint price burned as CLUB.`,
+      })
+    }
+  } else if (collection.burn_on_mint && Number(collection.mint_burn_bps ?? 0) <= 0) {
     issues.push({
       field: 'mintBurnPercent',
       message: 'Mint CLUB burn is enabled but percentage is zero. Set a mint burn % or turn off mint burn.',

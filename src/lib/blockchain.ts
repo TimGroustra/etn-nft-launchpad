@@ -1,5 +1,5 @@
 import type { CustomRpcUrlMap } from '@reown/appkit-common'
-import { computeTieredPublishFeeWei } from '@/lib/platform-fees'
+import { resolveRequiredPublishFeeWei } from '@/lib/publish-fee-resolution'
 import { decodeEventLog, defineChain, getAddress, parseEventLogs, type Log, type PublicClient, type TransactionReceipt } from 'viem'
 
 export const electroneum = defineChain({
@@ -88,6 +88,27 @@ export function getFactoryAddress(network: NetworkKey): `0x${string}` {
   return (import.meta.env.VITE_FACTORY_ADDRESS_MAINNET ?? import.meta.env.VITE_FACTORY_ADDRESS ?? ZERO_ADDRESS) as `0x${string}`
 }
 
+export function getFactoryV2Address(network: NetworkKey, tokenStandard: 'erc721' | 'erc1155' = 'erc721'): `0x${string}` {
+  if (network === 'testnet') {
+    if (tokenStandard === 'erc1155') {
+      return (import.meta.env.VITE_FACTORY_ADDRESS_V2_ERC1155_TESTNET ?? ZERO_ADDRESS) as `0x${string}`
+    }
+    return (
+      import.meta.env.VITE_FACTORY_ADDRESS_V2_ERC721_TESTNET ??
+      import.meta.env.VITE_FACTORY_ADDRESS_V2_TESTNET ??
+      ZERO_ADDRESS
+    ) as `0x${string}`
+  }
+  if (tokenStandard === 'erc1155') {
+    return (import.meta.env.VITE_FACTORY_ADDRESS_V2_ERC1155_MAINNET ?? ZERO_ADDRESS) as `0x${string}`
+  }
+  return (
+    import.meta.env.VITE_FACTORY_ADDRESS_V2_ERC721_MAINNET ??
+    import.meta.env.VITE_FACTORY_ADDRESS_V2_MAINNET ??
+    ZERO_ADDRESS
+  ) as `0x${string}`
+}
+
 const DEFAULT_PUBLISH_FEE_WEI: Record<NetworkKey, bigint> = {
   testnet: 1_000_000_000_000_000_000n, // 1 ETN
   mainnet: 1_000_000_000_000_000_000_000n, // 1000 ETN
@@ -136,6 +157,73 @@ export const ERC20_ABI = [
 ] as const
 
 export const DEFAULT_FACTORY_ROYALTY_BPS = 500
+
+const FACTORY_BURN_CONFIG_INPUT = {
+  name: 'burnConfig',
+  type: 'tuple',
+  components: [
+    { name: 'mintBurnBps', type: 'uint96' },
+    { name: 'burnOnMint', type: 'bool' },
+    { name: 'royaltyBurnBps', type: 'uint96' },
+  ],
+} as const
+
+export const FACTORY_V2_ABI = [
+  {
+    inputs: [
+      { name: 'name', type: 'string' },
+      { name: 'symbol', type: 'string' },
+      FACTORY_BURN_CONFIG_INPUT,
+      { name: 'maxSupply', type: 'uint256' },
+    ],
+    name: 'deployCollectionERC721',
+    outputs: [{ name: 'collection', type: 'address' }],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'name', type: 'string' },
+      { name: 'symbol', type: 'string' },
+      FACTORY_BURN_CONFIG_INPUT,
+      { name: 'maxSupply', type: 'uint256' },
+    ],
+    name: 'deployCollectionERC1155',
+    outputs: [{ name: 'collection', type: 'address' }],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'publishFee',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'payer', type: 'address' },
+      { name: 'maxSupply', type: 'uint256' },
+    ],
+    name: 'requiredPublishFee',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'creator', type: 'address' },
+      { indexed: true, name: 'collection', type: 'address' },
+      { indexed: false, name: 'name', type: 'string' },
+      { indexed: false, name: 'symbol', type: 'string' },
+      { indexed: false, name: 'tokenStandard', type: 'uint8' },
+      { indexed: false, name: 'maxSupply', type: 'uint256' },
+    ],
+    name: 'CollectionDeployedV2',
+    type: 'event',
+  },
+] as const
 
 export const FACTORY_ABI = [
   {
@@ -569,6 +657,28 @@ export const NFT_ABI = [
   },
 ] as const
 
+const ERC1155_BATCH_MINT = {
+  inputs: [
+    { name: 'to', type: 'address' },
+    { name: 'tokenIds', type: 'uint256[]' },
+    { name: 'amounts', type: 'uint256[]' },
+    { name: 'uris', type: 'string[]' },
+  ],
+  name: 'batchMint',
+  outputs: [{ name: '', type: 'uint256[]' }],
+  stateMutability: 'nonpayable',
+  type: 'function',
+} as const
+
+export function getCollectionContractAbi(collection: {
+  token_standard?: 'erc721' | 'erc1155' | null
+  contract_version?: number | null
+}) {
+  const isErc1155 = (collection.contract_version ?? 1) !== 1 && collection.token_standard === 'erc1155'
+  if (!isErc1155) return NFT_ABI
+  return [...NFT_ABI.filter((entry) => !('name' in entry && entry.name === 'batchMint')), ERC1155_BATCH_MINT]
+}
+
 export type ParsedMintAssignment = {
   onChainTokenId: number
   metadataIndex: number
@@ -608,26 +718,16 @@ export async function readRequiredPublishFeeWei(
   payer: `0x${string}`,
   maxSupply: number,
   fallbackPerTenWei: bigint,
+  holdings?: import('@/lib/creator-access').CreatorNftHoldings,
 ): Promise<bigint> {
-  try {
-    return await client.readContract({
-      address: factoryAddress,
-      abi: FACTORY_ABI,
-      functionName: 'requiredPublishFee',
-      args: [payer, BigInt(maxSupply)],
-    })
-  } catch {
-    try {
-      const perTen = await client.readContract({
-        address: factoryAddress,
-        abi: FACTORY_ABI,
-        functionName: 'publishFee',
-      })
-      return computeTieredPublishFeeWei(maxSupply, perTen)
-    } catch {
-      return computeTieredPublishFeeWei(maxSupply, fallbackPerTenWei)
-    }
-  }
+  return resolveRequiredPublishFeeWei(
+    client,
+    factoryAddress,
+    payer,
+    maxSupply,
+    fallbackPerTenWei,
+    holdings,
+  )
 }
 
 export async function readRequiredMintPaymentWei(
@@ -668,21 +768,22 @@ function parseCollectionDeployedAddress(receipt: TransactionReceipt, factoryAddr
   const logsToScan = candidateLogs.length > 0 ? candidateLogs : receipt.logs
 
   const events = parseEventLogs({
-    abi: FACTORY_ABI,
+    abi: [...FACTORY_ABI, ...FACTORY_V2_ABI],
     logs: logsToScan,
-    eventName: 'CollectionDeployed',
   })
-  const fromParsed = events.at(-1)?.args.collection
-  if (fromParsed) return fromParsed
+  const deployed = events.find(
+    (event) => event.eventName === 'CollectionDeployed' || event.eventName === 'CollectionDeployedV2',
+  )?.args.collection
+  if (deployed) return deployed
 
   for (const log of logsToScan) {
     try {
       const event = decodeEventLog({
-        abi: FACTORY_ABI,
+        abi: [...FACTORY_ABI, ...FACTORY_V2_ABI],
         data: log.data,
         topics: log.topics,
       })
-      if (event.eventName === 'CollectionDeployed') {
+      if (event.eventName === 'CollectionDeployed' || event.eventName === 'CollectionDeployedV2') {
         return event.args.collection
       }
     } catch {

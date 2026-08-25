@@ -59,6 +59,17 @@ async function main() {
   fs.writeFileSync(deploymentsPath, JSON.stringify(deployments, null, 2))
   console.log('Updated deployments.json')
 
+  const electroGems =
+    process.env.FACTORY_ELECTROGEMS_NFT ?? '0xcff0d88Ed5311bAB09178b6ec19A464100880984'
+  const clubWatch =
+    process.env.FACTORY_CLUB_WATCH_NFT ?? '0x9b852BD6965F050e9AB8eEd4c900742b1d01fdD1'
+  const dualHolderDiscountBps = BigInt(process.env.FACTORY_DUAL_HOLDER_DISCOUNT_BPS ?? '5000')
+  console.log('Configuring dual-holder publish discount on factory…')
+  const configTx = await factory.setCreatorAccessConfig(electroGems, clubWatch, dualHolderDiscountBps)
+  console.log('setCreatorAccessConfig tx:', configTx.hash)
+  await configTx.wait()
+  console.log('Creator access configured:', { electroGems, clubWatch, dualHolderDiscountBps: dualHolderDiscountBps.toString() })
+
   const hre = require('hardhat')
   if (process.env.SKIP_VERIFY !== '1') {
     console.log('Verifying factory on block explorer…')
@@ -74,7 +85,7 @@ async function main() {
         console.log('Factory already verified.')
       } else {
         console.warn('Factory verification failed:', message)
-        console.warn('Re-run: npx hardhat verify --network', key === 'electroneum' ? 'electroneum' : 'electroneumTestnet', address, ...)
+        console.warn('Re-run: npx hardhat verify --network', key === 'electroneum' ? 'electroneum' : 'electroneumTestnet', address)
       }
     }
   }

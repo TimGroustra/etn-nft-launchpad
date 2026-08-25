@@ -96,6 +96,7 @@ export function dbTokenToDraft(token: CollectionToken, collectionId: string): Dr
     file: null,
     existingImagePath: imagePath,
     attributes,
+    editionSize: token.edition_size ?? 1,
   }
 }
 

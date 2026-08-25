@@ -20,6 +20,11 @@ const FACTORY_ABI = [
   'function setWetn(address newWetn) external',
   'function setSwapRouter(address newSwapRouter) external',
   'function setDefaultRoyaltyBps(uint96 newBps) external',
+  'function setCreatorAccessConfig(address electroGems_, address clubWatch_, uint96 discountBps_) external',
+  'function requiredPublishFee(address payer) view returns (uint256)',
+  'function electroGemsCollection() view returns (address)',
+  'function clubWatchCollection() view returns (address)',
+  'function dualHolderDiscountBps() view returns (uint96)',
   'function setDeploymentConfig(address clubToken_, address wetn_, address swapRouter_, uint96 defaultRoyaltyBps_) external',
 ]
 
@@ -74,6 +79,9 @@ async function main() {
   const wetn = process.env.FACTORY_WETN
   const swapRouter = process.env.FACTORY_SWAP_ROUTER
   const royaltyBps = process.env.FACTORY_DEFAULT_ROYALTY_BPS
+  const electroGems = process.env.FACTORY_ELECTROGEMS_NFT
+  const clubWatch = process.env.FACTORY_CLUB_WATCH_NFT
+  const dualHolderDiscountBps = process.env.FACTORY_DUAL_HOLDER_DISCOUNT_BPS
 
   if (publishFeeEtn) {
     const tx = await factory.setPublishFee(ethers.parseEther(publishFeeEtn))
@@ -111,11 +119,26 @@ async function main() {
     await tx.wait()
   }
 
-  if (!publishFeeEtn && !treasury && !clubToken && wetn === undefined && swapRouter === undefined && !royaltyBps) {
+  if (electroGems && clubWatch && dualHolderDiscountBps) {
+    const tx = await factory.setCreatorAccessConfig(electroGems, clubWatch, BigInt(dualHolderDiscountBps))
+    console.log('setCreatorAccessConfig tx:', tx.hash)
+    await tx.wait()
+  }
+
+  if (
+    !publishFeeEtn &&
+    !treasury &&
+    !clubToken &&
+    wetn === undefined &&
+    swapRouter === undefined &&
+    !royaltyBps &&
+    !(electroGems && clubWatch && dualHolderDiscountBps)
+  ) {
     console.log('')
     console.log('No updates requested. Set any of:')
     console.log('  FACTORY_PUBLISH_FEE_ETN, FACTORY_TREASURY, FACTORY_CLUB_TOKEN,')
-    console.log('  FACTORY_WETN, FACTORY_SWAP_ROUTER, FACTORY_DEFAULT_ROYALTY_BPS')
+    console.log('  FACTORY_WETN, FACTORY_SWAP_ROUTER, FACTORY_DEFAULT_ROYALTY_BPS,')
+    console.log('  FACTORY_ELECTROGEMS_NFT, FACTORY_CLUB_WATCH_NFT, FACTORY_DUAL_HOLDER_DISCOUNT_BPS')
     return
   }
 

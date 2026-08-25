@@ -117,7 +117,7 @@ export function buildPreviewMetadata(input: {
   return {
     name: input.name.trim(),
     description: (input.description ?? '').trim(),
-    image: input.imageUrl ?? '(uploaded when you save — public URL generated automatically)',
+    image: input.imageUrl ?? '(we generate this from your uploaded image)',
     attributes: input.attributes ?? [],
   }
 }

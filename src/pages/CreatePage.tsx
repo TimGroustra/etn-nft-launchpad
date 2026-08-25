@@ -13,6 +13,7 @@ import { getChainId } from '@/lib/blockchain'
 import {
   canEnablePublicMint,
   clampRoyaltyBurnPercent,
+  clampMintBurnPercent,
   formatMintModeLabel,
   estimateSellerRemainderPercent,
   getCompleteTokens,
@@ -22,6 +23,7 @@ import {
   isTokenRowEmpty,
   issuesToFieldMap,
   MIN_PUBLIC_MINT_ETN,
+  MIN_MINT_BURN_PERCENT,
   MIN_ROYALTY_BURN_PERCENT,
   royaltyBurnBpsFromPercent,
   sanitizeFormForMode,
@@ -50,6 +52,11 @@ import { ScrollToEndFab } from '@/components/ScrollToEndFab'
 import { useNavigationGuard } from '@/hooks/useNavigationGuard'
 import { saveDraftProgress } from '@/lib/operation-progress'
 import { getPublicImageUrl } from '@/lib/supabase'
+import { useLaunchpadV2 } from '@/hooks/useLaunchpadV2'
+import {
+  resolveContractVersionForCreate,
+  resolveTokenStandardForCreate,
+} from '@/lib/launchpad-v2'
 import { buildDraftMetadataPreview } from '@/lib/nft-metadata'
 import { cn } from '@/lib/utils'
 const STEPS = ['Details', 'Minting', 'Royalties & burns', 'Artwork', 'Preview', 'Save']
@@ -71,16 +78,8 @@ function CreateHero() {
       <h1 className="text-2xl font-bold sm:text-4xl">Launch editable NFT collections on Electroneum</h1>
       <p className="mt-3 max-w-2xl text-slate-400">
         Upload artwork, configure CLUB burns, and pay ETN to publish your collection on Electroneum.
-        Images and metadata are stored in Supabase — update the token URI anytime to point at your own storage.
+        We host images and generate metadata JSON with public URLs — you only upload image files, not links.
       </p>
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-        <Button size="lg" className="pointer-events-none">
-          Create Collection
-        </Button>
-        <Button variant="outline" asChild size="lg">
-          <Link to="/dashboard">My Dashboard</Link>
-        </Button>
-      </div>
     </section>
   )
 }
@@ -90,18 +89,23 @@ function OptionCard({
   title,
   description,
   onClick,
+  disabled = false,
 }: {
   selected: boolean
   title: string
   description: string
   onClick: () => void
+  disabled?: boolean
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       className={`rounded-xl border p-4 text-left transition-colors ${
-        selected
+        disabled
+          ? 'cursor-not-allowed border-slate-800 bg-slate-900/30 opacity-60'
+          : selected
           ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/40'
           : 'border-slate-700 bg-slate-900/50 hover:border-slate-600'
       }`}
@@ -151,11 +155,12 @@ const INITIAL_FORM: CreateCollectionForm = {
   name: '',
   symbol: '',
   description: '',
+  tokenStandard: 'erc721',
   mintMode: 'lazy',
   maxSupply: 100,
-  mintBurnPercent: '0',
-  burnOnMint: false,
-  royaltyBurnPercent: '2',
+  mintBurnPercent: '5',
+  burnOnMint: true,
+  royaltyBurnPercent: '10',
   royaltyPercent: '5',
   mintPriceEtn: String(MIN_PUBLIC_MINT_ETN),
   maxMintPerWallet: '0',
@@ -189,6 +194,7 @@ export function CreatePage() {
     { tokenId: 1, name: 'Token #1', description: '', file: null, attributes: [] },
   ])
   const [previewItems, setPreviewItems] = useState<NftPreviewItem[]>([])
+  const [loadedDraft, setLoadedDraft] = useState(!isEditingDraft)
   const [saveLock, setSaveLock] = useState<{ active: boolean; step: string; progress: number | null }>({
     active: false,
     step: '',
@@ -199,7 +205,14 @@ export function CreatePage() {
     isSaving,
     'Your draft is still uploading. Leaving now may leave it incomplete.',
   )
-  const [loadedDraft, setLoadedDraft] = useState(!isEditingDraft)
+  const { canUseLaunchpadV2, platformConfig } = useLaunchpadV2()
+  const showEditionSizes = canUseLaunchpadV2 && form.tokenStandard === 'erc1155'
+
+  useEffect(() => {
+    if (!canUseLaunchpadV2 && form.tokenStandard !== 'erc721') {
+      setForm((prev) => ({ ...prev, tokenStandard: 'erc721' }))
+    }
+  }, [canUseLaunchpadV2, form.tokenStandard])
 
   useEffect(() => {
     if (!isEditingDraft || !collectionFetched || !tokensFetched || loadedDraft) return
@@ -284,7 +297,6 @@ export function CreatePage() {
     setForm((prev) => {
       const next = { ...prev, [key]: value }
       if (key === 'enablePublicMint' && value === false) {
-        next.burnOnMint = false
         next.showOnMintPanel = false
       }
       return sanitizeFormForMode(next, tokens)
@@ -411,6 +423,8 @@ export function CreatePage() {
           maxMintPerWallet: Number(sanitized.maxMintPerWallet) || 0,
           showOnMintPanel: sanitized.enablePublicMint && sanitized.showOnMintPanel,
           randomPublicMint: sanitized.enablePublicMint && sanitized.randomPublicMint,
+          tokenStandard: resolveTokenStandardForCreate(address, platformConfig, sanitized.tokenStandard),
+          contractVersion: resolveContractVersionForCreate(address, platformConfig, 2),
           chainId: getChainId(network),
         })
         setCollectionId(collection.id)
@@ -595,6 +609,39 @@ export function CreatePage() {
             />
             <FieldError message={fieldErrors.description} />
           </div>
+          {canUseLaunchpadV2 && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+              <p className="text-sm font-medium text-amber-200">Admin preview: Launchpad V2</p>
+              <FieldHint>
+                ERC-721 V2 (full ERC-4906) and ERC-1155 editions are only available to admin wallets while
+                preview is enabled. Everyone else still deploys legacy ERC-721 via the original factory.
+              </FieldHint>
+            </div>
+          )}
+          {canUseLaunchpadV2 && (
+          <div>
+            <Label>Token standard</Label>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <OptionCard
+                selected={form.tokenStandard === 'erc721'}
+                title="ERC-721"
+                description="One unique NFT per token id. Full ERC-4906 marketplace metadata sync on new contracts."
+                onClick={() => update('tokenStandard', 'erc721')}
+                disabled={isEditingDraft}
+              />
+              <OptionCard
+                selected={form.tokenStandard === 'erc1155'}
+                title="ERC-1155"
+                description="Editioned copies per artwork (semi-fungible). Best for multiple owners of the same design."
+                onClick={() => update('tokenStandard', 'erc1155')}
+                disabled={isEditingDraft}
+              />
+            </div>
+            {isEditingDraft && (
+              <FieldHint>Token standard is fixed after the draft is created.</FieldHint>
+            )}
+          </div>
+          )}
           <div>
             <Label>Max supply</Label>
             <Input
@@ -731,8 +778,8 @@ export function CreatePage() {
               </li>
               {!isBatch && (
                 <li>
-                  <span className="text-slate-300">Burn on new mints</span> — only if you turned on paid public sale in
-                  the previous step.
+                  <span className="text-slate-300">Burn on new mints</span> — required ({MIN_MINT_BURN_PERCENT}%
+                  minimum) when collectors pay to mint via IMintable.
                 </li>
               )}
             </ul>
@@ -789,35 +836,23 @@ export function CreatePage() {
           </div>
 
           {!isBatch && (
-            <>
-              <ToggleRow
-                checked={form.burnOnMint}
-                disabled={!form.enablePublicMint}
-                disabledReason='Go back to the Minting step and turn on "Enable paid public sale (IMintable)" first. This burn only applies when collectors pay to mint.'
-                onChange={(burnOnMint) => update('burnOnMint', burnOnMint)}
-                label="Burn CLUB when someone buys a new mint"
-                description="A slice of each paid mint is swapped to CLUB and burned. Separate from resale royalties above."
+            <div>
+              <Label>Burn from each mint (% of mint price)</Label>
+              <Input
+                type="number"
+                min={MIN_MINT_BURN_PERCENT}
+                max={100}
+                step="0.01"
+                value={form.mintBurnPercent}
+                onChange={(e) => update('mintBurnPercent', sanitizePercentInput(e.target.value))}
+                onBlur={() => update('mintBurnPercent', clampMintBurnPercent(form.mintBurnPercent))}
               />
-
-              {form.burnOnMint && (
-                <div>
-                  <Label>Burn from each mint (% of mint price)</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step="0.01"
-                    value={form.mintBurnPercent}
-                    onChange={(e) => update('mintBurnPercent', sanitizePercentInput(e.target.value))}
-                    onBlur={() => update('mintBurnPercent', formatPercentDisplay(form.mintBurnPercent))}
-                  />
-                  <FieldHint>
-                    Example: 100% on a 5 ETN mint burns the full 5 ETN worth of CLUB. 10% would burn 0.5 ETN worth.
-                  </FieldHint>
-                  <FieldError message={fieldErrors.mintBurnPercent} />
-                </div>
-              )}
-            </>
+              <FieldHint>
+                Required for public minting collections ({MIN_MINT_BURN_PERCENT}–100%). A share of each paid mint is
+                swapped to CLUB and burned — separate from resale royalties above.
+              </FieldHint>
+              <FieldError message={fieldErrors.mintBurnPercent} />
+            </div>
           )}
 
           <FieldError message={fieldErrors.burnOnMint || stepError} />
@@ -857,6 +892,7 @@ export function CreatePage() {
                   updated[i] = next
                   setTokensAndSync(updated)
                 }}
+                showEditionSize={showEditionSizes}
               />
             ))}
 
@@ -939,9 +975,7 @@ export function CreatePage() {
                 value={
                   isBatch
                     ? 'Not available in batch mode'
-                    : form.burnOnMint
-                      ? `${formatPercentDisplay(form.mintBurnPercent)}% of mint price → CLUB`
-                      : 'Off'
+                    : `${formatPercentDisplay(form.mintBurnPercent)}% of mint price → CLUB (min ${MIN_MINT_BURN_PERCENT}%)`
                 }
               />
               <PreviewSettingRow
