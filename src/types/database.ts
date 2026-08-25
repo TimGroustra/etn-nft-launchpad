@@ -28,6 +28,7 @@ export interface Database {
           mint_price_etn: number
           max_mint_per_wallet: number
           show_on_mint_panel: boolean
+          mint_panel_admin_only: boolean
           random_public_mint: boolean
           token_standard: 'erc721' | 'erc1155'
           contract_version: number

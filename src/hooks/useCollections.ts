@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { filterMintPanelCollections } from '@/lib/mint-panel'
 import type { Collection, CollectionToken } from '@/types/database'
 
 export type CollectionListFilter = 'active' | 'archived' | 'all'
@@ -32,9 +33,9 @@ export function useArchivedCollections(walletAddress?: string, chainId?: number)
   return useCollections(walletAddress, chainId, 'archived')
 }
 
-export function useMintPanelCollections(chainId?: number) {
+export function useMintPanelCollections(chainId?: number, isAdmin = false) {
   return useQuery({
-    queryKey: ['mint-panel-collections', chainId],
+    queryKey: ['mint-panel-collections', chainId, isAdmin],
     queryFn: async () => {
       let query = supabase
         .from('collections')
@@ -47,7 +48,7 @@ export function useMintPanelCollections(chainId?: number) {
       if (chainId) query = query.eq('chain_id', chainId)
       const { data, error } = await query
       if (error) throw error
-      return data as Collection[]
+      return filterMintPanelCollections((data ?? []) as Collection[], isAdmin)
     },
   })
 }

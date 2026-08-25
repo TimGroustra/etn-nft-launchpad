@@ -348,6 +348,12 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
           <CardTitle>{collection.name}</CardTitle>
 
+          {collection.mint_panel_admin_only && isAdmin && (
+            <p className="mt-1 text-xs font-medium uppercase tracking-wide text-amber-300/90">
+              Admin preview
+            </p>
+          )}
+
           <CardDescription className="mt-1">{collection.description || collection.symbol}</CardDescription>
 
         </div>
@@ -512,9 +518,11 @@ export function NftMintingPanel() {
 
   const { chain } = useNetwork()
 
+  const { isAdmin } = useAdmin()
+
   const { canAccessCreatorTools } = useCanAccessCreatorTools()
 
-  const { data: collections = [], isLoading } = useMintPanelCollections(chain.id)
+  const { data: collections = [], isLoading } = useMintPanelCollections(chain.id, isAdmin)
 
 
 
