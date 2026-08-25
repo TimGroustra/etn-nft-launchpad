@@ -24,6 +24,7 @@ import {
   buildErc1155TypeAvailability,
   formatErc1155SupplyLabel,
   sumEditionRemaining,
+  useErc1155PerTypeMintSupported,
 } from '@/lib/erc1155-mint'
 import { getPublicImageUrl } from '@/lib/supabase'
 import type { Collection } from '@/types/database'
@@ -83,13 +84,11 @@ export function Erc1155PublicMintCard({ collection }: Erc1155PublicMintCardProps
 
   const collectionSupportsPlatformMintFee = supportsPlatformMintFee(platformMintFeeBps, platformMintFeeReadFailed)
 
-  const { data: supportsMintEdition } = useReadContract({
-    address: contractAddress,
-    abi: contractAbi,
-    functionName: 'supportsMintEdition',
-    chainId: targetChainId,
-    query: { enabled: Boolean(contractAddress) },
-  })
+  const { data: supportsMintEdition, isLoading: mintEditionProbeLoading } = useErc1155PerTypeMintSupported(
+    publicClient,
+    contractAddress,
+  )
+  const perTypeMintSupported = supportsMintEdition === true
 
   const { data: walletMintCount } = useReadContract({
     address: contractAddress,
@@ -97,7 +96,7 @@ export function Erc1155PublicMintCard({ collection }: Erc1155PublicMintCardProps
     functionName: 'mintableCount',
     args: address ? [address] : undefined,
     chainId: targetChainId,
-    query: { enabled: Boolean(contractAddress && address && !supportsMintEdition) },
+    query: { enabled: Boolean(contractAddress && address && supportsMintEdition === false) },
   })
 
   const editionReads = useReadContracts({
@@ -163,7 +162,7 @@ export function Erc1155PublicMintCard({ collection }: Erc1155PublicMintCardProps
   }
 
   const mintEditionType = async (type: (typeof typeAvailability)[number]) => {
-    if (!address || !contractAddress || !publicClient || !supportsMintEdition) return
+    if (!address || !contractAddress || !publicClient || !perTypeMintSupported) return
     const quantity = getQuantity(type.tokenId)
     if (quantity < 1 || quantity > type.remaining) {
       toast.error('Invalid quantity for this type')
@@ -203,7 +202,7 @@ export function Erc1155PublicMintCard({ collection }: Erc1155PublicMintCardProps
   }
 
   const mintSequentialLegacy = async () => {
-    if (!address || !contractAddress || !publicClient || supportsMintEdition) return
+    if (!address || !contractAddress || !publicClient || perTypeMintSupported) return
     const quantity = getQuantity(typeAvailability[0]?.tokenId ?? 1)
     const maxMintable = Number(walletMintCount ?? 0)
     if (quantity < 1 || quantity > maxMintable) {
@@ -285,11 +284,12 @@ export function Erc1155PublicMintCard({ collection }: Erc1155PublicMintCardProps
             )}
           </dl>
 
-          {!supportsMintEdition && (
+          {supportsMintEdition === false && (
             <p className="rounded-lg border border-amber-900/50 bg-amber-950/30 px-3 py-2 text-sm text-amber-200/90">
-              This contract uses legacy sequential minting (one copy per type, in order). Republish from a current
-              factory to enable per-type minting with edition caps, or ask the owner to sync edition caps on the
-              dashboard.
+              This collection was deployed from an ERC-1155 factory that predates per-type minting. The on-chain
+              contract has edition caps but no <code className="text-amber-100">mintEdition</code> function, so buyers
+              can only mint types sequentially (one copy per type, in order). Create a new collection after the
+              launchpad ERC-1155 factory is upgraded — redeploying the same collection address is not possible.
             </p>
           )}
 
@@ -310,7 +310,9 @@ export function Erc1155PublicMintCard({ collection }: Erc1155PublicMintCardProps
             </p>
           ) : !saleActive ? (
             <p className="text-sm text-slate-400">Public mint is not active for this collection right now.</p>
-          ) : supportsMintEdition ? (
+          ) : mintEditionProbeLoading ? (
+            <p className="text-sm text-slate-400">Checking contract mint capabilities…</p>
+          ) : perTypeMintSupported ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {typeAvailability.map((type) => {
                 const quantity = getQuantity(type.tokenId)

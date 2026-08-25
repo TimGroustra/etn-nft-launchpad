@@ -1,4 +1,30 @@
+import { useQuery } from '@tanstack/react-query'
+import { toFunctionSelector, type Hex, type PublicClient } from 'viem'
 import type { CollectionToken } from '@/types/database'
+
+/** Function selector for mintEdition(uint256,uint256) — present only on post-upgrade EditableERC1155 bytecode. */
+export const MINT_EDITION_SELECTOR = toFunctionSelector('mintEdition(uint256,uint256)').slice(2).toLowerCase()
+
+export function contractBytecodeHasMintEdition(bytecode: Hex | undefined): boolean {
+  if (!bytecode || bytecode === '0x') return false
+  return bytecode.toLowerCase().includes(MINT_EDITION_SELECTOR)
+}
+
+export function useErc1155PerTypeMintSupported(
+  publicClient: PublicClient | undefined,
+  contractAddress: `0x${string}` | undefined,
+) {
+  return useQuery({
+    queryKey: ['erc1155-mint-edition', contractAddress],
+    queryFn: async () => {
+      if (!publicClient || !contractAddress) return false
+      const bytecode = await publicClient.getBytecode({ address: contractAddress })
+      return contractBytecodeHasMintEdition(bytecode)
+    },
+    enabled: Boolean(publicClient && contractAddress),
+    staleTime: Infinity,
+  })
+}
 
 export type Erc1155TypeAvailability = {
   tokenId: number
