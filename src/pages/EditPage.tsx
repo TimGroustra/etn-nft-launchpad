@@ -21,7 +21,7 @@ import {
   MIN_ROYALTY_BURN_PERCENT,
   sanitizePercentInput,
 } from '@/lib/create-collection-validation'
-import { getCollectionTokenStandard } from '@/lib/collection-contract'
+import { getCollectionTokenStandard, usesFactoryV2 } from '@/lib/collection-contract'
 import { buildDraftRowsFromDb, buildEditableTokenRows, dedupeDbTokensByTokenId, getRowTokenId, resolveBulkImportMaxSupply } from '@/lib/draft-token-rows'
 import { assertStoragePathForCollection } from '@/lib/storage-paths'
 import {
@@ -34,6 +34,7 @@ import {
 import {
   configureCollectionBurnConfig,
   configureCollectionRoyalty,
+  prepareCollectionMetadata,
   syncPublishedCollection,
 } from '@/lib/publish-collection'
 import { updateCollection } from '@/lib/api'
@@ -42,6 +43,7 @@ import { Input, Label } from '@/components/ui/input'
 import { OperationLockOverlay, type WalletApprovalStep } from '@/components/OperationLockOverlay'
 import { useNavigationGuard } from '@/hooks/useNavigationGuard'
 import { activateWalletStep, completeWalletSteps, saveDraftProgress } from '@/lib/operation-progress'
+import { useAdmin } from '@/hooks/useAdmin'
 
 export function EditPage() {
   const { collectionId, address: contractAddress } = useParams()
@@ -53,6 +55,7 @@ export function EditPage() {
   const { data: collection, refetch: refetchCollection } = useCollection(collectionKey)
   const { data: dbTokens = [], refetch: refetchTokens, isFetched } = useCollectionTokens(collection?.id)
   const { writeContractAsync } = useWriteContract()
+  const { isAdmin } = useAdmin()
   const [tokens, setTokens] = useState<DraftToken[]>([])
   const [loaded, setLoaded] = useState(false)
   const [saveLock, setSaveLock] = useState<{
@@ -143,12 +146,6 @@ export function EditPage() {
     }
 
     const walletSteps: WalletApprovalStep[] = []
-    if (editChanges.needsOnChainSync) {
-      walletSteps.push({ label: 'Sync on-chain metadata base URI' })
-      if (publicMintEnabled) {
-        walletSteps.push({ label: 'Update public mint settings' })
-      }
-    }
     if (editChanges.needsRoyaltyOnChainSync) {
       walletSteps.push({ label: 'Set marketplace royalty (EIP-2981)' })
     }
@@ -236,16 +233,6 @@ export function EditPage() {
       setTokens(buildDraftRowsFromDb(freshTokens, collection.max_supply, collection.id))
       setShowOnMintPanel(freshCollection?.show_on_mint_panel ?? showOnMintPanel)
 
-      if (editChanges.needsOnChainSync && freshCollection) {
-        setSaveLock((prev) => ({
-          ...prev,
-          step: 'Syncing metadata on-chain — approve wallet transaction(s)…',
-          progress: 85,
-        }))
-        onWalletStep('Sync on-chain metadata base URI')
-        await syncPublishedCollection(address, freshCollection, writeContractAsync, chain.id)
-      }
-
       if (freshCollection?.contract_address) {
         const onChainAddress = freshCollection.contract_address as `0x${string}`
         if (editChanges.needsRoyaltyOnChainSync) {
@@ -286,16 +273,66 @@ export function EditPage() {
       }))
 
       if (
-        editChanges.needsOnChainSync ||
         editChanges.needsRoyaltyOnChainSync ||
         editChanges.needsRoyaltyBurnOnChainSync
       ) {
-        toast.success('Changes saved and synced on-chain')
+        toast.success('Changes saved and royalty settings synced on-chain')
+      } else if (editChanges.metadataChanged && freshCollection?.contract_address) {
+        toast.success('Changes saved. Click Sync to push metadata on-chain.')
       } else {
         toast.success('Changes saved')
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Save failed')
+    } finally {
+      setSaveLock({ active: false, step: '', progress: null, walletSteps: [] })
+    }
+  }
+
+  const handleSync = async () => {
+    if (!address || !collection) return
+
+    setSaveLock({
+      active: true,
+      step: 'Preparing metadata files…',
+      progress: 10,
+      walletSteps: collection.contract_address ? [{ label: 'Sync on-chain metadata base URI' }] : [],
+    })
+
+    try {
+      await prepareCollectionMetadata(
+        address,
+        collection.id,
+        collection.max_supply,
+        (completed, total) => {
+          setSaveLock((prev) => ({
+            ...prev,
+            step: `Uploading metadata ${completed} of ${total}…`,
+            progress: total > 0 ? 10 + Math.round((completed / total) * 40) : 25,
+          }))
+        },
+      )
+
+      if (collection.contract_address) {
+        setSaveLock((prev) => ({
+          ...prev,
+          step: 'Syncing on-chain — approve in your wallet…',
+          progress: 60,
+          walletSteps: activateWalletStep(prev.walletSteps, 'Sync on-chain metadata base URI'),
+        }))
+        const { data: freshCollection } = await refetchCollection()
+        await syncPublishedCollection(
+          address,
+          freshCollection ?? collection,
+          writeContractAsync,
+          chain.id,
+        )
+        toast.success('Metadata synced on-chain')
+      } else {
+        toast.success('Metadata files prepared')
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Sync failed')
     } finally {
       setSaveLock({ active: false, step: '', progress: null, walletSteps: [] })
     }
@@ -322,6 +359,7 @@ export function EditPage() {
   const isPublished = Boolean(collection.contract_address)
   const publicMintEnabled = Number(collection.mint_price_etn ?? 0) > 0
   const tokenStandard = getCollectionTokenStandard(collection)
+  const showV2AdminActions = usesFactoryV2(collection) && isAdmin
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -338,8 +376,8 @@ export function EditPage() {
         <p className="text-sm text-slate-400">
           Update names, descriptions, images, and attributes. Bulk import fills the editable rows below.
           {isPublished
-            ? ' Save applies your changes to Supabase and syncs on-chain when metadata changed.'
-            : ' Save your changes, then publish from the dashboard.'}
+            ? ' Save writes changes to the database. Sync uploads metadata files and updates the on-chain contract.'
+            : ' Save your changes, then publish from the dashboard. Use Sync to prepare metadata files before publishing.'}
         </p>
       </div>
 
@@ -457,9 +495,20 @@ export function EditPage() {
           Saving uploads every image and metadata file. Large collections can take several minutes — keep this tab open
           until the progress bar finishes.
         </p>
-        <Button onClick={handleSave} disabled={isSaving || !editChanges?.hasChanges}>
-          {isSaving ? 'Saving…' : 'Save'}
-        </Button>
+        {(showV2AdminActions || !usesFactoryV2(collection)) && (
+          <Button onClick={handleSave} disabled={isSaving || !editChanges?.hasChanges}>
+            {isSaving ? 'Saving…' : 'Save'}
+          </Button>
+        )}
+        {(showV2AdminActions || !usesFactoryV2(collection)) && (
+          <Button
+            variant="outline"
+            onClick={() => void handleSync()}
+            disabled={isSaving}
+          >
+            {isSaving ? 'Syncing…' : 'Sync'}
+          </Button>
+        )}
         {!isSaving && (
           <Button variant="outline" asChild>
             <Link to="/dashboard">Back to dashboard</Link>

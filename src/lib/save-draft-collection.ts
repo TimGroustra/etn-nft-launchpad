@@ -111,7 +111,8 @@ export function getCollectionEditChanges(
       token.name.trim() !== dbRow.name ||
       token.description.trim() !== (dbRow.description ?? '') ||
       JSON.stringify(getTokenAttributesForSave(token)) !== JSON.stringify(normalizeDbAttributes(dbRow.attributes)) ||
-      draftImagePath(collection.id, token) !== (dbRow.image_storage_path ?? undefined)
+      draftImagePath(collection.id, token) !== (dbRow.image_storage_path ?? undefined) ||
+      Math.max(1, Number(token.editionSize ?? 1)) !== Math.max(1, Number(dbRow.edition_size ?? 1))
     ) {
       metadataChanged = true
     }

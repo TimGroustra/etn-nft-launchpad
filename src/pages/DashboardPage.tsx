@@ -12,6 +12,7 @@ import { Card, CardDescription, CardTitle } from '@/components/ui/card'
 import { CollectionOwnerPanel } from '@/components/CollectionOwnerPanel'
 import { CreatorAccessUpsell } from '@/components/CreatorAccessUpsell'
 import { DraftPublishButton } from '@/components/DraftPublishButton'
+import { CollectionMetadataAdminActions } from '@/components/CollectionMetadataAdminActions'
 import { WalletConnectButton } from '@/components/WalletConnectButton'
 import { useNetwork } from '@/context/NetworkContext'
 import { formatEther } from 'viem'
@@ -19,6 +20,7 @@ import { FACTORY_ABI, FACTORY_V2_ABI, getChainId, getPublishFeeWei, readRequired
 import { usePlatformConfig, resolveFactoryAddress, resolveFactoryV2Address } from '@/hooks/usePlatformConfig'
 import { getCollectionTokenStandard, getFactoryDeployFunction, usesFactoryV2 } from '@/lib/collection-contract'
 import { useCanAccessCreatorTools } from '@/hooks/useCanAccessCreatorTools'
+import { useAdmin } from '@/hooks/useAdmin'
 import { useCreatorAccess } from '@/hooks/useCreatorAccess'
 import { PUBLISH_FEE_SUPPLY_UNIT } from '@/lib/platform-fees'
 import { firstIssueMessage, formatMintModeLabel, validateCollectionForPublish } from '@/lib/create-collection-validation'
@@ -82,6 +84,7 @@ export function DashboardPage() {
   const { address, isConnected } = useAccount()
   const { isAuthenticated } = useWalletAuth()
   const { canAccessCreatorTools } = useCanAccessCreatorTools()
+  const { isAdmin } = useAdmin()
   const { hasDualHolderDiscount, holdingsLoading, holdings } = useCreatorAccess()
   const { network, chain } = useNetwork()
   const chainId = getChainId(network)
@@ -619,16 +622,24 @@ export function DashboardPage() {
                     <>
                       {collection.status === 'draft' && (
                         <>
-                          {canAccessCreatorTools && (
-                            <Button variant="outline" asChild disabled={isPublishing}>
-                              <Link
-                                to={`/draft/${collection.id}/edit`}
-                                tabIndex={isPublishing ? -1 : undefined}
-                                aria-disabled={isPublishing}
-                              >
-                                Edit
-                              </Link>
-                            </Button>
+                          {usesFactoryV2(collection) && isAdmin ? (
+                            <CollectionMetadataAdminActions
+                              collection={collection}
+                              disabled={isPublishing}
+                              onComplete={() => void refetchAll()}
+                            />
+                          ) : (
+                            canAccessCreatorTools && (
+                              <Button variant="outline" asChild disabled={isPublishing}>
+                                <Link
+                                  to={`/draft/${collection.id}/edit`}
+                                  tabIndex={isPublishing ? -1 : undefined}
+                                  aria-disabled={isPublishing}
+                                >
+                                  Edit
+                                </Link>
+                              </Button>
+                            )
                           )}
                           <Button
                             variant="outline"
@@ -653,6 +664,13 @@ export function DashboardPage() {
                       )}
                       {collection.contract_address && (
                         <>
+                          {usesFactoryV2(collection) && isAdmin && (
+                            <CollectionMetadataAdminActions
+                              collection={collection}
+                              disabled={isPublishing}
+                              onComplete={() => void refetchAll()}
+                            />
+                          )}
                           <Button variant="outline" asChild disabled={isPublishing}>
                             <Link
                               to={`/collection/${collection.contract_address}`}
