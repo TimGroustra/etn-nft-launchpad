@@ -16,6 +16,7 @@ export interface CollectionInput {
   mintPriceEtn?: number
   maxMintPerWallet?: number
   showOnMintPanel?: boolean
+  mintPanelAdminOnly?: boolean
   randomPublicMint?: boolean
   tokenStandard?: 'erc721' | 'erc1155'
   contractVersion?: number

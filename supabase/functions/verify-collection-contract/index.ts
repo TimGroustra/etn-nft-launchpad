@@ -53,7 +53,7 @@ serve(async (req) => {
 
     const { data: collection } = await supabase
       .from('collections')
-      .select('id, creator_wallet, contract_address, chain_id, contract_version, token_standard')
+      .select('id, creator_wallet, contract_address, chain_id, contract_version, token_standard, name')
       .eq('id', collectionId)
       .eq('creator_wallet', wallet)
       .maybeSingle()
@@ -70,6 +70,7 @@ serve(async (req) => {
     const result = await verifyCollectionOnExplorer(targetChainId, address, factoryAddress, {
       contractVersion: collection.contract_version,
       tokenStandard: collection.token_standard,
+      collectionName: collection.name,
     })
 
     return new Response(JSON.stringify({ success: true, ...result }), {

@@ -61,6 +61,7 @@ export type CreateCollectionForm = {
   enablePublicMint: boolean
   randomPublicMint: boolean
   showOnMintPanel: boolean
+  mintPanelAdminOnly?: boolean
 }
 
 export type DraftToken = {

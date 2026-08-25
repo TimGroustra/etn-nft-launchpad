@@ -70,6 +70,7 @@ export function EditPage() {
     'Your collection is still saving. Leaving now may lose unsaved changes.',
   )
   const [showOnMintPanel, setShowOnMintPanel] = useState(false)
+  const [mintPanelAdminOnly, setMintPanelAdminOnly] = useState(false)
   const [royaltyPercent, setRoyaltyPercent] = useState('5')
   const [royaltyBurnPercent, setRoyaltyBurnPercent] = useState('10')
 
@@ -77,6 +78,7 @@ export function EditPage() {
     if (!collection || !isFetched || loaded) return
     setTokens(buildDraftRowsFromDb(dbTokens, collection.max_supply, collection.id))
     setShowOnMintPanel(collection.show_on_mint_panel ?? false)
+    setMintPanelAdminOnly(collection.mint_panel_admin_only ?? false)
     const form = collectionToForm(collection)
     setRoyaltyPercent(form.royaltyPercent)
     setRoyaltyBurnPercent(form.royaltyBurnPercent)
@@ -87,10 +89,11 @@ export function EditPage() {
     if (!collection || !loaded) return null
     return getCollectionEditChanges(tokens, dbTokens, collection, {
       showOnMintPanel,
+      mintPanelAdminOnly,
       royaltyPercent,
       royaltyBurnPercent,
     })
-  }, [collection, dbTokens, loaded, royaltyBurnPercent, royaltyPercent, showOnMintPanel, tokens])
+  }, [collection, dbTokens, loaded, mintPanelAdminOnly, royaltyBurnPercent, royaltyPercent, showOnMintPanel, tokens])
 
   const handleBulkImport = (imported: DraftToken[]) => {
     if (!collection) return
@@ -190,6 +193,7 @@ export function EditPage() {
           collection.id,
           buildEditCollectionForm(collection, {
             showOnMintPanel,
+            mintPanelAdminOnly,
             royaltyPercent,
             royaltyBurnPercent,
             maxSupply: resolvedMaxSupply,
@@ -204,7 +208,7 @@ export function EditPage() {
             }))
           },
         )
-      } else if (editChanges.mintPanelChanged) {
+      } else if (editChanges.mintPanelChanged || editChanges.mintPanelAdminOnlyChanged) {
         setSaveLock((prev) => ({
           ...prev,
           step: 'Updating mint panel settings…',
@@ -215,6 +219,8 @@ export function EditPage() {
           collection.id,
           collectionToUpdatePayload(collection, {
             showOnMintPanel: showOnMintPanel && publicMintEnabled,
+            mintPanelAdminOnly: mintPanelAdminOnly && publicMintEnabled,
+            mintPriceEtn: Number(collection.mint_price_etn ?? 0),
           }),
         )
       }
@@ -232,6 +238,7 @@ export function EditPage() {
       const { data: freshTokens = [] } = await refetchTokens()
       setTokens(buildDraftRowsFromDb(freshTokens, collection.max_supply, collection.id))
       setShowOnMintPanel(freshCollection?.show_on_mint_panel ?? showOnMintPanel)
+      setMintPanelAdminOnly(freshCollection?.mint_panel_admin_only ?? mintPanelAdminOnly)
 
       if (freshCollection?.contract_address) {
         const onChainAddress = freshCollection.contract_address as `0x${string}`
@@ -413,6 +420,33 @@ export function EditPage() {
             )}
           </span>
         </label>
+        {isAdmin && isPublished && publicMintEnabled && (
+          <label className={`flex items-start gap-3 ${isSaving ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={mintPanelAdminOnly}
+              disabled={isSaving || !showOnMintPanel}
+              onChange={(e) => {
+                const next = e.target.checked
+                setMintPanelAdminOnly(next)
+                if (next) setShowOnMintPanel(true)
+              }}
+            />
+            <span>
+              <span className="font-medium text-white">Admin-only mint panel preview</span>
+              <FieldHint>
+                Visible on the home minting panel only to admin wallets. Requires &quot;Show on NFT Minting Panel&quot;
+                above.
+              </FieldHint>
+              {!showOnMintPanel && (
+                <p className="mt-1 text-sm text-amber-200/90">
+                  Enable the minting panel listing first, then turn on admin-only preview.
+                </p>
+              )}
+            </span>
+          </label>
+        )}
       </Card>
 
       <Card className="space-y-4">

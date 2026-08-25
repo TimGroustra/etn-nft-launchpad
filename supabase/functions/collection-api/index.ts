@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.190.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 import { corsHeaders, validateSession, normalizeWallet, normalizeContractAddress } from '../_shared/utils.ts'
 import { validateCollectionPayload, validateTokenPayload } from '../_shared/collection-validation.ts'
-import { canUseLaunchpadV2 } from '../_shared/admin.ts'
+import { canUseLaunchpadV2, isAdminWallet } from '../_shared/admin.ts'
 import {
   buildCollectionImagePath,
   extensionFromContentType,
@@ -109,6 +109,15 @@ serve(async (req) => {
       if (body.maxMintPerWallet !== undefined) updates.max_mint_per_wallet = body.maxMintPerWallet
       if (typeof body.showOnMintPanel === 'boolean') {
         updates.show_on_mint_panel = body.showOnMintPanel && Number(body.mintPriceEtn ?? 0) > 0
+      }
+      if (typeof body.mintPanelAdminOnly === 'boolean') {
+        if (!isAdminWallet(wallet)) {
+          throw new Error('Only admins can set admin-only mint panel visibility.')
+        }
+        updates.mint_panel_admin_only = body.mintPanelAdminOnly
+        if (body.mintPanelAdminOnly) {
+          updates.show_on_mint_panel = true
+        }
       }
       if (typeof body.randomPublicMint === 'boolean') {
         updates.random_public_mint = body.randomPublicMint && Number(body.mintPriceEtn ?? 0) > 0

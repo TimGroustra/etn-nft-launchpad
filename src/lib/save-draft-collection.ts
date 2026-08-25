@@ -41,6 +41,7 @@ import type { Collection, CollectionToken } from '@/types/database'
 
 export type CollectionEditChanges = {
   mintPanelChanged: boolean
+  mintPanelAdminOnlyChanged: boolean
   metadataChanged: boolean
   royaltySettingsChanged: boolean
   hasChanges: boolean
@@ -70,11 +71,14 @@ export function getCollectionEditChanges(
   collection: Collection,
   options: {
     showOnMintPanel: boolean
+    mintPanelAdminOnly: boolean
     royaltyPercent: string
     royaltyBurnPercent: string
   },
 ): CollectionEditChanges {
   const mintPanelChanged = options.showOnMintPanel !== Boolean(collection.show_on_mint_panel)
+  const mintPanelAdminOnlyChanged =
+    options.mintPanelAdminOnly !== Boolean(collection.mint_panel_admin_only)
   const royaltyBps = percentToBps(Number(options.royaltyPercent))
   const royaltyBurnBps = royaltyBurnBpsFromPercent(options.royaltyBurnPercent)
   const royaltySettingsChanged =
@@ -127,7 +131,8 @@ export function getCollectionEditChanges(
     }
   }
 
-  const hasChanges = mintPanelChanged || metadataChanged || royaltySettingsChanged
+  const hasChanges =
+    mintPanelChanged || mintPanelAdminOnlyChanged || metadataChanged || royaltySettingsChanged
   const needsOnChainSync = Boolean(collection.contract_address) && metadataChanged
   const needsRoyaltyOnChainSync =
     Boolean(collection.contract_address) && royaltyBps !== (collection.royalty_bps ?? 500)
@@ -136,6 +141,7 @@ export function getCollectionEditChanges(
 
   return {
     mintPanelChanged,
+    mintPanelAdminOnlyChanged,
     metadataChanged,
     royaltySettingsChanged,
     hasChanges,
@@ -189,6 +195,9 @@ export async function saveDraftCollection(
     mintPriceEtn: sanitized.enablePublicMint ? Number(sanitized.mintPriceEtn) : 0,
     maxMintPerWallet: Number(sanitized.maxMintPerWallet) || 0,
     showOnMintPanel: sanitized.enablePublicMint && sanitized.showOnMintPanel,
+    ...(sanitized.mintPanelAdminOnly !== undefined
+      ? { mintPanelAdminOnly: sanitized.enablePublicMint && sanitized.mintPanelAdminOnly }
+      : {}),
     randomPublicMint: sanitized.enablePublicMint && sanitized.randomPublicMint,
     chainId: collectionMeta?.chain_id ?? undefined,
   })
@@ -274,6 +283,7 @@ export function collectionToUpdatePayload(collection: Collection, overrides: Rec
     mintPriceEtn: Number(collection.mint_price_etn ?? 0),
     maxMintPerWallet: collection.max_mint_per_wallet ?? 0,
     showOnMintPanel: collection.show_on_mint_panel ?? false,
+    mintPanelAdminOnly: collection.mint_panel_admin_only ?? false,
     randomPublicMint: collection.random_public_mint ?? false,
     chainId: collection.chain_id,
     ...overrides,
@@ -309,5 +319,6 @@ export function collectionToForm(collection: Collection): CreateCollectionForm {
     enablePublicMint: publicMint,
     randomPublicMint: publicMint && (collection.random_public_mint ?? false),
     showOnMintPanel: collection.show_on_mint_panel ?? false,
+    mintPanelAdminOnly: collection.mint_panel_admin_only ?? false,
   }
 }

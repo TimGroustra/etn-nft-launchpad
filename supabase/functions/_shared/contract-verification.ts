@@ -83,7 +83,7 @@ const CHAIN_RPC: Record<number, string> = {
   5201420: 'https://rpc.ankr.com/electroneum_testnet',
 }
 
-const COLLECTION_ABI = parseAbi([
+const COLLECTION_ERC721_ABI = parseAbi([
   'function name() view returns (string)',
   'function symbol() view returns (string)',
   'function owner() view returns (address)',
@@ -92,6 +92,23 @@ const COLLECTION_ABI = parseAbi([
   'function swapRouter() view returns (address)',
   'function burnConfig() view returns (uint96 mintBurnBps, bool burnOnMint, uint96 royaltyBurnBps)',
   'function maxSupply() view returns (uint256)',
+  'function platformTreasury() view returns (address)',
+  'function platformMintFeeBps() view returns (uint96)',
+  'function electroGemsCollection() view returns (address)',
+  'function clubWatchCollection() view returns (address)',
+])
+
+const COLLECTION_ERC1155_ABI = parseAbi([
+  'function owner() view returns (address)',
+  'function clubToken() view returns (address)',
+  'function WETN() view returns (address)',
+  'function swapRouter() view returns (address)',
+  'function burnConfig() view returns (uint96 mintBurnBps, bool burnOnMint, uint96 royaltyBurnBps)',
+  'function maxSupply() view returns (uint256)',
+  'function platformTreasury() view returns (address)',
+  'function platformMintFeeBps() view returns (uint96)',
+  'function electroGemsCollection() view returns (address)',
+  'function clubWatchCollection() view returns (address)',
 ])
 
 const FACTORY_ABI = parseAbi(['function defaultRoyaltyBps() view returns (uint96)'])
@@ -183,7 +200,9 @@ function normalizeBurnConfig(burnConfig: BurnConfigStruct | BurnConfigTuple): Bu
 export async function readCollectionConstructorArgs(
   contractAddress: `0x${string}`,
   chainId: number,
+  kind: CollectionVerificationKind,
   factoryAddress?: string | null,
+  collectionName?: string | null,
 ) {
   const rpc = CHAIN_RPC[chainId]
   if (!rpc) throw new Error('Unsupported chain')
@@ -198,17 +217,6 @@ export async function readCollectionConstructorArgs(
     transport: http(rpc),
   })
 
-  const [name, symbol, owner, clubToken, wetn, swapRouter, burnConfig, maxSupply] = await Promise.all([
-    client.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: 'name' }),
-    client.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: 'symbol' }),
-    client.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: 'owner' }),
-    client.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: 'clubToken' }),
-    client.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: 'WETN' }),
-    client.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: 'swapRouter' }),
-    client.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: 'burnConfig' }),
-    client.readContract({ address: contractAddress, abi: COLLECTION_ABI, functionName: 'maxSupply' }),
-  ])
-
   let defaultRoyaltyBps = 500n
   if (factoryAddress) {
     try {
@@ -222,7 +230,57 @@ export async function readCollectionConstructorArgs(
     }
   }
 
+  if (kind === 'erc1155') {
+    const [owner, clubToken, wetn, swapRouter, burnConfig, maxSupply, platformTreasury, platformMintFeeBps, electroGemsCollection, clubWatchCollection] =
+      await Promise.all([
+        client.readContract({ address: contractAddress, abi: COLLECTION_ERC1155_ABI, functionName: 'owner' }),
+        client.readContract({ address: contractAddress, abi: COLLECTION_ERC1155_ABI, functionName: 'clubToken' }),
+        client.readContract({ address: contractAddress, abi: COLLECTION_ERC1155_ABI, functionName: 'WETN' }),
+        client.readContract({ address: contractAddress, abi: COLLECTION_ERC1155_ABI, functionName: 'swapRouter' }),
+        client.readContract({ address: contractAddress, abi: COLLECTION_ERC1155_ABI, functionName: 'burnConfig' }),
+        client.readContract({ address: contractAddress, abi: COLLECTION_ERC1155_ABI, functionName: 'maxSupply' }),
+        client.readContract({ address: contractAddress, abi: COLLECTION_ERC1155_ABI, functionName: 'platformTreasury' }),
+        client.readContract({ address: contractAddress, abi: COLLECTION_ERC1155_ABI, functionName: 'platformMintFeeBps' }),
+        client.readContract({ address: contractAddress, abi: COLLECTION_ERC1155_ABI, functionName: 'electroGemsCollection' }),
+        client.readContract({ address: contractAddress, abi: COLLECTION_ERC1155_ABI, functionName: 'clubWatchCollection' }),
+      ])
+
+    return {
+      kind,
+      name: collectionName?.trim() || 'ERC1155Collection',
+      uri: '',
+      owner,
+      clubToken,
+      wetn,
+      swapRouter,
+      burnConfig: normalizeBurnConfig(burnConfig),
+      maxSupply,
+      defaultRoyaltyBps,
+      platformTreasury,
+      platformMintFeeBps,
+      electroGemsCollection,
+      clubWatchCollection,
+    }
+  }
+
+  const [name, symbol, owner, clubToken, wetn, swapRouter, burnConfig, maxSupply, platformTreasury, platformMintFeeBps, electroGemsCollection, clubWatchCollection] =
+    await Promise.all([
+      client.readContract({ address: contractAddress, abi: COLLECTION_ERC721_ABI, functionName: 'name' }),
+      client.readContract({ address: contractAddress, abi: COLLECTION_ERC721_ABI, functionName: 'symbol' }),
+      client.readContract({ address: contractAddress, abi: COLLECTION_ERC721_ABI, functionName: 'owner' }),
+      client.readContract({ address: contractAddress, abi: COLLECTION_ERC721_ABI, functionName: 'clubToken' }),
+      client.readContract({ address: contractAddress, abi: COLLECTION_ERC721_ABI, functionName: 'WETN' }),
+      client.readContract({ address: contractAddress, abi: COLLECTION_ERC721_ABI, functionName: 'swapRouter' }),
+      client.readContract({ address: contractAddress, abi: COLLECTION_ERC721_ABI, functionName: 'burnConfig' }),
+      client.readContract({ address: contractAddress, abi: COLLECTION_ERC721_ABI, functionName: 'maxSupply' }),
+      client.readContract({ address: contractAddress, abi: COLLECTION_ERC721_ABI, functionName: 'platformTreasury' }),
+      client.readContract({ address: contractAddress, abi: COLLECTION_ERC721_ABI, functionName: 'platformMintFeeBps' }),
+      client.readContract({ address: contractAddress, abi: COLLECTION_ERC721_ABI, functionName: 'electroGemsCollection' }),
+      client.readContract({ address: contractAddress, abi: COLLECTION_ERC721_ABI, functionName: 'clubWatchCollection' }),
+    ])
+
   return {
+    kind,
     name,
     symbol,
     owner,
@@ -232,17 +290,50 @@ export async function readCollectionConstructorArgs(
     burnConfig: normalizeBurnConfig(burnConfig),
     maxSupply,
     defaultRoyaltyBps,
+    platformTreasury,
+    platformMintFeeBps,
+    electroGemsCollection,
+    clubWatchCollection,
   }
 }
 
-export function encodeCollectionConstructorArgs(args: Awaited<ReturnType<typeof readCollectionConstructorArgs>>) {
+export function encodeCollectionConstructorArgs(
+  args: Awaited<ReturnType<typeof readCollectionConstructorArgs>>,
+) {
+  if (args.kind === 'erc1155') {
+    const encoded = encodeAbiParameters(
+      parseAbiParameters(
+        'string, address, address, address, address, (uint96 mintBurnBps, bool burnOnMint, uint96 royaltyBurnBps), uint256, uint96, address, uint96, address, address',
+      ),
+      [
+        args.uri ?? '',
+        args.owner,
+        args.clubToken,
+        args.wetn,
+        args.swapRouter,
+        {
+          mintBurnBps: args.burnConfig.mintBurnBps,
+          burnOnMint: args.burnConfig.burnOnMint,
+          royaltyBurnBps: args.burnConfig.royaltyBurnBps,
+        },
+        args.maxSupply,
+        args.defaultRoyaltyBps,
+        args.platformTreasury,
+        args.platformMintFeeBps,
+        args.electroGemsCollection,
+        args.clubWatchCollection,
+      ],
+    )
+    return encoded.startsWith('0x') ? encoded.slice(2) : encoded
+  }
+
   const encoded = encodeAbiParameters(
     parseAbiParameters(
-      'string, string, address, address, address, address, (uint96 mintBurnBps, bool burnOnMint, uint96 royaltyBurnBps), uint256, uint96',
+      'string, string, address, address, address, address, (uint96 mintBurnBps, bool burnOnMint, uint96 royaltyBurnBps), uint256, uint96, address, uint96, address, address',
     ),
     [
       args.name,
-      args.symbol,
+      args.symbol ?? '',
       args.owner,
       args.clubToken,
       args.wetn,
@@ -254,6 +345,10 @@ export function encodeCollectionConstructorArgs(args: Awaited<ReturnType<typeof 
       },
       args.maxSupply,
       args.defaultRoyaltyBps,
+      args.platformTreasury,
+      args.platformMintFeeBps,
+      args.electroGemsCollection,
+      args.clubWatchCollection,
     ],
   )
   return encoded.startsWith('0x') ? encoded.slice(2) : encoded
@@ -350,6 +445,7 @@ export async function verifyCollectionOnExplorer(
   options?: {
     contractVersion?: number | null
     tokenStandard?: string | null
+    collectionName?: string | null
   },
 ) {
   const kind = resolveCollectionVerificationKind(options)
@@ -357,10 +453,15 @@ export async function verifyCollectionOnExplorer(
   const constructorArgs = await readCollectionConstructorArgs(
     contractAddress as `0x${string}`,
     chainId,
+    kind,
     factoryAddress,
+    options?.collectionName,
   )
   const encodedArgs = encodeCollectionConstructorArgs(constructorArgs)
-  const desiredName = sanitizeSolidityContractName(constructorArgs.name)
+  const desiredName =
+    kind === 'erc1155'
+      ? sanitizeSolidityContractName(options?.collectionName ?? constructorArgs.name)
+      : sanitizeSolidityContractName(constructorArgs.name)
   const explorerName = await getExplorerContractName(chainId, contractAddress)
   const verified = await isContractVerified(chainId, contractAddress)
 
@@ -378,7 +479,7 @@ export async function verifyCollectionOnExplorer(
     chainId,
     contractAddress,
     encodedArgs,
-    constructorArgs.name,
+    kind === 'erc1155' ? (options?.collectionName ?? constructorArgs.name) : constructorArgs.name,
     kind,
   )
 
