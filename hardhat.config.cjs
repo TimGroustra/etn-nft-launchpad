@@ -8,8 +8,12 @@ const envPath = path.join(__dirname, '.env')
 if (fs.existsSync(envPath)) {
   for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
     const match = line.match(/^\s*([^#=]+)=(.*)$/)
-    if (match && !process.env[match[1].trim()]) {
-      process.env[match[1].trim()] = match[2].trim()
+    if (match) {
+      const key = match[1].trim()
+      const value = match[2].trim()
+      if (value && (!process.env[key] || process.env[key] === '')) {
+        process.env[key] = value
+      }
     }
   }
 }

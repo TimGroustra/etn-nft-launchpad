@@ -7,8 +7,8 @@
     "txHash": "0x00a07990053962fea20e924ecd29c5852c4a6aa21c7519f7426525ae86439a38",
     "swapRouter": "0x5A3AB7e9f405250B36e7e0a4654c1052EADC1F07",
     "LaunchpadFactoryERC721V2": "0xaaAe79CB57aAe3bD89d22FC7ADd19C1B0780c63C",
-    "LaunchpadFactoryERC1155": "0x2fc2e1b25F038d9d5b353D366D2D601dF1be6ee1",
-    "v2DeployedAt": "2026-08-25T15:01:17.267Z"
+    "LaunchpadFactoryERC1155": "0x8EFcBE615083C56ddE950B780C1f1BD63B9aEF5b",
+    "v2DeployedAt": "2026-08-25T19:06:49.524Z"
   },
   "electroneumTestnet": {
     "LaunchpadFactory": "0x368Fe607F06ab5Ee022755Db854e0CC49f7469e7",
