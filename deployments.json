@@ -6,9 +6,11 @@
     "deployer": "0x126aa663BdeDd6Ae477fd28a7d0b624b8109D15d",
     "txHash": "0x00a07990053962fea20e924ecd29c5852c4a6aa21c7519f7426525ae86439a38",
     "swapRouter": "0x5A3AB7e9f405250B36e7e0a4654c1052EADC1F07",
-    "LaunchpadFactoryERC721V2": "0xF5934aCe761866c052e23f314785E78253C91926",
-    "LaunchpadFactoryERC1155": "0x978753bd8A2a28e7F8e1021b9af7e7226819F3fd",
-    "v2DeployedAt": "2026-08-26T09:37:26.065Z"
+    "LaunchpadFactoryERC721V2": "0x138ce43b4a1280c64cec643f87c8351337c09515",
+    "LaunchpadFactoryERC1155": "0x5baa6D81Df03af08187A6cA9A42e771086f68B2d",
+    "LaunchpadMinter": "0xabb43aef01a230e02e1c416666c1e7664b0660e5",
+    "launchpadMinterDeployedAt": "2026-08-26T10:17:00.000Z",
+    "v2DeployedAt": "2026-08-26T10:17:47.221Z"
   },
   "electroneumTestnet": {
     "LaunchpadFactory": "0x368Fe607F06ab5Ee022755Db854e0CC49f7469e7",

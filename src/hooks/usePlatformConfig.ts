@@ -10,6 +10,8 @@ interface PlatformConfig {
   factory_address_v2_erc721_testnet?: string
   factory_address_v2_erc1155_mainnet?: string
   factory_address_v2_erc1155_testnet?: string
+  launchpad_minter_mainnet?: string
+  launchpad_minter_testnet?: string
   launchpad_v2_preview_enabled?: string
 }
 
@@ -32,6 +34,8 @@ async function fetchPlatformConfig(): Promise<PlatformConfig> {
       config.factory_address_v2_erc721_testnet = row.value
     }
     if (row.key === 'launchpad_v2_preview_enabled') config.launchpad_v2_preview_enabled = row.value
+    if (row.key === 'launchpad_minter_mainnet') config.launchpad_minter_mainnet = row.value
+    if (row.key === 'launchpad_minter_testnet') config.launchpad_minter_testnet = row.value
   }
   return config
 }

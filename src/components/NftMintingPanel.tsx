@@ -18,6 +18,7 @@ import { Input, Label } from '@/components/ui/input'
 import { buildMintedTokenInfo, MintSuccessModal, type MintedTokenInfo } from '@/components/MintSuccessModal'
 import { EtnUsdHint } from '@/components/EtnUsdHint'
 import { useCollectionTokens, useMintPanelCollections } from '@/hooks/useCollections'
+import { usePlatformConfig } from '@/hooks/usePlatformConfig'
 
 import { useNetwork } from '@/context/NetworkContext'
 
@@ -26,14 +27,18 @@ import { useAdmin } from '@/hooks/useAdmin'
 import { useCanAccessCreatorTools } from '@/hooks/useCanAccessCreatorTools'
 import { useCreatorAccess } from '@/hooks/useCreatorAccess'
 
-import { NFT_ABI, parsePublicMintReceipt } from '@/lib/blockchain'
+import { getChainKey, LAUNCHPAD_MINTER_ABI, NFT_ABI, parsePublicMintReceipt } from '@/lib/blockchain'
 
 import { formatPercentFromBps } from '@/lib/create-collection-validation'
 import {
   formatPlatformMintFeePercent,
-  resolveMintPaymentWei,
-  supportsPlatformMintFee,
 } from '@/lib/platform-fees'
+import {
+  collectionHasLegacyOnChainMintFee,
+  resolveLaunchpadMinterAddress,
+  resolveLaunchpadMintPaymentWei,
+  shouldUseLaunchpadMinter,
+} from '@/lib/launchpad-minter'
 import { hasCreatorNftAccess } from '@/lib/creator-access'
 
 import { getPublicImageUrl } from '@/lib/supabase'
@@ -58,6 +63,7 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
   const { isAdmin } = useAdmin()
   const { holdings } = useCreatorAccess()
+  const { data: platformConfig } = usePlatformConfig()
   const platformFeeExempt = hasCreatorNftAccess(holdings)
 
   const { open } = useAppKit()
@@ -83,6 +89,9 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
   const contractAddress = collection.contract_address as `0x${string}` | undefined
 
   const targetChainId = collection.chain_id ?? chain.id
+  const networkKey = getChainKey(targetChainId)
+  const launchpadMinterAddress = resolveLaunchpadMinterAddress(networkKey, platformConfig)
+  const useLaunchpadMinter = shouldUseLaunchpadMinter(collection, networkKey, platformConfig)
 
   const wrongNetwork = isConnected && chain.id !== targetChainId
 
@@ -140,7 +149,12 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
 
 
-  const collectionSupportsPlatformMintFee = supportsPlatformMintFee(platformMintFeeBps, platformMintFeeReadFailed)
+  const legacyOnChainMintFee = collectionHasLegacyOnChainMintFee(
+    platformMintFeeBps,
+    platformMintFeeReadFailed,
+    collection,
+  )
+  const chargesLaunchpadMintFee = useLaunchpadMinter || legacyOnChainMintFee
 
 
 
@@ -181,9 +195,31 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
     chainId: targetChainId,
 
     query: {
-      enabled: Boolean(contractAddress && address && safeQuantity > 0 && collectionSupportsPlatformMintFee),
+      enabled: Boolean(
+        contractAddress && address && safeQuantity > 0 && legacyOnChainMintFee,
+      ),
     },
 
+  })
+
+  const { data: launchpadRequiredMintPaymentWei } = useReadContract({
+    address: launchpadMinterAddress ?? undefined,
+    abi: LAUNCHPAD_MINTER_ABI,
+    functionName: 'requiredMintPayment',
+    args:
+      contractAddress && address
+        ? [contractAddress, address, BigInt(safeQuantity)]
+        : undefined,
+    chainId: targetChainId,
+    query: {
+      enabled: Boolean(
+        useLaunchpadMinter &&
+          launchpadMinterAddress &&
+          contractAddress &&
+          address &&
+          safeQuantity > 0,
+      ),
+    },
   })
 
 
@@ -215,13 +251,16 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
   const saleActive = Boolean(isMintable) && maxMintable > 0 && remaining > 0
 
   const baseMintWei = mintPriceWei ? mintPriceWei * BigInt(safeQuantity) : 0n
-  const { totalMintWei, platformMintFeeWei } = resolveMintPaymentWei({
+  const { totalMintWei, platformMintFeeWei } = resolveLaunchpadMintPaymentWei({
     baseMintWei,
     platformFeeExempt,
-    supportsPlatformMintFee: collectionSupportsPlatformMintFee,
-    requiredMintPaymentWei,
+    usesLaunchpadMinter: useLaunchpadMinter,
+    legacyOnChainMintFee,
+    requiredMintPaymentWei: useLaunchpadMinter
+      ? launchpadRequiredMintPaymentWei
+      : requiredMintPaymentWei,
   })
-  const showPlatformMintFee = collectionSupportsPlatformMintFee && platformMintFeeWei > 0n
+  const showPlatformMintFee = chargesLaunchpadMintFee && platformMintFeeWei > 0n
   const mintPricingReady = Boolean(mintPriceWei) && !platformMintFeeLoading
 
   const isOwner = Boolean(
@@ -256,21 +295,26 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
     try {
 
-      const hash = await writeContractAsync({
-
-        address: contractAddress,
-
-        abi: NFT_ABI,
-
-        functionName: 'mint',
-
-        args: [BigInt(safeQuantity)],
-
-        value: totalMintWei,
-
-        chainId: targetChainId,
-
-      })
+      let hash: `0x${string}`
+      if (useLaunchpadMinter && launchpadMinterAddress) {
+        hash = await writeContractAsync({
+          address: launchpadMinterAddress,
+          abi: LAUNCHPAD_MINTER_ABI,
+          functionName: 'mintERC721',
+          args: [contractAddress, BigInt(safeQuantity)],
+          value: totalMintWei,
+          chainId: targetChainId,
+        })
+      } else {
+        hash = await writeContractAsync({
+          address: contractAddress,
+          abi: NFT_ABI,
+          functionName: 'mint',
+          args: [BigInt(safeQuantity)],
+          value: totalMintWei,
+          chainId: targetChainId,
+        })
+      }
 
       const receipt = await publicClient.waitForTransactionReceipt({ hash })
 

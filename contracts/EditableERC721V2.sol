@@ -180,29 +180,10 @@ contract EditableERC721V2 is
         return walletRemaining < remaining ? walletRemaining : remaining;
     }
 
-    function _isPlatformFeeExempt(address account) internal view returns (bool) {
-        if (platformMintFeeBps == 0 || platformTreasury == address(0)) return true;
-        if (
-            electroGemsCollection != address(0) &&
-            IERC721Balance(electroGemsCollection).balanceOf(account) > 0
-        ) {
-            return true;
-        }
-        if (
-            clubWatchCollection != address(0) &&
-            IERC721Balance(clubWatchCollection).balanceOf(account) > 0
-        ) {
-            return true;
-        }
-        return false;
-    }
-
-    /// @notice Total ETN required to mint, including any launchpad platform fee for non-exempt wallets.
-    function requiredMintPayment(address minter, uint256 mintCount) public view returns (uint256) {
+    /// @notice ETN required to call `mint` on this collection (mint price only; launchpad fee is separate).
+    function requiredMintPayment(address, uint256 mintCount) public view returns (uint256) {
         if (!isMintable || mintPrice == 0 || mintCount == 0) return 0;
-        uint256 base = mintPrice * mintCount;
-        if (_isPlatformFeeExempt(minter)) return base;
-        return base + (base * uint256(platformMintFeeBps)) / 10_000;
+        return mintPrice * mintCount;
     }
 
     /// @inheritdoc IMintable
@@ -215,9 +196,7 @@ contract EditableERC721V2 is
         require(mintCount <= mintableCount(msg.sender), "Exceeds mintable count");
 
         uint256 base = mintPrice * mintCount;
-        uint256 required = requiredMintPayment(msg.sender, mintCount);
-        require(msg.value >= required, "Insufficient payment");
-        uint256 platformFee = required - base;
+        require(msg.value >= base, "Insufficient payment");
 
         uint256 firstTokenId = _nextTokenId;
         for (uint256 i = 0; i < mintCount; i++) {
@@ -236,12 +215,7 @@ contract EditableERC721V2 is
             _swapEtnForClubBurn(burnEtn);
         }
 
-        if (platformFee > 0) {
-            (bool sentFee, ) = platformTreasury.call{value: platformFee}("");
-            require(sentFee, "Platform fee transfer failed");
-        }
-
-        uint256 excess = msg.value - required;
+        uint256 excess = msg.value - base;
         if (excess > 0) {
             (bool sent, ) = payable(msg.sender).call{value: excess}("");
             require(sent, "Refund failed");

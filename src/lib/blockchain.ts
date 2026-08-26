@@ -383,6 +383,41 @@ export const FACTORY_ABI = [
   },
 ] as const
 
+export const LAUNCHPAD_MINTER_ABI = [
+  {
+    inputs: [
+      { name: 'collection', type: 'address' },
+      { name: 'buyer', type: 'address' },
+      { name: 'mintCount', type: 'uint256' },
+    ],
+    name: 'requiredMintPayment',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'collection', type: 'address' },
+      { name: 'mintCount', type: 'uint256' },
+    ],
+    name: 'mintERC721',
+    outputs: [],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'collection', type: 'address' },
+      { name: 'tokenId', type: 'uint256' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    name: 'mintEdition',
+    outputs: [],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+] as const
+
 export const NFT_ABI = [
   {
     inputs: [],

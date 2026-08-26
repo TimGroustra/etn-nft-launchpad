@@ -315,11 +315,16 @@ describe('EditableERC721', function () {
     expect(await ethers.provider.getBalance(nftAddress)).to.equal(ethers.parseEther('0.7'))
   })
 
-  it('charges a platform mint fee for wallets without ElectroGem or Club Watch', async function () {
-    const [owner, treasury, minter] = await ethers.getSigners()
+  it('charges launchpad platform mint fee only through LaunchpadMinter', async function () {
+    const [owner, treasury, buyer] = await ethers.getSigners()
     const MockHolderNFT = await ethers.getContractFactory('MockHolderNFT')
     const electroGems = await waitDeployed(await MockHolderNFT.deploy())
     const clubWatch = await waitDeployed(await MockHolderNFT.deploy())
+
+    const LaunchpadMinter = await ethers.getContractFactory('LaunchpadMinter')
+    const launchpadMinter = await waitDeployed(
+      await LaunchpadMinter.deploy(300, treasury.address, await electroGems.getAddress(), await clubWatch.getAddress()),
+    )
 
     const { nft } = await deployNft(
       { mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 },
@@ -336,20 +341,28 @@ describe('EditableERC721', function () {
     await nft.connect(owner).setMintPrice(ethers.parseEther('100'))
     await nft.connect(owner).setMintable(true)
 
-    const required = await nft.requiredMintPayment(minter.address, 1)
-    expect(required).to.equal(ethers.parseEther('103'))
+    expect(await nft.requiredMintPayment(buyer.address, 1)).to.equal(ethers.parseEther('100'))
+    expect(await launchpadMinter.requiredMintPayment(await nft.getAddress(), buyer.address, 1)).to.equal(
+      ethers.parseEther('103'),
+    )
 
     const treasuryBefore = await ethers.provider.getBalance(treasury.address)
-    await nft.connect(minter).mint(1, { value: required })
+    await launchpadMinter.connect(buyer).mintERC721(await nft.getAddress(), 1, { value: ethers.parseEther('103') })
     const treasuryAfter = await ethers.provider.getBalance(treasury.address)
     expect(treasuryAfter - treasuryBefore).to.equal(ethers.parseEther('3'))
+    expect(await nft.ownerOf(1)).to.equal(buyer.address)
   })
 
-  it('waives platform mint fee when minter holds ElectroGem or Club Watch', async function () {
-    const [owner, treasury, minter] = await ethers.getSigners()
+  it('waives launchpad platform mint fee for ElectroGem or Club Watch holders', async function () {
+    const [owner, treasury, buyer] = await ethers.getSigners()
     const MockHolderNFT = await ethers.getContractFactory('MockHolderNFT')
     const electroGems = await waitDeployed(await MockHolderNFT.deploy())
     const clubWatch = await waitDeployed(await MockHolderNFT.deploy())
+
+    const LaunchpadMinter = await ethers.getContractFactory('LaunchpadMinter')
+    const launchpadMinter = await waitDeployed(
+      await LaunchpadMinter.deploy(300, treasury.address, await electroGems.getAddress(), await clubWatch.getAddress()),
+    )
 
     const { nft } = await deployNft(
       { mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 },
@@ -365,13 +378,38 @@ describe('EditableERC721', function () {
     await nft.connect(owner).setBaseURI('ipfs://collection/')
     await nft.connect(owner).setMintPrice(ethers.parseEther('100'))
     await nft.connect(owner).setMintable(true)
-    await electroGems.mint(minter.address, 1)
+    await electroGems.mint(buyer.address, 1)
 
-    expect(await nft.requiredMintPayment(minter.address, 1)).to.equal(ethers.parseEther('100'))
+    expect(await launchpadMinter.requiredMintPayment(await nft.getAddress(), buyer.address, 1)).to.equal(
+      ethers.parseEther('100'),
+    )
+
     const treasuryBefore = await ethers.provider.getBalance(treasury.address)
-    await nft.connect(minter).mint(1, { value: ethers.parseEther('100') })
+    await launchpadMinter.connect(buyer).mintERC721(await nft.getAddress(), 1, { value: ethers.parseEther('100') })
     const treasuryAfter = await ethers.provider.getBalance(treasury.address)
     expect(treasuryAfter - treasuryBefore).to.equal(0n)
+    expect(await nft.ownerOf(1)).to.equal(buyer.address)
+  })
+
+  it('accepts marketplace mint payment at mint price only', async function () {
+    const ES_MINTER_V3 = '0x41B8c31e35317124a7a4895ea034538C213c060f'
+    const [owner] = await ethers.getSigners()
+    const { nft } = await deployNft({ mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 }, owner)
+
+    await nft.connect(owner).setBaseURI('ipfs://collection/')
+    await nft.connect(owner).setMintPrice(ethers.parseEther('100'))
+    await nft.connect(owner).setMintable(true)
+
+    expect(await nft.requiredMintPayment(ES_MINTER_V3, 1)).to.equal(ethers.parseEther('100'))
+
+    await ethers.provider.send('hardhat_impersonateAccount', [ES_MINTER_V3])
+    await owner.sendTransaction({ to: ES_MINTER_V3, value: ethers.parseEther('110') })
+    const esMinter = await ethers.getSigner(ES_MINTER_V3)
+
+    await nft.connect(esMinter).mint(1, { value: ethers.parseEther('100') })
+    expect(await nft.ownerOf(1)).to.equal(ES_MINTER_V3)
+
+    await ethers.provider.send('hardhat_stopImpersonatingAccount', [ES_MINTER_V3])
   })
 
   it('burns CLUB from paid IMintable mint via ETN swap', async function () {

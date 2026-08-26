@@ -201,11 +201,10 @@ contract EditableERC1155 is
         return walletRemaining < remainingIds ? walletRemaining : remainingIds;
     }
 
-    function requiredMintPayment(address minter, uint256 mintCount) public view returns (uint256) {
+    /// @notice ETN required to call `mint` / `mintEdition` (mint price only; launchpad fee is separate).
+    function requiredMintPayment(address, uint256 mintCount) public view returns (uint256) {
         if (!isMintable || mintPrice == 0 || mintCount == 0) return 0;
-        uint256 base = mintPrice * mintCount;
-        if (_isPlatformFeeExempt(minter)) return base;
-        return base + (base * uint256(platformMintFeeBps)) / 10_000;
+        return mintPrice * mintCount;
     }
 
     function mint(uint256 mintCount) external payable nonReentrant {
@@ -214,7 +213,7 @@ contract EditableERC1155 is
         require(bytes(_baseTokenURI).length > 0, "Base URI required");
         require(mintCount <= mintableCount(msg.sender), "Exceeds mintable count");
 
-        uint256 required = requiredMintPayment(msg.sender, mintCount);
+        uint256 required = mintPrice * mintCount;
         require(msg.value >= required, "Insufficient payment");
 
         uint256 firstTokenId = _nextTokenId;
@@ -244,7 +243,7 @@ contract EditableERC1155 is
             require(_publicMintCount[msg.sender] + amount <= maxMintPerWallet, "Exceeds wallet limit");
         }
 
-        uint256 required = requiredMintPayment(msg.sender, amount);
+        uint256 required = mintPrice * amount;
         require(msg.value >= required, "Insufficient payment");
 
         if (bytes(_tokenURISuffix[tokenId]).length == 0) {
@@ -372,12 +371,6 @@ contract EditableERC1155 is
             _swapEtnForClubBurn(burnEtn);
         }
 
-        uint256 platformFee = required - base;
-        if (platformFee > 0) {
-            (bool sentFee, ) = platformTreasury.call{value: platformFee}("");
-            require(sentFee, "Platform fee transfer failed");
-        }
-
         uint256 excess = msg.value - required;
         if (excess > 0) {
             (bool sent, ) = payable(msg.sender).call{value: excess}("");
@@ -387,17 +380,6 @@ contract EditableERC1155 is
 
     function _composeMetadataSuffix(uint256 metadataIndex) internal pure returns (string memory) {
         return string(abi.encodePacked(Strings.toString(metadataIndex), ".json"));
-    }
-
-    function _isPlatformFeeExempt(address account) internal view returns (bool) {
-        if (platformMintFeeBps == 0 || platformTreasury == address(0)) return true;
-        if (electroGemsCollection != address(0) && IERC721Balance(electroGemsCollection).balanceOf(account) > 0) {
-            return true;
-        }
-        if (clubWatchCollection != address(0) && IERC721Balance(clubWatchCollection).balanceOf(account) > 0) {
-            return true;
-        }
-        return false;
     }
 
     function _canSwap() private view returns (bool) {

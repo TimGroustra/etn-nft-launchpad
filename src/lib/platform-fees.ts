@@ -1,4 +1,4 @@
-/** Launchpad platform mint fee for wallets without ElectroGem or Club Watch. */
+/** Launchpad platform mint fee — collected by LaunchpadMinter on etn-nft-launchpad.club only. */
 export const PLATFORM_MINT_FEE_BPS = 300n
 
 /** Max supply is billed in blocks of this many NFTs. */

@@ -10,16 +10,21 @@ import { Input, Label } from '@/components/ui/input'
 import { MintSuccessModal, type MintedTokenInfo } from '@/components/MintSuccessModal'
 import { EtnUsdHint } from '@/components/EtnUsdHint'
 import { useCollectionTokens } from '@/hooks/useCollections'
+import { usePlatformConfig } from '@/hooks/usePlatformConfig'
 import { useNetwork } from '@/context/NetworkContext'
 import { useAdmin } from '@/hooks/useAdmin'
 import { useCreatorAccess } from '@/hooks/useCreatorAccess'
 import {
   formatPlatformMintFeePercent,
-  resolveMintPaymentWei,
-  supportsPlatformMintFee,
 } from '@/lib/platform-fees'
 import { hasCreatorNftAccess } from '@/lib/creator-access'
-import { getCollectionContractAbi } from '@/lib/blockchain'
+import { getCollectionContractAbi, getChainKey, LAUNCHPAD_MINTER_ABI } from '@/lib/blockchain'
+import {
+  collectionHasLegacyOnChainMintFee,
+  resolveLaunchpadMinterAddress,
+  resolveLaunchpadMintPaymentWei,
+  shouldUseLaunchpadMinter,
+} from '@/lib/launchpad-minter'
 import {
   buildErc1155TypeAvailability,
   formatErc1155SupplyLabel,
@@ -37,6 +42,7 @@ export function Erc1155PublicMintCard({ collection }: Erc1155PublicMintCardProps
   const { address, isConnected } = useAccount()
   const { isAdmin } = useAdmin()
   const { holdings } = useCreatorAccess()
+  const { data: platformConfig } = usePlatformConfig()
   const platformFeeExempt = hasCreatorNftAccess(holdings)
   const { open } = useAppKit()
   const { chain } = useNetwork()
@@ -46,6 +52,9 @@ export function Erc1155PublicMintCard({ collection }: Erc1155PublicMintCardProps
 
   const contractAddress = collection.contract_address as `0x${string}` | undefined
   const targetChainId = collection.chain_id ?? chain.id
+  const networkKey = getChainKey(targetChainId)
+  const launchpadMinterAddress = resolveLaunchpadMinterAddress(networkKey, platformConfig)
+  const useLaunchpadMinter = shouldUseLaunchpadMinter(collection, networkKey, platformConfig)
   const wrongNetwork = isConnected && chain.id !== targetChainId
   const contractAbi = getCollectionContractAbi(collection)
 
@@ -82,7 +91,12 @@ export function Erc1155PublicMintCard({ collection }: Erc1155PublicMintCardProps
     query: { enabled: Boolean(contractAddress) },
   })
 
-  const collectionSupportsPlatformMintFee = supportsPlatformMintFee(platformMintFeeBps, platformMintFeeReadFailed)
+  const legacyOnChainMintFee = collectionHasLegacyOnChainMintFee(
+    platformMintFeeBps,
+    platformMintFeeReadFailed,
+    collection,
+  )
+  const chargesLaunchpadMintFee = useLaunchpadMinter || legacyOnChainMintFee
 
   const { data: supportsMintEdition, isLoading: mintEditionProbeLoading } = useErc1155PerTypeMintSupported(
     publicClient,
@@ -154,10 +168,11 @@ export function Erc1155PublicMintCard({ collection }: Erc1155PublicMintCardProps
 
   const resolvePayment = (quantity: number) => {
     const baseMintWei = mintPriceWei ? mintPriceWei * BigInt(quantity) : 0n
-    return resolveMintPaymentWei({
+    return resolveLaunchpadMintPaymentWei({
       baseMintWei,
       platformFeeExempt,
-      supportsPlatformMintFee: collectionSupportsPlatformMintFee,
+      usesLaunchpadMinter: useLaunchpadMinter,
+      legacyOnChainMintFee,
     })
   }
 
@@ -174,14 +189,26 @@ export function Erc1155PublicMintCard({ collection }: Erc1155PublicMintCardProps
 
     setMintingTypeId(type.tokenId)
     try {
-      const hash = await writeContractAsync({
-        address: contractAddress,
-        abi: contractAbi,
-        functionName: 'mintEdition',
-        args: [BigInt(type.tokenId), BigInt(quantity)],
-        value: totalMintWei,
-        chainId: targetChainId,
-      })
+      let hash: `0x${string}`
+      if (useLaunchpadMinter && launchpadMinterAddress) {
+        hash = await writeContractAsync({
+          address: launchpadMinterAddress,
+          abi: LAUNCHPAD_MINTER_ABI,
+          functionName: 'mintEdition',
+          args: [contractAddress, BigInt(type.tokenId), BigInt(quantity)],
+          value: totalMintWei,
+          chainId: targetChainId,
+        })
+      } else {
+        hash = await writeContractAsync({
+          address: contractAddress,
+          abi: contractAbi,
+          functionName: 'mintEdition',
+          args: [BigInt(type.tokenId), BigInt(quantity)],
+          value: totalMintWei,
+          chainId: targetChainId,
+        })
+      }
       await publicClient.waitForTransactionReceipt({ hash })
       setMintedTokens([
         {
@@ -214,14 +241,26 @@ export function Erc1155PublicMintCard({ collection }: Erc1155PublicMintCardProps
 
     setMintingTypeId(-1)
     try {
-      const hash = await writeContractAsync({
-        address: contractAddress,
-        abi: contractAbi,
-        functionName: 'mint',
-        args: [BigInt(quantity)],
-        value: totalMintWei,
-        chainId: targetChainId,
-      })
+      let hash: `0x${string}`
+      if (useLaunchpadMinter && launchpadMinterAddress) {
+        hash = await writeContractAsync({
+          address: launchpadMinterAddress,
+          abi: LAUNCHPAD_MINTER_ABI,
+          functionName: 'mintERC721',
+          args: [contractAddress, BigInt(quantity)],
+          value: totalMintWei,
+          chainId: targetChainId,
+        })
+      } else {
+        hash = await writeContractAsync({
+          address: contractAddress,
+          abi: contractAbi,
+          functionName: 'mint',
+          args: [BigInt(quantity)],
+          value: totalMintWei,
+          chainId: targetChainId,
+        })
+      }
       await publicClient.waitForTransactionReceipt({ hash })
       const minted = typeAvailability.slice(0, quantity).map((type) => ({
         tokenId: type.tokenId,
@@ -317,7 +356,7 @@ export function Erc1155PublicMintCard({ collection }: Erc1155PublicMintCardProps
               {typeAvailability.map((type) => {
                 const quantity = getQuantity(type.tokenId)
                 const { totalMintWei, platformMintFeeWei } = resolvePayment(quantity)
-                const showFee = collectionSupportsPlatformMintFee && platformMintFeeWei > 0n
+                const showFee = chargesLaunchpadMintFee && platformMintFeeWei > 0n
                 const disabled = !type.isListed || type.remaining <= 0 || mintingTypeId !== null
 
                 return (
