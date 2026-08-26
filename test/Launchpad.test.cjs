@@ -447,13 +447,14 @@ describe('EditableERC721', function () {
     await nft.connect(owner).setRandomPublicMint(true)
     await nft.connect(owner).setMintable(true)
 
-    await expect(nft.tokenURI(1)).to.be.reverted
+    expect(await nft.tokenURI(1)).to.equal('ipfs://collection/1.json')
+    expect(await nft.tokenURI(2)).to.equal('ipfs://collection/1.json')
 
     await nft.connect(minter).mint(1, { value: ethers.parseEther('5') })
     const uri = await nft.tokenURI(1)
     expect(uri).to.match(/^ipfs:\/\/collection\/\d+\.json$/)
 
-    await expect(nft.tokenURI(2)).to.be.reverted
+    expect(await nft.tokenURI(2)).to.equal('ipfs://collection/1.json')
   })
 
   it('returns preview tokenURI for sequential public mint only', async function () {

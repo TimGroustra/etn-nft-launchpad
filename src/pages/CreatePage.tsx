@@ -751,7 +751,7 @@ export function CreatePage() {
                       checked={form.randomPublicMint}
                       onChange={(randomPublicMint) => update('randomPublicMint', randomPublicMint)}
                       label="Random mint order"
-                      description="Assigns metadata randomly at mint time so snipers cannot predict the next reveal from mint order."
+                      description="Assigns metadata randomly at mint time. ElectroSwap and other marketplaces use a shared mystery preview (token #1 artwork) until mint."
                     />
                   )}
                 </div>

@@ -379,20 +379,23 @@ contract EditableERC721 is ERC721URIStorage, ERC2981, Ownable2Step, ReentrancyGu
         return value;
     }
 
-    /// @notice IERC721 metadata for minted tokens. Unminted preview URIs are only exposed for sequential public mint.
+    /// @notice IERC721 metadata for minted tokens. Unminted preview URIs support sequential mint and
+    /// a shared mystery preview for random public mint (ElectroSwap / IMintable marketplaces).
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         if (_ownerOf(tokenId) != address(0)) {
             return _resolveMintedTokenURI(tokenId);
         }
 
         if (
-            !randomPublicMint &&
             isMintable &&
             mintPrice > 0 &&
             bytes(_baseTokenURI).length > 0 &&
             tokenId > 0 &&
             tokenId <= maxSupply
         ) {
+            if (randomPublicMint) {
+                return string(abi.encodePacked(_baseTokenURI, "1.json"));
+            }
             return string(abi.encodePacked(_baseTokenURI, Strings.toString(tokenId), ".json"));
         }
 
