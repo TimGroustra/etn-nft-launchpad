@@ -277,11 +277,8 @@ export function getGemShardImageFileName(tokenId: number): string {
 }
 
 export function getGemShardPublicStorageUrl(storagePath: string): string {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim().replace(/\/$/, '')
-  if (!supabaseUrl) {
-    return `${getMetadataPublicOrigin()}/gem-shards/${storagePath}`
-  }
-  return `${supabaseUrl}/storage/v1/object/public/gem-shards/${storagePath}`
+  const normalized = storagePath.replace(/^\/+/, '')
+  return `${getMetadataPublicOrigin()}/gem-shards/${normalized}`
 }
 
 export function getGemShardImageUrl(tokenId: number): string {

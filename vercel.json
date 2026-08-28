@@ -1,4 +1,42 @@
 {
+  "headers": [
+    {
+      "source": "/i/:collectionId/:file",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, s-maxage=31536000, stale-while-revalidate=604800"
+        }
+      ]
+    },
+    {
+      "source": "/gem-shards/images/:file",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, s-maxage=31536000, stale-while-revalidate=604800"
+        }
+      ]
+    },
+    {
+      "source": "/gem-shards/metadata/:file",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400"
+        }
+      ]
+    },
+    {
+      "source": "/m/:collectionId/:file",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400"
+        }
+      ]
+    }
+  ],
   "rewrites": [
     {
       "source": "/m/:collectionId/:file",
@@ -7,6 +45,10 @@
     {
       "source": "/i/:collectionId/:file",
       "destination": "https://sktexilttapijefdusni.supabase.co/storage/v1/object/public/collection-images/:collectionId/:file"
+    },
+    {
+      "source": "/gem-shards/:path*",
+      "destination": "https://sktexilttapijefdusni.supabase.co/storage/v1/object/public/gem-shards/:path*"
     },
     { "source": "/(.*)", "destination": "/index.html" }
   ]

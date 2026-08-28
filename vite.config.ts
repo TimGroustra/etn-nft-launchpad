@@ -31,6 +31,12 @@ export default defineConfig(({ mode }) => {
           rewrite: (requestPath) =>
             requestPath.replace(/^\/i\//, '/storage/v1/object/public/collection-images/'),
         },
+        '/gem-shards': {
+          target: supabaseUrl,
+          changeOrigin: true,
+          rewrite: (requestPath) =>
+            requestPath.replace(/^\/gem-shards\//, '/storage/v1/object/public/gem-shards/'),
+        },
       },
     },
   }
