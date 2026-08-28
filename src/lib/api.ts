@@ -230,9 +230,10 @@ export async function uploadImage(
 
   return prepared.path
 }
-export async function publishGemShards(network: 'mainnet' | 'testnet') {
+export async function publishGemShards(walletAddress: string, network: 'mainnet' | 'testnet') {
   return invokeFunction<{ status: string; network: string }>('gem-shards-api', {
     action: 'publish_gem_shards',
+    walletAddress,
     network,
   })
 }

@@ -3,7 +3,7 @@ import { useAppKit } from '@reown/appkit/react'
 import { Button } from '@/components/ui/button'
 import { clearSession } from '@/lib/auth'
 
-export function WalletConnectButton() {
+export function WalletConnectButton({ className }: { className?: string }) {
   const { address, isConnected } = useAccount()
   const { open } = useAppKit()
   const { disconnect } = useDisconnect()
@@ -15,14 +15,25 @@ export function WalletConnectButton() {
 
   if (!isConnected || !address) {
     return (
-      <Button variant="outline" size="sm" onClick={() => open({ view: 'Connect' })}>
+      <Button
+        variant="outline"
+        size="sm"
+        className={className}
+        onClick={() => open({ view: 'Connect' })}
+      >
         Connect Wallet
       </Button>
     )
   }
 
   return (
-    <Button variant="outline" size="sm" onClick={handleDisconnect} title={address}>
+    <Button
+      variant="outline"
+      size="sm"
+      className={className}
+      onClick={handleDisconnect}
+      title={address}
+    >
       Disconnect
     </Button>
   )

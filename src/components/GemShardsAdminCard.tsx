@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAccount } from 'wagmi'
-import { useWriteContract } from 'wagmi'
+import { useReadContract, useWriteContract } from 'wagmi'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
@@ -12,6 +12,7 @@ import { useCollections } from '@/hooks/useCollections'
 import { getChainId } from '@/lib/blockchain'
 import { publishGemShards, verifyCollectionContract } from '@/lib/api'
 import { GEM_SHARDS_ABI } from '@/lib/gem-shards'
+import { GemShardsOwnerPanel } from '@/components/GemShardsOwnerPanel'
 
 export function GemShardsAdminCard() {
   const { address } = useAccount()
@@ -25,6 +26,14 @@ export function GemShardsAdminCard() {
   const [publishing, setPublishing] = useState(false)
   const gemShardsCollection = collections.find((collection) => collection.symbol === 'GSHARD')
 
+  const { data: mintingEnabledOnChain } = useReadContract({
+    address: gemShardsAddress,
+    abi: GEM_SHARDS_ABI,
+    functionName: 'mintingEnabled',
+    chainId: chain.id,
+    query: { enabled: isConfigured },
+  })
+
   if (!isAdmin || !isConfigured) return null
 
   async function handlePublish() {
@@ -35,14 +44,16 @@ export function GemShardsAdminCard() {
 
     setPublishing(true)
     try {
-      await writeContractAsync({
-        address: gemShardsAddress,
-        abi: GEM_SHARDS_ABI,
-        functionName: 'setMintingEnabled',
-        args: [true],
-        chainId: chain.id,
-      })
-      await publishGemShards(networkKey)
+      if (!mintingEnabledOnChain) {
+        await writeContractAsync({
+          address: gemShardsAddress,
+          abi: GEM_SHARDS_ABI,
+          functionName: 'setMintingEnabled',
+          args: [true],
+          chainId: chain.id,
+        })
+      }
+      await publishGemShards(address, networkKey)
       await queryClient.invalidateQueries({ queryKey: ['platform-config'] })
       await queryClient.invalidateQueries({ queryKey: ['mint-panel-collections'] })
       await queryClient.invalidateQueries({ queryKey: ['collections'] })
@@ -95,10 +106,15 @@ export function GemShardsAdminCard() {
         </div>
         {!isPublished && (
           <Button onClick={handlePublish} disabled={publishing || txPending}>
-            {publishing || txPending ? 'Publishing…' : 'Publish Gem Shards'}
+            {publishing || txPending
+              ? 'Publishing…'
+              : mintingEnabledOnChain
+                ? 'Complete publish'
+                : 'Publish Gem Shards'}
           </Button>
         )}
       </div>
+      <GemShardsOwnerPanel contractAddress={gemShardsAddress} chainId={chain.id} />
     </Card>
   )
 }

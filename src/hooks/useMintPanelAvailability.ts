@@ -90,6 +90,5 @@ export function useMintPanelAvailability(collection: Collection) {
   return {
     isLoading,
     isFullyMinted,
-    hideFromPanel: !isLoading && isFullyMinted,
   }
 }

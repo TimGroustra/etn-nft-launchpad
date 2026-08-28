@@ -4,6 +4,9 @@ import type { NetworkKey } from '@/lib/blockchain'
 export const GEM_SHARDS_PAID_MINT_PRICE = parseEther('10000')
 export const GEM_SHARDS_DUAL_HOLDER_DISCOUNT_BPS = 5000n
 export const ELECTROGEM_FREE_MINT_SUPPLY = 49
+export const GEM_SHARDS_CARD_IMAGE = '/gem-shards-card.jpg'
+export const GEM_SHARDS_MINT_CARD_DESCRIPTION =
+  'Collect radiant shards of crystallized energy. Holders earn a share of launchpad fees — each mint reveals a random shard from the 495-piece collection.'
 
 export const GEM_SHARDS_ABI = [
   {
@@ -38,6 +41,20 @@ export const GEM_SHARDS_ABI = [
     inputs: [],
     name: 'totalMinted',
     outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'remainingSupply',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'owner',
+    outputs: [{ name: '', type: 'address' }],
     stateMutability: 'view',
     type: 'function',
   },

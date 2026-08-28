@@ -13,6 +13,8 @@ import { useGemShardsLaunch } from '@/hooks/useGemShardsLaunch'
 import { useAdmin } from '@/hooks/useAdmin'
 import {
   GEM_SHARDS_ABI,
+  GEM_SHARDS_CARD_IMAGE,
+  GEM_SHARDS_MINT_CARD_DESCRIPTION,
   GEM_SHARDS_PAID_MINT_PRICE,
   formatPaidMintPriceLabel,
   type GemShardsContractAddress,
@@ -50,11 +52,14 @@ export function GemShardsMintPanel({
   const { eligibleTokenIds, ownsElectroGem, loading: freeMintLoading } = useElectroGemFreeMints()
   const publicClient = usePublicClient({ chainId })
   const { writeContractAsync, isPending } = useWriteContract()
-  const [mintingFreeId, setMintingFreeId] = useState<number | null>(null)
+  const [mintingFree, setMintingFree] = useState(false)
   const [mintingPaid, setMintingPaid] = useState(false)
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
 
   const mintingLive = isPublished && !isDraft
+  const freeMintsRemaining = eligibleTokenIds.length
+  const title = collection?.name ?? 'Gem Shards'
+  const description = GEM_SHARDS_MINT_CARD_DESCRIPTION
 
   const { data: publicSaleOpensAt } = useReadContract({
     address: contractAddress,
@@ -89,9 +94,10 @@ export function GemShardsMintPanel({
     return () => window.clearInterval(timer)
   }, [weekOneActive])
 
-  async function mintFree(electroGemTokenId: number) {
-    if (!address) return
-    setMintingFreeId(electroGemTokenId)
+  async function mintFree() {
+    const electroGemTokenId = eligibleTokenIds[0]
+    if (!address || electroGemTokenId == null) return
+    setMintingFree(true)
     try {
       const hash = await writeContractAsync({
         address: contractAddress,
@@ -101,11 +107,11 @@ export function GemShardsMintPanel({
         chainId: chain.id,
       })
       if (publicClient) await publicClient.waitForTransactionReceipt({ hash })
-      toast.success(`Minted free Gem Shard for ElectroGem #${electroGemTokenId}`)
+      toast.success('Minted your free Gem Shard')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Free mint failed')
     } finally {
-      setMintingFreeId(null)
+      setMintingFree(false)
     }
   }
 
@@ -136,69 +142,73 @@ export function GemShardsMintPanel({
   if (isDraft && !isAdmin) {
     return variant === 'panel' ? null : (
       <Card className="border-slate-800 bg-slate-900/60 p-6">
-        <CardTitle>{collection?.name ?? 'Gem Shards'}</CardTitle>
+        <CardTitle>{title}</CardTitle>
         <CardDescription className="mt-2">Coming soon.</CardDescription>
       </Card>
     )
   }
 
-  const title = collection?.name ?? 'Gem Shards'
-  const description =
-    collection?.description
-    ?? 'Hold Gem Shards to earn a share of launchpad platform fees. ElectroGem holders get one free shard per gem (IDs 1–49).'
+  const paidMintLabel = mintingPaid ? 'Minting…' : `Mint for ${formatEther(paidPrice)} ETN`
+  const showFreeMintInfo = isConnected && ownsElectroGem
 
-  const mintContent = isDraft ? (
+  const mintActions = isDraft ? (
     <CardDescription>Minting is disabled until you publish from the Dashboard.</CardDescription>
   ) : !isConnected ? (
-    <Button onClick={() => open()}>Connect wallet</Button>
+    <Button className="w-full" onClick={() => open()}>
+      Connect wallet to mint
+    </Button>
   ) : (
-    <div className={variant === 'page' ? 'grid gap-4 md:grid-cols-2' : 'space-y-4'}>
-      <div className={variant === 'panel' ? 'space-y-2' : undefined}>
-        {variant === 'page' ? <CardTitle className="text-base">Free mint</CardTitle> : null}
-        <p className="text-sm text-slate-400">One free shard per ElectroGem token you own (1–49).</p>
-        {freeMintLoading ? (
-          <p className="text-sm text-slate-500">Checking eligibility…</p>
-        ) : eligibleTokenIds.length === 0 ? (
-          <p className="text-sm text-slate-500">No free mints available.</p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {eligibleTokenIds.map((tokenId) => (
+    <div className="space-y-3">
+      {showFreeMintInfo && (
+        <div className="rounded-lg border border-violet-900/40 bg-violet-950/20 px-3 py-2">
+          {freeMintLoading ? (
+            <p className="text-sm text-slate-400">Checking free mints…</p>
+          ) : freeMintsRemaining > 0 ? (
+            <>
+              <p className="text-sm text-violet-200">
+                {freeMintsRemaining} free {freeMintsRemaining === 1 ? 'mint' : 'mints'} remaining
+              </p>
               <Button
-                key={tokenId}
+                className="mt-2 w-full"
                 variant="outline"
-                size={variant === 'panel' ? 'sm' : 'default'}
-                disabled={isPending || mintingFreeId != null}
-                onClick={() => mintFree(tokenId)}
+                disabled={isPending || mintingFree || mintingPaid}
+                onClick={mintFree}
               >
-                {mintingFreeId === tokenId ? 'Minting…' : `Free (EG #${tokenId})`}
+                {mintingFree ? 'Minting…' : 'Mint free shard'}
               </Button>
-            ))}
-          </div>
-        )}
-      </div>
+            </>
+          ) : (
+            <p className="text-sm text-slate-400">No free mints remaining</p>
+          )}
+        </div>
+      )}
 
-      <div className={variant === 'panel' ? 'space-y-2' : undefined}>
-        {variant === 'page' ? <CardTitle className="text-base">Paid mint</CardTitle> : null}
-        <p className="text-sm text-slate-400">
-          {weekOneActive
-            ? `ElectroGem holders only · public in ${countdownLabel ?? 'soon'}`
-            : 'Open to all wallets.'}
-        </p>
-        <p className="text-lg font-medium text-white">
-          {formatPaidMintPriceLabel(paidPrice)}
-          {hasDualHolderDiscount && paidPrice < GEM_SHARDS_PAID_MINT_PRICE ? (
-            <span className="ml-2 text-sm text-emerald-400">50% off</span>
-          ) : null}
-        </p>
+      <div className="space-y-2">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-sm text-slate-400">Paid mint</span>
+          <span className="text-right text-sm font-medium text-white">
+            {formatPaidMintPriceLabel(paidPrice)}
+            {hasDualHolderDiscount && paidPrice < GEM_SHARDS_PAID_MINT_PRICE ? (
+              <span className="ml-1 text-emerald-400">50% off</span>
+            ) : null}
+          </span>
+        </div>
+        {weekOneActive && (
+          <p className="text-xs text-slate-500">
+            {ownsElectroGem
+              ? `ElectroGem holders only · public opens in ${countdownLabel ?? 'soon'}`
+              : `Opens to everyone in ${countdownLabel ?? 'soon'}`}
+          </p>
+        )}
         <Button
-          className={variant === 'panel' ? 'w-full' : undefined}
-          disabled={!paidMintAllowed || isPending || mintingPaid}
+          className="w-full"
+          disabled={!paidMintAllowed || isPending || mintingPaid || mintingFree}
           onClick={mintPaid}
         >
-          {mintingPaid ? 'Minting…' : `Mint for ${formatEther(paidPrice)} ETN`}
+          {paidMintLabel}
         </Button>
         {weekOneActive && !ownsElectroGem && (
-          <p className="text-sm text-amber-300">Hold an ElectroGem to mint during week one.</p>
+          <p className="text-xs text-amber-300">Hold an ElectroGem to mint during week one.</p>
         )}
       </div>
     </div>
@@ -206,34 +216,48 @@ export function GemShardsMintPanel({
 
   if (variant === 'panel') {
     return (
-      <Card className="flex h-full flex-col p-4 sm:p-6">
-        <CardTitle>{title}</CardTitle>
-        <CardDescription className="mt-1 line-clamp-2">{description}</CardDescription>
-        <div className="mt-4 flex-1">{mintContent}</div>
-        {collection?.contract_address && (
-          <Button variant="outline" size="sm" className="mt-4 w-full" asChild>
-            <Link to={`/collection/${collection.contract_address}`}>View collection</Link>
-          </Button>
-        )}
+      <Card className="flex h-full flex-col overflow-hidden">
+        <img
+          src={GEM_SHARDS_CARD_IMAGE}
+          alt={title}
+          className="aspect-square w-full object-cover"
+        />
+        <div className="flex flex-1 flex-col p-4 sm:p-5">
+          <CardTitle>{title}</CardTitle>
+          <CardDescription className="mt-1 line-clamp-3">{description}</CardDescription>
+          <div className="mt-4 flex-1">{mintActions}</div>
+          {collection?.contract_address && (
+            <Button variant="outline" size="sm" className="mt-4 w-full" asChild>
+              <Link to={`/collection/${collection.contract_address}`}>View collection</Link>
+            </Button>
+          )}
+        </div>
       </Card>
     )
   }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">{title}</h1>
-        {isDraft && isAdmin && (
-          <p className="mt-2 rounded-md border border-amber-900/50 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
-            Draft — publish from your Dashboard when ready.
-          </p>
-        )}
-        <p className="mt-2 max-w-2xl text-slate-400">{description}</p>
+      <div className="grid gap-6 md:grid-cols-[minmax(0,280px)_1fr] md:items-start">
+        <img
+          src={GEM_SHARDS_CARD_IMAGE}
+          alt={title}
+          className="aspect-square w-full max-w-xs rounded-xl border border-slate-800 object-cover"
+        />
+        <div>
+          <h1 className="text-2xl font-semibold">{title}</h1>
+          {isDraft && isAdmin && (
+            <p className="mt-2 rounded-md border border-amber-900/50 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
+              Draft — publish from your Dashboard when ready.
+            </p>
+          )}
+          <p className="mt-2 max-w-2xl text-slate-400">{description}</p>
+        </div>
       </div>
       {variant === 'page' && isDraft ? (
-        <Card className="border-slate-800 bg-slate-900/60 p-6">{mintContent}</Card>
+        <Card className="border-slate-800 bg-slate-900/60 p-6">{mintActions}</Card>
       ) : (
-        mintContent
+        <Card className="border-slate-800 bg-slate-900/60 p-6">{mintActions}</Card>
       )}
     </div>
   )

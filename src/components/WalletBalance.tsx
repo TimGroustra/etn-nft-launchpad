@@ -11,7 +11,7 @@ function formatWalletBalance(wei: bigint): string {
   return etn.toLocaleString(undefined, { maximumFractionDigits: 4 })
 }
 
-export function WalletBalance() {
+export function WalletBalance({ className }: { className?: string }) {
   const { address, isConnected, chainId: walletChainId } = useAccount()
   const { chain } = useNetwork()
   const { data, isLoading, isError } = useBalance({
@@ -33,7 +33,7 @@ export function WalletBalance() {
 
   return (
     <span
-      className={`shrink-0 text-xs tabular-nums sm:max-w-none ${onWrongNetwork ? 'text-amber-400' : 'text-slate-300'}`}
+      className={`shrink-0 text-xs tabular-nums sm:max-w-none ${onWrongNetwork ? 'text-amber-400' : 'text-slate-300'} ${className ?? ''}`}
       title={
         onWrongNetwork
           ? `Switch to ${chain.name} in your wallet`

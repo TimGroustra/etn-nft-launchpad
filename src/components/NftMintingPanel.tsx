@@ -48,10 +48,63 @@ import type { Collection } from '@/types/database'
 import { Erc1155PublicMintCard } from '@/components/Erc1155PublicMintCard'
 import { getCollectionTokenStandard } from '@/lib/collection-contract'
 import { GemShardsMintPanel } from '@/components/GemShardsMintPanel'
-import { isGemShardsContract } from '@/lib/gem-shards'
+import {
+  GEM_SHARDS_CARD_IMAGE,
+  GEM_SHARDS_MINT_CARD_DESCRIPTION,
+  isGemShardsContract,
+} from '@/lib/gem-shards'
 
 type PublicMintCardProps = {
   collection: Collection
+}
+
+function MintPanelSoldOutCard({
+  collection,
+  isGemShards,
+}: {
+  collection: Collection
+  isGemShards: boolean
+}) {
+  const { data: tokens = [] } = useCollectionTokens(collection.id)
+  const previewToken = tokens.find((token) => token.image_storage_path)
+  const imageSrc = isGemShards
+    ? GEM_SHARDS_CARD_IMAGE
+    : previewToken?.image_storage_path
+      ? getPublicImageUrl(previewToken.image_storage_path)
+      : null
+  const description = isGemShards
+    ? GEM_SHARDS_MINT_CARD_DESCRIPTION
+    : (collection.description || collection.symbol)
+
+  return (
+    <Card className="flex h-full flex-col overflow-hidden border-slate-800/80 bg-slate-950/40">
+      {imageSrc ? (
+        <img
+          src={imageSrc}
+          alt={collection.name}
+          className="aspect-square w-full object-cover opacity-60 grayscale"
+        />
+      ) : (
+        <div className="flex aspect-square w-full items-center justify-center bg-slate-900/80 text-slate-500">
+          {collection.symbol}
+        </div>
+      )}
+      <div className="flex flex-1 flex-col p-4 sm:p-5">
+        <div className="flex items-start justify-between gap-3">
+          <CardTitle>{collection.name}</CardTitle>
+          <span className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2.5 py-0.5 text-xs font-medium uppercase tracking-wide text-slate-300">
+            Minted out
+          </span>
+        </div>
+        <CardDescription className="mt-2 line-clamp-3">{description}</CardDescription>
+        {collection.contract_address && (
+          <Button variant="outline" size="sm" className="mt-4 w-full" asChild>
+            <Link to={`/collection/${collection.contract_address}`}>View collection</Link>
+          </Button>
+        )}
+      </div>
+    </Card>
+  )
 }
 
 function MintPanelCollectionCard({
@@ -59,10 +112,10 @@ function MintPanelCollectionCard({
   onAvailabilityResolved,
 }: {
   collection: Collection
-  onAvailabilityResolved: (collectionId: string, visible: boolean) => void
+  onAvailabilityResolved: (collectionId: string, isFullyMinted: boolean) => void
 }) {
   const { data: platformConfig } = usePlatformConfig()
-  const { hideFromPanel, isLoading } = useMintPanelAvailability(collection)
+  const { isFullyMinted, isLoading } = useMintPanelAvailability(collection)
   const networkKey = getChainKey(collection.chain_id ?? 52014)
   const isGemShards = isGemShardsContract(collection.contract_address, networkKey, {
     gem_shards_mainnet: platformConfig?.gem_shards_mainnet,
@@ -71,10 +124,12 @@ function MintPanelCollectionCard({
 
   useEffect(() => {
     if (isLoading) return
-    onAvailabilityResolved(collection.id, !hideFromPanel)
-  }, [collection.id, hideFromPanel, isLoading, onAvailabilityResolved])
+    onAvailabilityResolved(collection.id, isFullyMinted)
+  }, [collection.id, isFullyMinted, isLoading, onAvailabilityResolved])
 
-  if (hideFromPanel) return null
+  if (!isLoading && isFullyMinted) {
+    return <MintPanelSoldOutCard collection={collection} isGemShards={isGemShards} />
+  }
 
   if (isGemShards && collection.contract_address) {
     return (
@@ -606,22 +661,25 @@ export function NftMintingPanel() {
   const { canAccessCreatorTools } = useCanAccessCreatorTools()
 
   const { data: collections = [], isLoading } = useMintPanelCollections(chain.id, isAdmin)
-  const [availabilityById, setAvailabilityById] = useState<Record<string, boolean>>({})
+  const [mintedOutById, setMintedOutById] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
-    setAvailabilityById({})
+    setMintedOutById({})
   }, [collections])
 
-  const handleAvailabilityResolved = useCallback((collectionId: string, visible: boolean) => {
-    setAvailabilityById((prev) => {
-      if (prev[collectionId] === visible) return prev
-      return { ...prev, [collectionId]: visible }
+  const handleAvailabilityResolved = useCallback((collectionId: string, isFullyMinted: boolean) => {
+    setMintedOutById((prev) => {
+      if (prev[collectionId] === isFullyMinted) return prev
+      return { ...prev, [collectionId]: isFullyMinted }
     })
   }, [])
 
-  const resolvedCount = Object.keys(availabilityById).length
-  const allResolved = collections.length > 0 && resolvedCount === collections.length
-  const anyVisible = Object.values(availabilityById).some(Boolean)
+  const sortedCollections = [...collections].sort((left, right) => {
+    const leftMintedOut = mintedOutById[left.id] ?? false
+    const rightMintedOut = mintedOutById[right.id] ?? false
+    if (leftMintedOut === rightMintedOut) return 0
+    return leftMintedOut ? 1 : -1
+  })
 
   return (
 
@@ -669,24 +727,9 @@ export function NftMintingPanel() {
 
         </Card>
 
-      ) : allResolved && !anyVisible ? (
-
-        <Card className="p-6">
-
-          <CardTitle>All panel collections are sold out</CardTitle>
-
-          <CardDescription className="mt-2">
-
-            Every collection on the minting panel has been fully minted. Check back later for new drops.
-
-          </CardDescription>
-
-        </Card>
-
       ) : (
-
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {collections.map((collection) => (
+          {sortedCollections.map((collection) => (
             <MintPanelCollectionCard
               key={collection.id}
               collection={collection}
@@ -694,7 +737,6 @@ export function NftMintingPanel() {
             />
           ))}
         </div>
-
       )}
 
     </section>
