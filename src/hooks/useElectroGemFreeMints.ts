@@ -86,7 +86,7 @@ export function useElectroGemFreeMints() {
 
   const eligibleTokenIds = useMemo(() => {
     if (!claimedResults || ownedElectroGemIdsInFreeRange.length === 0) return []
-    return ownedElectroGemIdsInFreeRange.filter((tokenId, index) => {
+    return ownedElectroGemIdsInFreeRange.filter((_tokenId, index) => {
       const claimedResult = claimedResults[index]
       return claimedResult?.status === 'success' && claimedResult.result === false
     })

@@ -4,7 +4,7 @@ import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
 import { WagmiProvider } from 'wagmi'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { CUSTOM_RPC_URLS, electroneum, electroneumTestnet, SUPPORTED_CHAINS, TESTNET_ENABLED } from '@/lib/blockchain'
-import { http, fallback } from 'wagmi'
+import { http, fallback, type Transport } from 'wagmi'
 import { NetworkProvider } from '@/context/NetworkContext'
 import { WalletAuthProvider } from '@/hooks/useWalletAuth'
 
@@ -29,7 +29,7 @@ const queryClient = new QueryClient({
 
 const networks = [...SUPPORTED_CHAINS] as [typeof SUPPORTED_CHAINS[number], ...typeof SUPPORTED_CHAINS[number][]]
 
-const wagmiTransports: Record<number, ReturnType<typeof http>> = {
+const wagmiTransports: Record<number, Transport> = {
   [electroneum.id]: fallback([
     http(electroneum.rpcUrls.default.http[1] ?? 'https://rpc.ankr.com/electroneum'),
     http(electroneum.rpcUrls.default.http[0]),

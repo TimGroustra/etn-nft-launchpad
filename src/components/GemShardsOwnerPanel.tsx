@@ -45,7 +45,7 @@ export function GemShardsOwnerPanel({ contractAddress, chainId }: GemShardsOwner
   })
 
   const isContractOwner =
-    Boolean(owner && address) && owner.toLowerCase() === address.toLowerCase()
+    owner != null && address != null && owner.toLowerCase() === address.toLowerCase()
   const hasBalance = Boolean(balance && balance.value > 0n)
   const supplyRemaining = remainingSupply ?? 495n
   const canOwnerMint = supplyRemaining > 0n
