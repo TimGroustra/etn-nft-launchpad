@@ -1,5 +1,5 @@
 import { getAbiItem, parseEventLogs, type Log, type PublicClient } from 'viem'
-import { GEM_SHARDS_ABI } from '@/lib/gem-shards'
+import { GEM_SHARDS_ABI, GEM_SHARDS_MAX_SUPPLY } from '@/lib/gem-shards'
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const
 const LOG_CHUNK_SIZE = 10_000n
@@ -68,7 +68,7 @@ export async function fetchGemShardMintedTokenIds(
   return uniqueSortedTokenIds(events.map((event) => Number(event.args.tokenId)))
 }
 
-/** Token IDs currently owned by a wallet — ownerOf scan (max 495 minted). */
+/** Token IDs currently owned by a wallet — ownerOf scan over the full 1..495 ID space (random mint). */
 export async function fetchGemShardOwnedTokenIds(
   client: PublicClient,
   contractAddress: `0x${string}`,
@@ -76,17 +76,8 @@ export async function fetchGemShardOwnedTokenIds(
 ): Promise<number[]> {
   const normalizedOwner = owner.toLowerCase()
 
-  const totalMinted = await client.readContract({
-    address: contractAddress,
-    abi: GEM_SHARDS_ABI,
-    functionName: 'totalMinted',
-  })
-
-  const mintedCount = Number(totalMinted)
-  if (mintedCount === 0) return []
-
   const ownerResults = await client.multicall({
-    contracts: Array.from({ length: mintedCount }, (_, index) => ({
+    contracts: Array.from({ length: GEM_SHARDS_MAX_SUPPLY }, (_, index) => ({
       address: contractAddress,
       abi: GEM_SHARDS_ABI,
       functionName: 'ownerOf' as const,
@@ -96,7 +87,7 @@ export async function fetchGemShardOwnedTokenIds(
   })
 
   const owned: number[] = []
-  for (let index = 0; index < mintedCount; index++) {
+  for (let index = 0; index < GEM_SHARDS_MAX_SUPPLY; index++) {
     const result = ownerResults[index]
     if (result.status === 'success' && result.result.toLowerCase() === normalizedOwner) {
       owned.push(index + 1)

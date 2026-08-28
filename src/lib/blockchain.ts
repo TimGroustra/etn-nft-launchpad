@@ -2,6 +2,8 @@ import type { CustomRpcUrlMap } from '@reown/appkit-common'
 import { resolveRequiredPublishFeeWei } from '@/lib/publish-fee-resolution'
 import { decodeEventLog, defineChain, getAddress, parseEventLogs, type Log, type PublicClient, type TransactionReceipt } from 'viem'
 
+export const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11' as const
+
 export const electroneum = defineChain({
   id: 52014,
   name: 'Electroneum Mainnet',
@@ -12,6 +14,11 @@ export const electroneum = defineChain({
   },
   blockExplorers: {
     default: { name: 'Explorer', url: 'https://blockexplorer.electroneum.com' },
+  },
+  contracts: {
+    multicall3: {
+      address: MULTICALL3_ADDRESS,
+    },
   },
 })
 
@@ -25,6 +32,11 @@ export const electroneumTestnet = defineChain({
   },
   blockExplorers: {
     default: { name: 'Testnet Explorer', url: 'https://testnet-blockexplorer.electroneum.com' },
+  },
+  contracts: {
+    multicall3: {
+      address: MULTICALL3_ADDRESS,
+    },
   },
 })
 
