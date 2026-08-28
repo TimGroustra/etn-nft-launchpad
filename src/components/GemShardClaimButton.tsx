@@ -3,7 +3,6 @@ import { useWriteContract } from 'wagmi'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useGemShardRewards } from '@/hooks/useGemShardRewards'
-import { useGemShardsLaunch } from '@/hooks/useGemShardsLaunch'
 import { PUBLISH_FEE_DISTRIBUTOR_ABI } from '@/lib/gem-shards'
 import { useNetwork } from '@/context/NetworkContext'
 
@@ -25,9 +24,8 @@ export function GemShardClaimButton() {
     totalPendingWei,
     loading,
   } = useGemShardRewards()
-  const { isPublished } = useGemShardsLaunch()
 
-  if (!configured || !isConnected || !isPublished || !ownsShards || loading || totalPendingWei <= 0n) {
+  if (!configured || !isConnected || !ownsShards || loading || totalPendingWei <= 0n) {
     return null
   }
 

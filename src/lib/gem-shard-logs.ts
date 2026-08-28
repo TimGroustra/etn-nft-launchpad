@@ -68,53 +68,40 @@ export async function fetchGemShardMintedTokenIds(
   return uniqueSortedTokenIds(events.map((event) => Number(event.args.tokenId)))
 }
 
-/** Token IDs currently owned by a wallet — scoped Transfer / ShardMinted logs only. */
+/** Token IDs currently owned by a wallet — ownerOf scan (max 495 minted). */
 export async function fetchGemShardOwnedTokenIds(
   client: PublicClient,
   contractAddress: `0x${string}`,
   owner: `0x${string}`,
 ): Promise<number[]> {
-  const normalizedOwner = owner.toLowerCase() as `0x${string}`
+  const normalizedOwner = owner.toLowerCase()
 
-  const [incomingLogs, outgoingLogs, mintLogs] = await Promise.all([
-    getContractLogsChunked(client, {
-      address: contractAddress,
-      event: TRANSFER_EVENT,
-      args: { to: normalizedOwner },
-    }),
-    getContractLogsChunked(client, {
-      address: contractAddress,
-      event: TRANSFER_EVENT,
-      args: { from: normalizedOwner },
-    }),
-    getContractLogsChunked(client, {
-      address: contractAddress,
-      event: SHARD_MINTED_EVENT,
-      args: { to: normalizedOwner },
-    }),
-  ])
-
-  const ownership = new Map<number, string>()
-
-  const mintEvents = parseEventLogs({ abi: GEM_SHARDS_ABI, logs: mintLogs, eventName: 'ShardMinted' })
-  for (const event of mintEvents) {
-    ownership.set(Number(event.args.tokenId), normalizedOwner)
-  }
-
-  const transferEvents = parseEventLogs({
+  const totalMinted = await client.readContract({
+    address: contractAddress,
     abi: GEM_SHARDS_ABI,
-    logs: [...incomingLogs, ...outgoingLogs],
-    eventName: 'Transfer',
+    functionName: 'totalMinted',
   })
 
-  for (const event of transferEvents) {
-    const tokenId = Number(event.args.tokenId)
-    const to = event.args.to?.toLowerCase()
-    const from = event.args.from?.toLowerCase()
+  const mintedCount = Number(totalMinted)
+  if (mintedCount === 0) return []
 
-    if (to === normalizedOwner) ownership.set(tokenId, to)
-    if (from === normalizedOwner) ownership.delete(tokenId)
+  const ownerResults = await client.multicall({
+    contracts: Array.from({ length: mintedCount }, (_, index) => ({
+      address: contractAddress,
+      abi: GEM_SHARDS_ABI,
+      functionName: 'ownerOf' as const,
+      args: [BigInt(index + 1)],
+    })),
+    allowFailure: true,
+  })
+
+  const owned: number[] = []
+  for (let index = 0; index < mintedCount; index++) {
+    const result = ownerResults[index]
+    if (result.status === 'success' && result.result.toLowerCase() === normalizedOwner) {
+      owned.push(index + 1)
+    }
   }
 
-  return uniqueSortedTokenIds([...ownership.keys()])
+  return owned
 }
