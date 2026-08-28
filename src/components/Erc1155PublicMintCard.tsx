@@ -5,7 +5,14 @@ import { formatEther } from 'viem'
 import { useAppKit } from '@reown/appkit/react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardDescription, CardTitle } from '@/components/ui/card'
+import { Card, CardDescription } from '@/components/ui/card'
+import {
+  MintPanelBadge,
+  MintPanelCardFooter,
+  MintPanelCardHeader,
+  mintPanelCardClass,
+  mintPanelSecondaryButtonClass,
+} from '@/components/mint-panel/MintPanelUi'
 import { Input, Label } from '@/components/ui/input'
 import { MintSuccessModal, type MintedTokenInfo } from '@/components/MintSuccessModal'
 import { EtnUsdHint } from '@/components/EtnUsdHint'
@@ -289,19 +296,23 @@ export function Erc1155PublicMintCard({ collection }: Erc1155PublicMintCardProps
         mintedTokens={mintedTokens}
       />
 
-      <Card className="overflow-hidden sm:col-span-2 lg:col-span-3">
-        <div className="space-y-4 p-5">
-          <div>
-            <CardTitle>{collection.name}</CardTitle>
-            {collection.mint_panel_admin_only && isAdmin && (
-              <p className="mt-1 text-xs font-medium uppercase tracking-wide text-amber-300/90">Admin preview</p>
-            )}
-            <CardDescription className="mt-1">
+      <Card className={`${mintPanelCardClass()} h-full overflow-hidden p-0 sm:col-span-2 lg:col-span-3`}>
+        <div className="flex h-full flex-col gap-5 p-5 sm:p-6">
+          <div className="space-y-2">
+            <MintPanelCardHeader
+              title={collection.name}
+              badge={
+                collection.mint_panel_admin_only && isAdmin ? (
+                  <MintPanelBadge tone="amber">Admin preview</MintPanelBadge>
+                ) : undefined
+              }
+            />
+            <CardDescription className="line-clamp-2 leading-relaxed">
               {collection.description || collection.symbol} · {formatErc1155SupplyLabel(tokens)}
             </CardDescription>
           </div>
 
-          <dl className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <dl className="grid gap-4 rounded-xl border border-slate-800/80 bg-slate-950/50 p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
             <div className="flex justify-between gap-3 sm:block">
               <dt className="text-slate-400">Price</dt>
               <dd>
@@ -460,9 +471,13 @@ export function Erc1155PublicMintCard({ collection }: Erc1155PublicMintCardProps
           )}
 
           {canViewCollection && (
-            <Button variant="outline" size="sm" className="w-full" asChild>
-              <Link to={`/collection/${collection.contract_address}`}>View collection</Link>
-            </Button>
+            <div className="mt-auto">
+              <MintPanelCardFooter>
+                <Button variant="outline" size="sm" className={mintPanelSecondaryButtonClass()} asChild>
+                  <Link to={`/collection/${collection.contract_address}`}>View collection</Link>
+                </Button>
+              </MintPanelCardFooter>
+            </div>
           )}
         </div>
       </Card>

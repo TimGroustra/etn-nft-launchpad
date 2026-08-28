@@ -6,6 +6,19 @@ import { useAppKit } from '@reown/appkit/react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
+import {
+  MintPanelBadge,
+  MintPanelCardActions,
+  MintPanelCardBody,
+  MintPanelCardDescription,
+  MintPanelCardFooter,
+  MintPanelCardHeader,
+  MintPanelCardHero,
+  MintPanelHighlight,
+  mintPanelCardClass,
+  mintPanelPrimaryButtonClass,
+  mintPanelSecondaryButtonClass,
+} from '@/components/mint-panel/MintPanelUi'
 import { useNetwork } from '@/context/NetworkContext'
 import { useCreatorAccess } from '@/hooks/useCreatorAccess'
 import { useElectroGemFreeMints } from '@/hooks/useElectroGemFreeMints'
@@ -154,22 +167,25 @@ export function GemShardsMintPanel({
   const mintActions = isDraft ? (
     <CardDescription>Minting is disabled until you publish from the Dashboard.</CardDescription>
   ) : !isConnected ? (
-    <Button className="w-full" onClick={() => open()}>
+    <Button className={mintPanelPrimaryButtonClass('violet')} onClick={() => open()}>
       Connect wallet to mint
     </Button>
   ) : (
     <div className="space-y-3">
       {showFreeMintInfo && (
-        <div className="rounded-lg border border-violet-900/40 bg-violet-950/20 px-3 py-2">
+        <MintPanelHighlight tone="violet">
           {freeMintLoading ? (
-            <p className="text-sm text-slate-400">Checking free mints…</p>
+            <p className="text-sm text-violet-100/80">Checking free mints…</p>
           ) : freeMintsRemaining > 0 ? (
             <>
-              <p className="text-sm text-violet-200">
-                {freeMintsRemaining} free {freeMintsRemaining === 1 ? 'mint' : 'mints'} remaining
-              </p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium leading-none text-violet-100">
+                  {freeMintsRemaining} free {freeMintsRemaining === 1 ? 'mint' : 'mints'} remaining
+                </p>
+                <MintPanelBadge tone="violet">ElectroGem</MintPanelBadge>
+              </div>
               <Button
-                className="mt-2 w-full"
+                className="mt-3 w-full border-violet-400/30 bg-violet-500/10 text-violet-100 hover:bg-violet-500/20"
                 variant="outline"
                 disabled={isPending || mintingFree || mintingPaid}
                 onClick={mintFree}
@@ -180,35 +196,35 @@ export function GemShardsMintPanel({
           ) : (
             <p className="text-sm text-slate-400">No free mints remaining</p>
           )}
-        </div>
+        </MintPanelHighlight>
       )}
 
-      <div className="space-y-2">
-        <div className="flex items-baseline justify-between gap-3">
+      <div className="space-y-3 rounded-xl border border-slate-800/80 bg-slate-950/50 p-4">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4">
           <span className="text-sm text-slate-400">Paid mint</span>
-          <span className="text-right text-sm font-medium text-white">
+          <span className="text-right text-sm font-semibold tabular-nums text-white">
             {formatPaidMintPriceLabel(paidPrice)}
             {hasDualHolderDiscount && paidPrice < GEM_SHARDS_PAID_MINT_PRICE ? (
-              <span className="ml-1 text-emerald-400">50% off</span>
+              <span className="ml-1.5 text-xs font-medium text-emerald-400">50% off</span>
             ) : null}
           </span>
         </div>
         {weekOneActive && (
-          <p className="text-xs text-slate-500">
+          <p className="text-xs leading-relaxed text-slate-500">
             {ownsElectroGem
               ? `ElectroGem holders only · public opens in ${countdownLabel ?? 'soon'}`
               : `Opens to everyone in ${countdownLabel ?? 'soon'}`}
           </p>
         )}
         <Button
-          className="w-full"
+          className={mintPanelPrimaryButtonClass('violet')}
           disabled={!paidMintAllowed || isPending || mintingPaid || mintingFree}
           onClick={mintPaid}
         >
           {paidMintLabel}
         </Button>
         {weekOneActive && !ownsElectroGem && (
-          <p className="text-xs text-amber-300">Hold an ElectroGem to mint during week one.</p>
+          <p className="text-xs text-amber-300/90">Hold an ElectroGem to mint during week one.</p>
         )}
       </div>
     </div>
@@ -216,23 +232,26 @@ export function GemShardsMintPanel({
 
   if (variant === 'panel') {
     return (
-      <Card className="flex h-full flex-col overflow-hidden">
-        <img
-          src={GEM_SHARDS_CARD_IMAGE}
-          alt={title}
-          className="aspect-square w-full object-cover"
-        />
-        <div className="flex flex-1 flex-col p-4 sm:p-5">
-          <CardTitle>{title}</CardTitle>
-          <CardDescription className="mt-1 line-clamp-3">{description}</CardDescription>
-          <div className="mt-4 flex-1">{mintActions}</div>
+      <div className={mintPanelCardClass({ accent: 'violet' })}>
+        <MintPanelCardHero src={GEM_SHARDS_CARD_IMAGE} alt={title} accent="violet" />
+        <MintPanelCardBody>
+          <div className="space-y-2">
+            <MintPanelCardHeader
+              title={title}
+              badge={<MintPanelBadge tone="violet">Live</MintPanelBadge>}
+            />
+            <MintPanelCardDescription>{description}</MintPanelCardDescription>
+          </div>
+          <MintPanelCardActions>{mintActions}</MintPanelCardActions>
           {collection?.contract_address && (
-            <Button variant="outline" size="sm" className="mt-4 w-full" asChild>
-              <Link to={`/collection/${collection.contract_address}`}>View collection</Link>
-            </Button>
+            <MintPanelCardFooter>
+              <Button variant="outline" size="sm" className={mintPanelSecondaryButtonClass()} asChild>
+                <Link to={`/collection/${collection.contract_address}`}>View collection</Link>
+              </Button>
+            </MintPanelCardFooter>
           )}
-        </div>
-      </Card>
+        </MintPanelCardBody>
+      </div>
     )
   }
 

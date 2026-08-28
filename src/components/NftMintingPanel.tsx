@@ -11,8 +11,6 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 
-import { Card, CardDescription, CardTitle } from '@/components/ui/card'
-
 import { Input, Label } from '@/components/ui/input'
 
 import { buildMintedTokenInfo, MintSuccessModal, type MintedTokenInfo } from '@/components/MintSuccessModal'
@@ -53,6 +51,23 @@ import {
   GEM_SHARDS_MINT_CARD_DESCRIPTION,
   isGemShardsContract,
 } from '@/lib/gem-shards'
+import {
+  MintPanelBadge,
+  MintPanelCardActions,
+  MintPanelCardBody,
+  MintPanelCardDescription,
+  MintPanelCardFooter,
+  MintPanelCardHeader,
+  MintPanelCardHero,
+  MintPanelEmptyState,
+  MintPanelSectionHeader,
+  MintPanelStat,
+  MintPanelStats,
+  mintPanelCardClass,
+  mintPanelGridClass,
+  mintPanelPrimaryButtonClass,
+  mintPanelSecondaryButtonClass,
+} from '@/components/mint-panel/MintPanelUi'
 
 type PublicMintCardProps = {
   collection: Collection
@@ -77,34 +92,43 @@ function MintPanelSoldOutCard({
     : (collection.description || collection.symbol)
 
   return (
-    <Card className="flex h-full flex-col overflow-hidden border-slate-800/80 bg-slate-950/40">
-      {imageSrc ? (
-        <img
-          src={imageSrc}
-          alt={collection.name}
-          className="aspect-square w-full object-cover opacity-60 grayscale"
-        />
-      ) : (
-        <div className="flex aspect-square w-full items-center justify-center bg-slate-900/80 text-slate-500">
-          {collection.symbol}
+    <div className={mintPanelCardClass({ soldOut: true })}>
+      <MintPanelCardHero
+        src={imageSrc}
+        alt={collection.name}
+        fallbackLabel={collection.symbol}
+        soldOut
+      />
+      <MintPanelCardBody>
+        <div className="space-y-2">
+          <MintPanelCardHeader
+            title={collection.name}
+            titleClassName="text-lg text-slate-300"
+            badge={<MintPanelBadge tone="soldOut">Minted out</MintPanelBadge>}
+          />
+          <MintPanelCardDescription className="text-slate-500">{description}</MintPanelCardDescription>
         </div>
-      )}
-      <div className="flex flex-1 flex-col p-4 sm:p-5">
-        <div className="flex items-start justify-between gap-3">
-          <CardTitle>{collection.name}</CardTitle>
-          <span className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2.5 py-0.5 text-xs font-medium uppercase tracking-wide text-slate-300">
-            Minted out
-          </span>
-        </div>
-        <CardDescription className="mt-2 line-clamp-3">{description}</CardDescription>
         {collection.contract_address && (
-          <Button variant="outline" size="sm" className="mt-4 w-full" asChild>
-            <Link to={`/collection/${collection.contract_address}`}>View collection</Link>
-          </Button>
+          <MintPanelCardFooter>
+            <Button variant="outline" size="sm" className={mintPanelSecondaryButtonClass()} asChild>
+              <Link to={`/collection/${collection.contract_address}`}>View collection</Link>
+            </Button>
+          </MintPanelCardFooter>
         )}
-      </div>
-    </Card>
+      </MintPanelCardBody>
+    </div>
   )
+}
+
+function MintPanelSoldOutCollectionCard({ collection }: { collection: Collection }) {
+  const { data: platformConfig } = usePlatformConfig()
+  const networkKey = getChainKey(collection.chain_id ?? 52014)
+  const isGemShards = isGemShardsContract(collection.contract_address, networkKey, {
+    gem_shards_mainnet: platformConfig?.gem_shards_mainnet,
+    gem_shards_testnet: platformConfig?.gem_shards_testnet,
+  })
+
+  return <MintPanelSoldOutCard collection={collection} isGemShards={isGemShards} />
 }
 
 function MintPanelCollectionCard({
@@ -128,7 +152,7 @@ function MintPanelCollectionCard({
   }, [collection.id, isFullyMinted, isLoading, onAvailabilityResolved])
 
   if (!isLoading && isFullyMinted) {
-    return <MintPanelSoldOutCard collection={collection} isGemShards={isGemShards} />
+    return null
   }
 
   if (isGemShards && collection.contract_address) {
@@ -464,93 +488,63 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
       />
 
-    <Card className="overflow-hidden">
+    <div className={mintPanelCardClass()}>
 
-      {previewToken?.image_storage_path && (
+      <MintPanelCardHero
+        src={previewToken?.image_storage_path ? getPublicImageUrl(previewToken.image_storage_path) : null}
+        alt={collection.name}
+        fallbackLabel={collection.symbol}
+      />
 
-        <img
+      <MintPanelCardBody>
 
-          src={getPublicImageUrl(previewToken.image_storage_path)}
+        <div className="space-y-2">
 
-          alt={collection.name}
+          <MintPanelCardHeader
+            title={collection.name}
+            badge={
+              collection.mint_panel_admin_only && isAdmin ? (
+                <MintPanelBadge tone="amber">Admin preview</MintPanelBadge>
+              ) : undefined
+            }
+          />
 
-          className="aspect-square w-full object-cover"
-
-        />
-
-      )}
-
-      <div className="space-y-4 p-5">
-
-        <div>
-
-          <CardTitle>{collection.name}</CardTitle>
-
-          {collection.mint_panel_admin_only && isAdmin && (
-            <p className="mt-1 text-xs font-medium uppercase tracking-wide text-amber-300/90">
-              Admin preview
-            </p>
-          )}
-
-          <CardDescription className="mt-1">{collection.description || collection.symbol}</CardDescription>
+          <MintPanelCardDescription>
+            {collection.description || collection.symbol}
+          </MintPanelCardDescription>
 
         </div>
 
 
 
-        <dl className="grid gap-2 text-sm">
+        <MintPanelStats>
 
-          <div className="flex justify-between gap-3">
-            <dt className="text-slate-400">Price</dt>
-            <dd className="text-right">
-              <div>{priceEtn} ETN each</div>
-              <EtnUsdHint etn={priceEtn} align="right" className="mt-0.5" />
-            </dd>
-          </div>
+          <MintPanelStat label="Price">
+            <div>{priceEtn} ETN each</div>
+            <EtnUsdHint etn={priceEtn} align="right" className="mt-0.5" />
+          </MintPanelStat>
           {showPlatformMintFee && (
-            <div className="flex justify-between gap-3">
-              <dt className="text-slate-400">Platform fee ({formatPlatformMintFeePercent()})</dt>
-              <dd className="text-right">
-                <div>{Number(formatEther(platformMintFeeWei)).toLocaleString()} ETN</div>
-                <EtnUsdHint etn={Number(formatEther(platformMintFeeWei))} align="right" className="mt-0.5" />
-              </dd>
-            </div>
+            <MintPanelStat label={`Platform fee (${formatPlatformMintFeePercent()})`}>
+              <div>{Number(formatEther(platformMintFeeWei)).toLocaleString()} ETN</div>
+              <EtnUsdHint etn={Number(formatEther(platformMintFeeWei))} align="right" className="mt-0.5" />
+            </MintPanelStat>
           )}
           {showPlatformMintFee && (
-            <div className="flex justify-between gap-3 border-t border-slate-800 pt-2">
-              <dt className="text-slate-300">Total</dt>
-              <dd className="text-right font-medium text-white">
-                <div>{Number(formatEther(totalMintWei)).toLocaleString()} ETN</div>
-                <EtnUsdHint etn={Number(formatEther(totalMintWei))} align="right" className="mt-0.5" />
-              </dd>
-            </div>
+            <MintPanelStat label="Total" highlight>
+              <div>{Number(formatEther(totalMintWei)).toLocaleString()} ETN</div>
+              <EtnUsdHint etn={Number(formatEther(totalMintWei))} align="right" className="mt-0.5" />
+            </MintPanelStat>
           )}
 
-          <div className="flex justify-between gap-3">
-
-            <dt className="text-slate-400">Minted</dt>
-
-            <dd>
-
-              {mintedCount} / {collection.max_supply}
-
-            </dd>
-
-          </div>
+          <MintPanelStat label="Minted">
+            {mintedCount} / {collection.max_supply}
+          </MintPanelStat>
 
           {Number(collection.max_mint_per_wallet) > 0 && (
-
-            <div className="flex justify-between gap-3">
-
-              <dt className="text-slate-400">Wallet limit</dt>
-
-              <dd>{collection.max_mint_per_wallet}</dd>
-
-            </div>
-
+            <MintPanelStat label="Wallet limit">{collection.max_mint_per_wallet}</MintPanelStat>
           )}
 
-        </dl>
+        </MintPanelStats>
 
 
 
@@ -566,9 +560,11 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
 
 
+        <MintPanelCardActions>
+
         {!isConnected ? (
 
-          <Button className="w-full" onClick={() => open({ view: 'Connect' })}>
+          <Button className={mintPanelPrimaryButtonClass()} onClick={() => open({ view: 'Connect' })}>
 
             Connect wallet to mint
 
@@ -576,7 +572,7 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
         ) : wrongNetwork ? (
 
-          <p className="text-sm text-amber-300">
+          <p className="text-center text-sm text-amber-300 sm:text-left">
 
             Switch to {targetChainId === 5201420 ? 'Electroneum Testnet' : 'Electroneum Mainnet'} to mint.
 
@@ -584,7 +580,7 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
         ) : !saleActive ? (
 
-          <p className="text-sm text-slate-400">Public mint is not active for this collection right now.</p>
+          <p className="text-center text-sm text-slate-400 sm:text-left">Public mint is not active for this collection right now.</p>
 
         ) : (
 
@@ -614,7 +610,7 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
             </div>
 
-            <Button className="w-full" disabled={minting || !mintPricingReady} onClick={mint}>
+            <Button className={mintPanelPrimaryButtonClass()} disabled={minting || !mintPricingReady} onClick={mint}>
 
               {minting
 
@@ -628,21 +624,27 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
         )}
 
+        </MintPanelCardActions>
+
 
 
         {canViewCollection && (
 
-          <Button variant="outline" size="sm" className="w-full" asChild>
+          <MintPanelCardFooter>
 
-            <Link to={`/collection/${collection.contract_address}`}>View collection</Link>
+            <Button variant="outline" size="sm" className={mintPanelSecondaryButtonClass()} asChild>
 
-          </Button>
+              <Link to={`/collection/${collection.contract_address}`}>View collection</Link>
+
+            </Button>
+
+          </MintPanelCardFooter>
 
         )}
 
-      </div>
+      </MintPanelCardBody>
 
-    </Card>
+    </div>
 
     </>
 
@@ -674,28 +676,22 @@ export function NftMintingPanel() {
     })
   }, [])
 
-  const sortedCollections = [...collections].sort((left, right) => {
-    const leftMintedOut = mintedOutById[left.id] ?? false
-    const rightMintedOut = mintedOutById[right.id] ?? false
-    if (leftMintedOut === rightMintedOut) return 0
-    return leftMintedOut ? 1 : -1
-  })
+  const activeCollections = collections.filter((collection) => mintedOutById[collection.id] !== true)
+  const mintedOutCollections = collections.filter((collection) => mintedOutById[collection.id] === true)
+  const resolvedCount = Object.keys(mintedOutById).length
+  const allResolved = collections.length > 0 && resolvedCount === collections.length
+  const noActiveCollections = allResolved && activeCollections.length === 0
 
   return (
 
-    <section className="space-y-4">
+    <div className="space-y-10">
 
-      <div>
+    <section className="space-y-5">
 
-        <h2 className="text-xl font-semibold sm:text-2xl">NFT Minting Panel</h2>
-
-        <p className="mt-1 text-slate-400">
-
-          Mint live collections on {chain.name}. Creators opt in from their collection settings.
-
-        </p>
-
-      </div>
+      <MintPanelSectionHeader
+        title="NFT Minting Panel"
+        description={`Mint live collections on ${chain.name}. Creators opt in from their collection settings.`}
+      />
 
 
 
@@ -705,31 +701,28 @@ export function NftMintingPanel() {
 
       ) : collections.length === 0 ? (
 
-        <Card className="p-6">
-
-          <CardTitle>No collections on the minting panel yet</CardTitle>
-
-          <CardDescription className="mt-2">
-
-            Publish a collection with public mint enabled, then turn on “Show on NFT Minting Panel” when creating your collection.
-
-          </CardDescription>
-
+        <MintPanelEmptyState
+          title="No collections on the minting panel yet"
+          description='Publish a collection with public mint enabled, then turn on "Show on NFT Minting Panel" when creating your collection.'
+        >
           {canAccessCreatorTools && (
-
-            <Button className="mt-4" asChild>
-
+            <Button className={mintPanelPrimaryButtonClass()} asChild>
               <Link to="/create">Create a collection</Link>
-
             </Button>
-
           )}
+        </MintPanelEmptyState>
 
-        </Card>
+      ) : noActiveCollections ? (
+
+        <MintPanelEmptyState
+          title="All panel collections are sold out"
+          description="Every collection on the minting panel has been fully minted. See below for sold-out collections."
+        />
 
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {sortedCollections.map((collection) => (
+
+        <div className={mintPanelGridClass}>
+          {activeCollections.map((collection) => (
             <MintPanelCollectionCard
               key={collection.id}
               collection={collection}
@@ -737,9 +730,27 @@ export function NftMintingPanel() {
             />
           ))}
         </div>
+
       )}
 
     </section>
+
+    {mintedOutCollections.length > 0 && (
+      <section className="space-y-5">
+        <MintPanelSectionHeader
+          title="Minted out"
+          description="These collections are fully minted. You can still view them on their collection pages."
+          accent="slate"
+        />
+        <div className={mintPanelGridClass}>
+          {mintedOutCollections.map((collection) => (
+            <MintPanelSoldOutCollectionCard key={collection.id} collection={collection} />
+          ))}
+        </div>
+      </section>
+    )}
+
+    </div>
 
   )
 
