@@ -178,6 +178,17 @@ export async function syncTokenUri(
   })
 }
 
+export async function markCollectionMintedOut(collectionId: string): Promise<Collection> {
+  const { data, error } = await supabase.functions.invoke('collection-api', {
+    body: { action: 'mark_minted_out', collectionId },
+  })
+  if (error) throw new Error(extractFunctionError(data, error))
+  if (data && typeof data === 'object' && 'error' in data && (data as { error?: string }).error) {
+    throw new Error(String((data as { error: string }).error))
+  }
+  return (data as { collection: Collection }).collection
+}
+
 export async function batchUpsertTokens(
   walletAddress: string,
   payload: {

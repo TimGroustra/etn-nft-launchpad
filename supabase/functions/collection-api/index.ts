@@ -10,6 +10,7 @@ import {
   extensionFromContentType,
   validateCollectionImagePath,
 } from '../_shared/storage-paths.ts'
+import { readCollectionFullyMintedOnChain } from '../_shared/mint-panel-availability.ts'
 
 async function getOwnedCollection(
   supabase: ReturnType<typeof createClient>,
@@ -75,8 +76,46 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     )
 
-    const sessionToken = req.headers.get('x-session-token') ?? ''
     const body = await req.json()
+
+    if (body.action === 'mark_minted_out') {
+      if (!body.collectionId) throw new Error('Collection ID is required.')
+
+      const { data: collection, error } = await supabase
+        .from('collections')
+        .select('id, contract_address, chain_id, max_supply, token_standard, minted_out, status, show_on_mint_panel')
+        .eq('id', body.collectionId)
+        .maybeSingle()
+      if (error) throw error
+      if (!collection) throw new Error('Collection not found.')
+      if (collection.status !== 'published' || !collection.show_on_mint_panel) {
+        throw new Error('Collection is not on the mint panel.')
+      }
+      if (collection.minted_out) {
+        return new Response(JSON.stringify({ collection }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      const fullyMinted = await readCollectionFullyMintedOnChain(supabase, collection)
+      if (!fullyMinted) {
+        throw new Error('Collection is not fully minted on-chain.')
+      }
+
+      const { data, error: updateError } = await supabase
+        .from('collections')
+        .update({ minted_out: true })
+        .eq('id', collection.id)
+        .select()
+        .single()
+      if (updateError) throw updateError
+
+      return new Response(JSON.stringify({ collection: data }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const sessionToken = req.headers.get('x-session-token') ?? ''
     const wallet = normalizeWallet(body.walletAddress)
     await validateSession(supabase, sessionToken, wallet)
 

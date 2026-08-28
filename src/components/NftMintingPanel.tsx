@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Link } from 'react-router-dom'
+
+import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 
 import { useAccount, usePublicClient, useReadContract, useWriteContract } from 'wagmi'
 import { formatEther } from 'viem'
@@ -46,6 +48,11 @@ import type { Collection } from '@/types/database'
 import { Erc1155PublicMintCard } from '@/components/Erc1155PublicMintCard'
 import { getCollectionTokenStandard } from '@/lib/collection-contract'
 import { getElectroSwapCollectionUrl } from '@/lib/marketplace'
+import { markCollectionMintedOut } from '@/lib/api'
+import {
+  collectionNeedsMintPanelProbe,
+  isCollectionDbMintedOut,
+} from '@/lib/mint-panel'
 import { GemShardsMintPanel } from '@/components/GemShardsMintPanel'
 import {
   GEM_SHARDS_CARD_IMAGE,
@@ -61,6 +68,7 @@ import {
   MintPanelCardHeader,
   MintPanelCardHero,
   MintPanelEmptyState,
+  MintPanelCardSkeleton,
   MintPanelSectionHeader,
   MintPanelHighlight,
   MintPanelMintSection,
@@ -154,29 +162,40 @@ function MintPanelSoldOutCollectionCard({ collection }: { collection: Collection
   )
 }
 
-function MintPanelCollectionCard({
+function MintPanelAvailabilityProbe({
   collection,
   onAvailabilityResolved,
 }: {
   collection: Collection
   onAvailabilityResolved: (collectionId: string, isFullyMinted: boolean) => void
 }) {
-  const { data: platformConfig } = usePlatformConfig()
   const { isFullyMinted, isLoading } = useMintPanelAvailability(collection)
-  const networkKey = getChainKey(collection.chain_id ?? 52014)
-  const isGemShards = isGemShardsContract(collection.contract_address, networkKey, {
-    gem_shards_mainnet: platformConfig?.gem_shards_mainnet,
-    gem_shards_testnet: platformConfig?.gem_shards_testnet,
-  })
 
   useEffect(() => {
     if (isLoading) return
     onAvailabilityResolved(collection.id, isFullyMinted)
   }, [collection.id, isFullyMinted, isLoading, onAvailabilityResolved])
 
-  if (!isLoading && isFullyMinted) {
-    return null
-  }
+  return null
+}
+
+function persistMintedOutFlag(collectionId: string, queryClient: QueryClient) {
+  void markCollectionMintedOut(collectionId)
+    .then(() => {
+      queryClient.invalidateQueries({ queryKey: ['mint-panel-collections'] })
+    })
+    .catch(() => {
+      // Best-effort cache for future visits; ignore transient failures.
+    })
+}
+
+function MintPanelCollectionCard({ collection }: { collection: Collection }) {
+  const { data: platformConfig } = usePlatformConfig()
+  const networkKey = getChainKey(collection.chain_id ?? 52014)
+  const isGemShards = isGemShardsContract(collection.contract_address, networkKey, {
+    gem_shards_mainnet: platformConfig?.gem_shards_mainnet,
+    gem_shards_testnet: platformConfig?.gem_shards_testnet,
+  })
 
   if (isGemShards && collection.contract_address) {
     return (
@@ -468,6 +487,10 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
       toast.success(`Minted ${safeQuantity} NFT${safeQuantity === 1 ? '' : 's'} from ${collection.name}`)
 
+      if (mintedBefore + safeQuantity >= collection.max_supply) {
+        void markCollectionMintedOut(collection.id).catch(() => undefined)
+      }
+
       setQuantity(1)
 
     } catch (err) {
@@ -642,11 +665,23 @@ export function NftMintingPanel() {
 
   const { canAccessCreatorTools } = useCanAccessCreatorTools()
 
+  const queryClient = useQueryClient()
   const { data: collections = [], isLoading } = useMintPanelCollections(chain.id, isAdmin)
   const [mintedOutById, setMintedOutById] = useState<Record<string, boolean>>({})
 
+  const collectionsNeedingProbe = useMemo(
+    () => collections.filter(collectionNeedsMintPanelProbe),
+    [collections],
+  )
+
   useEffect(() => {
-    setMintedOutById({})
+    const initial: Record<string, boolean> = {}
+    collections.forEach((collection) => {
+      if (isCollectionDbMintedOut(collection)) {
+        initial[collection.id] = true
+      }
+    })
+    setMintedOutById(initial)
   }, [collections])
 
   const handleAvailabilityResolved = useCallback((collectionId: string, isFullyMinted: boolean) => {
@@ -654,13 +689,40 @@ export function NftMintingPanel() {
       if (prev[collectionId] === isFullyMinted) return prev
       return { ...prev, [collectionId]: isFullyMinted }
     })
-  }, [])
+    if (isFullyMinted) {
+      persistMintedOutFlag(collectionId, queryClient)
+    }
+  }, [queryClient])
 
-  const activeCollections = collections.filter((collection) => mintedOutById[collection.id] !== true)
-  const mintedOutCollections = collections.filter((collection) => mintedOutById[collection.id] === true)
-  const resolvedCount = Object.keys(mintedOutById).length
-  const allResolved = collections.length > 0 && resolvedCount === collections.length
-  const noActiveCollections = allResolved && activeCollections.length === 0
+  const dbMintedOutCollections = useMemo(
+    () => collections.filter(isCollectionDbMintedOut),
+    [collections],
+  )
+  const probePendingCollections = useMemo(
+    () => collectionsNeedingProbe.filter((collection) => mintedOutById[collection.id] === undefined),
+    [collectionsNeedingProbe, mintedOutById],
+  )
+  const activeCollections = useMemo(
+    () => collectionsNeedingProbe.filter((collection) => mintedOutById[collection.id] === false),
+    [collectionsNeedingProbe, mintedOutById],
+  )
+  const mintedOutFromProbe = useMemo(
+    () => collectionsNeedingProbe.filter((collection) => mintedOutById[collection.id] === true),
+    [collectionsNeedingProbe, mintedOutById],
+  )
+  const mintedOutCollections = useMemo(() => {
+    const seen = new Set<string>()
+    const merged: Collection[] = []
+    for (const collection of [...dbMintedOutCollections, ...mintedOutFromProbe]) {
+      if (seen.has(collection.id)) continue
+      seen.add(collection.id)
+      merged.push(collection)
+    }
+    return merged
+  }, [dbMintedOutCollections, mintedOutFromProbe])
+
+  const allProbesResolved = probePendingCollections.length === 0
+  const noActiveCollections = allProbesResolved && activeCollections.length === 0
 
   return (
 
@@ -673,7 +735,13 @@ export function NftMintingPanel() {
         description={`Mint live collections on ${chain.name}. Creators opt in from their collection settings.`}
       />
 
-
+      {collectionsNeedingProbe.map((collection) => (
+        <MintPanelAvailabilityProbe
+          key={`probe-${collection.id}`}
+          collection={collection}
+          onAvailabilityResolved={handleAvailabilityResolved}
+        />
+      ))}
 
       {isLoading ? (
 
@@ -692,6 +760,25 @@ export function NftMintingPanel() {
           )}
         </MintPanelEmptyState>
 
+      ) : !allProbesResolved ? (
+
+        <div className="space-y-5">
+          {activeCollections.length > 0 && (
+            <div className={mintPanelGridClass}>
+              {activeCollections.map((collection) => (
+                <MintPanelCollectionCard key={collection.id} collection={collection} />
+              ))}
+            </div>
+          )}
+          {probePendingCollections.length > 0 && (
+            <div className={mintPanelGridClass}>
+              {probePendingCollections.map((collection) => (
+                <MintPanelCardSkeleton key={`skeleton-${collection.id}`} />
+              ))}
+            </div>
+          )}
+        </div>
+
       ) : noActiveCollections ? (
 
         <MintPanelEmptyState
@@ -703,11 +790,7 @@ export function NftMintingPanel() {
 
         <div className={mintPanelGridClass}>
           {activeCollections.map((collection) => (
-            <MintPanelCollectionCard
-              key={collection.id}
-              collection={collection}
-              onAvailabilityResolved={handleAvailabilityResolved}
-            />
+            <MintPanelCollectionCard key={collection.id} collection={collection} />
           ))}
         </div>
 
