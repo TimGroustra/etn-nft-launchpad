@@ -1,4 +1,4 @@
-import { formatEther, parseEther } from 'viem'
+import { formatEther, parseEther, parseEventLogs, type TransactionReceipt } from 'viem'
 import type { NetworkKey } from '@/lib/blockchain'
 import gemShardsCardImage from '@/assets/gem-shards-card.jpg'
 
@@ -122,6 +122,26 @@ export const GEM_SHARDS_ABI = [
     stateMutability: 'nonpayable',
     type: 'function',
   },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'tokenId', type: 'uint256' },
+      { indexed: true, name: 'to', type: 'address' },
+      { indexed: false, name: 'freeMint', type: 'bool' },
+    ],
+    name: 'ShardMinted',
+    type: 'event',
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'from', type: 'address' },
+      { indexed: true, name: 'to', type: 'address' },
+      { indexed: true, name: 'tokenId', type: 'uint256' },
+    ],
+    name: 'Transfer',
+    type: 'event',
+  },
 ] as const
 
 export const PUBLISH_FEE_DISTRIBUTOR_ABI = [
@@ -221,4 +241,32 @@ export function isGemShardsContract(
   const gemShards = resolveGemShardsAddress(networkKey, config)
   if (gemShards === ZERO_ADDRESS) return false
   return contractAddress.toLowerCase() === gemShards.toLowerCase()
+}
+
+const ZERO_MINT_ADDRESS = '0x0000000000000000000000000000000000000000' as const
+
+/** Resolve minted shard token IDs from a Gem Shards mint transaction. */
+export function parseGemShardsMintReceipt(
+  receipt: TransactionReceipt,
+  contractAddress: string,
+): number[] {
+  const normalized = contractAddress.toLowerCase()
+  const logs = receipt.logs.filter((log) => log.address.toLowerCase() === normalized)
+
+  const shardMinted = parseEventLogs({
+    abi: GEM_SHARDS_ABI,
+    logs,
+    eventName: 'ShardMinted',
+  })
+  if (shardMinted.length > 0) {
+    return shardMinted.map((event) => Number(event.args.tokenId))
+  }
+
+  return parseEventLogs({
+    abi: GEM_SHARDS_ABI,
+    logs,
+    eventName: 'Transfer',
+  })
+    .filter((event) => event.args.from?.toLowerCase() === ZERO_MINT_ADDRESS)
+    .map((event) => Number(event.args.tokenId))
 }

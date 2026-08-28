@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
 import { Input, Label } from '@/components/ui/input'
 import { EtnUsdHint } from '@/components/EtnUsdHint'
+import { buildMintedTokenInfo, MintSuccessModal, type MintedTokenInfo } from '@/components/MintSuccessModal'
 import {
   MintPanelBadge,
   MintPanelCardActions,
@@ -29,12 +30,14 @@ import { useCreatorAccess } from '@/hooks/useCreatorAccess'
 import { useElectroGemFreeMints } from '@/hooks/useElectroGemFreeMints'
 import { useGemShardsLaunch } from '@/hooks/useGemShardsLaunch'
 import { useAdmin } from '@/hooks/useAdmin'
+import { useCollectionTokens } from '@/hooks/useCollections'
 import {
   GEM_SHARDS_ABI,
   GEM_SHARDS_CARD_IMAGE,
   GEM_SHARDS_MINT_CARD_DESCRIPTION,
   GEM_SHARDS_PAID_MINT_PRICE,
   formatPaidMintPriceLabel,
+  parseGemShardsMintReceipt,
   type GemShardsContractAddress,
 } from '@/lib/gem-shards'
 import type { Collection } from '@/types/database'
@@ -74,6 +77,9 @@ export function GemShardsMintPanel({
   const [mintingPaid, setMintingPaid] = useState(false)
   const [quantity, setQuantity] = useState(1)
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
+  const [mintSuccessOpen, setMintSuccessOpen] = useState(false)
+  const [mintedTokens, setMintedTokens] = useState<MintedTokenInfo[]>([])
+  const { data: tokens = [] } = useCollectionTokens(collection?.id)
 
   const mintingLive = isPublished && !isDraft
   const freeMintsRemaining = eligibleTokenIds.length
@@ -136,6 +142,17 @@ export function GemShardsMintPanel({
     return () => window.clearInterval(timer)
   }, [weekOneActive])
 
+  function showMintSuccess(tokenIds: number[]) {
+    if (tokenIds.length === 0) return
+    setMintedTokens(
+      buildMintedTokenInfo(
+        tokenIds.map((tokenId) => ({ onChainTokenId: tokenId, metadataIndex: tokenId })),
+        tokens,
+      ),
+    )
+    setMintSuccessOpen(true)
+  }
+
   async function mintFree() {
     const electroGemTokenId = eligibleTokenIds[0]
     if (!address || electroGemTokenId == null) return
@@ -148,7 +165,11 @@ export function GemShardsMintPanel({
         args: [BigInt(electroGemTokenId)],
         chainId: chain.id,
       })
-      if (publicClient) await publicClient.waitForTransactionReceipt({ hash })
+      if (publicClient) {
+        const receipt = await publicClient.waitForTransactionReceipt({ hash })
+        const tokenIds = parseGemShardsMintReceipt(receipt, contractAddress)
+        showMintSuccess(tokenIds)
+      }
       toast.success('Minted your free Gem Shard')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Free mint failed')
@@ -161,6 +182,7 @@ export function GemShardsMintPanel({
     if (!address || !publicClient || safeQuantity < 1) return
     setMintingPaid(true)
     let minted = 0
+    const mintedTokenIds: number[] = []
     try {
       for (let index = 0; index < safeQuantity; index += 1) {
         const hash = await writeContractAsync({
@@ -170,13 +192,16 @@ export function GemShardsMintPanel({
           value: paidPrice,
           chainId: chain.id,
         })
-        await publicClient.waitForTransactionReceipt({ hash })
+        const receipt = await publicClient.waitForTransactionReceipt({ hash })
+        mintedTokenIds.push(...parseGemShardsMintReceipt(receipt, contractAddress))
         minted += 1
       }
+      showMintSuccess(mintedTokenIds)
       toast.success(`Minted ${minted} Gem Shard${minted === 1 ? '' : 's'}`)
       setQuantity(1)
     } catch (error) {
       if (minted > 0) {
+        showMintSuccess(mintedTokenIds)
         toast.error(
           error instanceof Error
             ? `Minted ${minted} of ${safeQuantity} before failing: ${error.message}`
@@ -310,9 +335,22 @@ export function GemShardsMintPanel({
     </div>
   )
 
+  const mintSuccessModal = (
+    <MintSuccessModal
+      open={mintSuccessOpen}
+      onOpenChange={setMintSuccessOpen}
+      collectionName={title}
+      contractAddress={contractAddress}
+      chainId={chainId}
+      mintedTokens={mintedTokens}
+    />
+  )
+
   if (variant === 'panel') {
     return (
-      <div className={mintPanelCardClass({ accent: 'violet' })}>
+      <>
+        {mintSuccessModal}
+        <div className={mintPanelCardClass({ accent: 'violet' })}>
         <MintPanelCardHero src={GEM_SHARDS_CARD_IMAGE} alt={title} accent="violet" />
         <MintPanelCardBody>
           <div className="space-y-2">
@@ -331,12 +369,15 @@ export function GemShardsMintPanel({
             </MintPanelCardFooter>
           )}
         </MintPanelCardBody>
-      </div>
+        </div>
+      </>
     )
   }
 
   return (
-    <div className="space-y-6">
+    <>
+      {mintSuccessModal}
+      <div className="space-y-6">
       <div className="grid gap-6 md:grid-cols-[minmax(0,280px)_1fr] md:items-start">
         <img
           src={GEM_SHARDS_CARD_IMAGE}
@@ -358,6 +399,7 @@ export function GemShardsMintPanel({
       ) : (
         <Card className="border-slate-800 bg-slate-900/60 p-6">{mintActions}</Card>
       )}
-    </div>
+      </div>
+    </>
   )
 }
