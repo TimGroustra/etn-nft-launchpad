@@ -256,19 +256,3 @@ export function MintPanelEmptyState({
     </div>
   )
 }
-
-export function MintPanelCardSkeleton() {
-  return (
-    <div className={mintPanelCardClass()} aria-hidden>
-      <div className="aspect-square w-full animate-pulse bg-slate-800/80" />
-      <MintPanelCardBody>
-        <div className="space-y-3">
-          <div className="h-6 w-2/3 animate-pulse rounded bg-slate-800/80" />
-          <div className="h-14 animate-pulse rounded bg-slate-800/60" />
-          <div className="h-24 animate-pulse rounded-xl bg-slate-800/60" />
-          <div className="h-9 animate-pulse rounded-md bg-slate-800/50" />
-        </div>
-      </MintPanelCardBody>
-    </div>
-  )
-}

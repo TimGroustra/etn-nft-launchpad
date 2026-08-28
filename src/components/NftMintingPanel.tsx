@@ -68,7 +68,6 @@ import {
   MintPanelCardHeader,
   MintPanelCardHero,
   MintPanelEmptyState,
-  MintPanelCardSkeleton,
   MintPanelSectionHeader,
   MintPanelHighlight,
   MintPanelMintSection,
@@ -667,7 +666,7 @@ export function NftMintingPanel() {
 
   const queryClient = useQueryClient()
   const { data: collections = [], isLoading } = useMintPanelCollections(chain.id, isAdmin)
-  const [mintedOutById, setMintedOutById] = useState<Record<string, boolean>>({})
+  const [probedMintedOutById, setProbedMintedOutById] = useState<Record<string, boolean>>({})
 
   const collectionsNeedingProbe = useMemo(
     () => collections.filter(collectionNeedsMintPanelProbe),
@@ -675,17 +674,11 @@ export function NftMintingPanel() {
   )
 
   useEffect(() => {
-    const initial: Record<string, boolean> = {}
-    collections.forEach((collection) => {
-      if (isCollectionDbMintedOut(collection)) {
-        initial[collection.id] = true
-      }
-    })
-    setMintedOutById(initial)
+    setProbedMintedOutById({})
   }, [collections])
 
   const handleAvailabilityResolved = useCallback((collectionId: string, isFullyMinted: boolean) => {
-    setMintedOutById((prev) => {
+    setProbedMintedOutById((prev) => {
       if (prev[collectionId] === isFullyMinted) return prev
       return { ...prev, [collectionId]: isFullyMinted }
     })
@@ -694,35 +687,19 @@ export function NftMintingPanel() {
     }
   }, [queryClient])
 
-  const dbMintedOutCollections = useMemo(
-    () => collections.filter(isCollectionDbMintedOut),
-    [collections],
-  )
-  const probePendingCollections = useMemo(
-    () => collectionsNeedingProbe.filter((collection) => mintedOutById[collection.id] === undefined),
-    [collectionsNeedingProbe, mintedOutById],
-  )
   const activeCollections = useMemo(
-    () => collectionsNeedingProbe.filter((collection) => mintedOutById[collection.id] === false),
-    [collectionsNeedingProbe, mintedOutById],
+    () => collections.filter(
+      (collection) => !isCollectionDbMintedOut(collection) && probedMintedOutById[collection.id] !== true,
+    ),
+    [collections, probedMintedOutById],
   )
-  const mintedOutFromProbe = useMemo(
-    () => collectionsNeedingProbe.filter((collection) => mintedOutById[collection.id] === true),
-    [collectionsNeedingProbe, mintedOutById],
+  const mintedOutCollections = useMemo(
+    () => collections.filter(
+      (collection) => isCollectionDbMintedOut(collection) || probedMintedOutById[collection.id] === true,
+    ),
+    [collections, probedMintedOutById],
   )
-  const mintedOutCollections = useMemo(() => {
-    const seen = new Set<string>()
-    const merged: Collection[] = []
-    for (const collection of [...dbMintedOutCollections, ...mintedOutFromProbe]) {
-      if (seen.has(collection.id)) continue
-      seen.add(collection.id)
-      merged.push(collection)
-    }
-    return merged
-  }, [dbMintedOutCollections, mintedOutFromProbe])
-
-  const allProbesResolved = probePendingCollections.length === 0
-  const noActiveCollections = allProbesResolved && activeCollections.length === 0
+  const noActiveCollections = !isLoading && collections.length > 0 && activeCollections.length === 0
 
   return (
 
@@ -759,25 +736,6 @@ export function NftMintingPanel() {
             </Button>
           )}
         </MintPanelEmptyState>
-
-      ) : !allProbesResolved ? (
-
-        <div className="space-y-5">
-          {activeCollections.length > 0 && (
-            <div className={mintPanelGridClass}>
-              {activeCollections.map((collection) => (
-                <MintPanelCollectionCard key={collection.id} collection={collection} />
-              ))}
-            </div>
-          )}
-          {probePendingCollections.length > 0 && (
-            <div className={mintPanelGridClass}>
-              {probePendingCollections.map((collection) => (
-                <MintPanelCardSkeleton key={`skeleton-${collection.id}`} />
-              ))}
-            </div>
-          )}
-        </div>
 
       ) : noActiveCollections ? (
 
