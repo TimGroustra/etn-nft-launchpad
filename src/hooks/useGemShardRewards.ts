@@ -12,7 +12,7 @@ import { usePlatformConfig } from '@/hooks/usePlatformConfig'
 import { getChainKey } from '@/lib/blockchain'
 import { useNetwork } from '@/context/NetworkContext'
 
-const REWARDS_STALE_MS = 30_000
+const REWARDS_STALE_MS = 60_000
 
 export function useGemShardRewards() {
   const { address, isConnected } = useAccount()
@@ -75,8 +75,8 @@ export function useGemShardRewards() {
     contracts: pendingContracts,
     query: {
       enabled: pendingContracts.length > 0,
-      staleTime: 15_000,
-      refetchInterval: 30_000,
+      staleTime: 30_000,
+      refetchInterval: 60_000,
     },
   })
 

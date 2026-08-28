@@ -1,8 +1,9 @@
-import { getAbiItem, parseEventLogs, type Log, type PublicClient } from 'viem'
-import { GEM_SHARDS_ABI, GEM_SHARDS_MAX_SUPPLY } from '@/lib/gem-shards'
+import { getAbiItem, getAddress, parseEventLogs, type Log, type PublicClient } from 'viem'
+import { getChainKey } from '@/lib/blockchain'
+import { GEM_SHARDS_ABI, GEM_SHARDS_DEPLOY_BLOCK } from '@/lib/gem-shards'
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const
-const LOG_CHUNK_SIZE = 10_000n
+const LOG_CHUNK_SIZE = 500n
 
 const SHARD_MINTED_EVENT = getAbiItem({ abi: GEM_SHARDS_ABI, name: 'ShardMinted' })
 const TRANSFER_EVENT = getAbiItem({ abi: GEM_SHARDS_ABI, name: 'Transfer' })
@@ -13,16 +14,21 @@ type LogFilter = {
   args?: Record<string, `0x${string}`>
 }
 
+function gemShardsDeployBlock(client: PublicClient): bigint {
+  return GEM_SHARDS_DEPLOY_BLOCK[getChainKey(client.chain.id)]
+}
+
 /** Walk history in small block ranges so Electroneum RPC log limits are not hit. */
 export async function getContractLogsChunked(
   client: PublicClient,
   filter: LogFilter,
-  fromBlock = 0n,
+  fromBlock?: bigint,
 ): Promise<Log[]> {
+  const startBlock = fromBlock ?? gemShardsDeployBlock(client)
   const latest = await client.getBlockNumber()
   const logs: Log[] = []
 
-  for (let start = fromBlock; start <= latest; start += LOG_CHUNK_SIZE) {
+  for (let start = startBlock; start <= latest; start += LOG_CHUNK_SIZE) {
     const end = start + LOG_CHUNK_SIZE - 1n > latest ? latest : start + LOG_CHUNK_SIZE - 1n
     try {
       const chunk = await client.getLogs({
@@ -48,10 +54,11 @@ export async function fetchGemShardMintedTokenIds(
   client: PublicClient,
   contractAddress: `0x${string}`,
 ): Promise<number[]> {
+  const fromBlock = gemShardsDeployBlock(client)
   const shardLogs = await getContractLogsChunked(client, {
     address: contractAddress,
     event: SHARD_MINTED_EVENT,
-  })
+  }, fromBlock)
 
   if (shardLogs.length > 0) {
     const events = parseEventLogs({ abi: GEM_SHARDS_ABI, logs: shardLogs, eventName: 'ShardMinted' })
@@ -62,37 +69,61 @@ export async function fetchGemShardMintedTokenIds(
     address: contractAddress,
     event: TRANSFER_EVENT,
     args: { from: ZERO_ADDRESS },
-  })
+  }, fromBlock)
 
   const events = parseEventLogs({ abi: GEM_SHARDS_ABI, logs: transferLogs, eventName: 'Transfer' })
   return uniqueSortedTokenIds(events.map((event) => Number(event.args.tokenId)))
 }
 
-/** Token IDs currently owned by a wallet — ownerOf scan over the full 1..495 ID space (random mint). */
+/** Token IDs currently owned by a wallet — Transfer / ShardMinted logs from deploy block. */
 export async function fetchGemShardOwnedTokenIds(
   client: PublicClient,
   contractAddress: `0x${string}`,
   owner: `0x${string}`,
 ): Promise<number[]> {
-  const normalizedOwner = owner.toLowerCase()
+  const checksumOwner = getAddress(owner)
+  const normalizedOwner = checksumOwner.toLowerCase()
+  const fromBlock = gemShardsDeployBlock(client)
 
-  const ownerResults = await client.multicall({
-    contracts: Array.from({ length: GEM_SHARDS_MAX_SUPPLY }, (_, index) => ({
+  const [incomingLogs, outgoingLogs, mintLogs] = await Promise.all([
+    getContractLogsChunked(client, {
       address: contractAddress,
-      abi: GEM_SHARDS_ABI,
-      functionName: 'ownerOf' as const,
-      args: [BigInt(index + 1)],
-    })),
-    allowFailure: true,
-  })
+      event: TRANSFER_EVENT,
+      args: { to: checksumOwner },
+    }, fromBlock),
+    getContractLogsChunked(client, {
+      address: contractAddress,
+      event: TRANSFER_EVENT,
+      args: { from: checksumOwner },
+    }, fromBlock),
+    getContractLogsChunked(client, {
+      address: contractAddress,
+      event: SHARD_MINTED_EVENT,
+      args: { to: checksumOwner },
+    }, fromBlock),
+  ])
 
-  const owned: number[] = []
-  for (let index = 0; index < GEM_SHARDS_MAX_SUPPLY; index++) {
-    const result = ownerResults[index]
-    if (result.status === 'success' && result.result.toLowerCase() === normalizedOwner) {
-      owned.push(index + 1)
-    }
+  const ownership = new Map<number, string>()
+
+  const mintEvents = parseEventLogs({ abi: GEM_SHARDS_ABI, logs: mintLogs, eventName: 'ShardMinted' })
+  for (const event of mintEvents) {
+    ownership.set(Number(event.args.tokenId), normalizedOwner)
   }
 
-  return owned
+  const transferEvents = parseEventLogs({
+    abi: GEM_SHARDS_ABI,
+    logs: [...incomingLogs, ...outgoingLogs],
+    eventName: 'Transfer',
+  })
+
+  for (const event of transferEvents) {
+    const tokenId = Number(event.args.tokenId)
+    const to = event.args.to?.toLowerCase()
+    const from = event.args.from?.toLowerCase()
+
+    if (to === normalizedOwner) ownership.set(tokenId, to)
+    if (from === normalizedOwner) ownership.delete(tokenId)
+  }
+
+  return uniqueSortedTokenIds([...ownership.keys()])
 }

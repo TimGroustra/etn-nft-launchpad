@@ -9,8 +9,8 @@ export const electroneum = defineChain({
   name: 'Electroneum Mainnet',
   nativeCurrency: { name: 'Electroneum', symbol: 'ETN', decimals: 18 },
   rpcUrls: {
-    default: { http: ['https://rpc.electroneum.com', 'https://rpc.ankr.com/electroneum'] },
-    public: { http: ['https://rpc.electroneum.com', 'https://rpc.ankr.com/electroneum'] },
+    default: { http: ['https://rpc.ankr.com/electroneum'] },
+    public: { http: ['https://rpc.ankr.com/electroneum'] },
   },
   blockExplorers: {
     default: { name: 'Explorer', url: 'https://blockexplorer.electroneum.com' },
