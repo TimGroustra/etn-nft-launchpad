@@ -12,7 +12,7 @@ export function IndexPage() {
             Mint NFTs
           </h1>
           <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-slate-400 sm:mx-0 sm:text-base">
-            Discover live collections, mint instantly, and explore sold-out drops below.
+            Discover live collections, mint instantly.
           </p>
         </div>
       </div>

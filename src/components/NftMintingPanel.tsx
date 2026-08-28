@@ -709,7 +709,7 @@ export function NftMintingPanel() {
 
       <MintPanelSectionHeader
         title="NFT Minting Panel"
-        description={`Mint live collections on ${chain.name}. Creators opt in from their collection settings.`}
+        description={`Mint live collections on ${chain.name}.`}
       />
 
       {collectionsNeedingProbe.map((collection) => (
