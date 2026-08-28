@@ -1,11 +1,11 @@
 import { useParams } from 'react-router-dom'
-import { ExternalLink } from 'lucide-react'
 import { useCollection } from '@/hooks/useCollections'
 import { useMintPanelAvailability } from '@/hooks/useMintPanelAvailability'
 import { getExplorerContractUrl, getChainKey } from '@/lib/blockchain'
 import { getCollectionTokenStandard } from '@/lib/collection-contract'
 import { formatMintModeLabel, formatPercentFromBps } from '@/lib/create-collection-validation'
 import { getElectroSwapCollectionUrl } from '@/lib/marketplace'
+import { ElectroSwapCollectionLink } from '@/components/ElectroSwapCollectionLink'
 import { shortenAddress } from '@/lib/utils'
 import { usePlatformConfig } from '@/hooks/usePlatformConfig'
 import { isGemShardsContract } from '@/lib/gem-shards'
@@ -89,24 +89,20 @@ function CollectionPageContent({
       </div>
       {availabilityLoading ? (
         <p className="text-slate-400">Checking mint availability…</p>
-      ) : isFullyMinted && isErc721 && electroSwapUrl ? (
-        <p className="text-slate-400">
-          This collection is minted out.{' '}
-          <a
-            href={electroSwapUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-blue-400 hover:underline"
-          >
-            View on ElectroSwap
-            <ExternalLink className="h-3.5 w-3.5" />
-          </a>
-        </p>
-      ) : isFullyMinted ? (
-        <p className="text-slate-400">This collection is fully minted.</p>
-      ) : showMintPanelHint ? (
-        <p className="text-slate-400">Mint this collection from the home NFT Minting Panel.</p>
-      ) : null}
+      ) : (
+        <div className="space-y-2 text-slate-400">
+          {isFullyMinted && !isErc721 && <p>This collection is fully minted.</p>}
+          {isFullyMinted && isErc721 && <p>This collection is minted out.</p>}
+          {showMintPanelHint && (
+            <p>Mint this collection from the home NFT Minting Panel.</p>
+          )}
+          {isErc721 && electroSwapUrl && (
+            <p>
+              <ElectroSwapCollectionLink contractAddress={collection.contract_address!} showIcon />
+            </p>
+          )}
+        </div>
+      )}
       {collection.contract_address && <CollectionMintedGallery collection={collection} />}
     </div>
   )

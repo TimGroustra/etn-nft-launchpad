@@ -40,6 +40,7 @@ import {
   parseGemShardsMintReceipt,
   type GemShardsContractAddress,
 } from '@/lib/gem-shards'
+import { getElectroSwapCollectionUrl } from '@/lib/marketplace'
 import type { Collection } from '@/types/database'
 
 function formatCountdown(seconds: number): string {
@@ -331,9 +332,20 @@ export function GemShardsMintPanel({
           <MintPanelCardActions>{mintActions}</MintPanelCardActions>
           {collection?.contract_address && (
             <MintPanelCardFooter>
-              <Button variant="outline" size="sm" className={mintPanelSecondaryButtonClass()} asChild>
-                <Link to={`/collection/${collection.contract_address}`}>View collection</Link>
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" className={mintPanelSecondaryButtonClass()} asChild>
+                  <Link to={`/collection/${collection.contract_address}`}>View collection</Link>
+                </Button>
+                <Button variant="outline" size="sm" className={mintPanelSecondaryButtonClass()} asChild>
+                  <a
+                    href={getElectroSwapCollectionUrl(collection.contract_address)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    ElectroSwap
+                  </a>
+                </Button>
+              </div>
             </MintPanelCardFooter>
           )}
         </MintPanelCardBody>
