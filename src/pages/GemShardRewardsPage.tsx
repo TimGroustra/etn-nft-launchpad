@@ -26,7 +26,7 @@ export function GemShardRewardsPage() {
   const { isConnected } = useAccount()
   const { chain } = useNetwork()
   const { writeContractAsync, isPending: claiming } = useWriteContract()
-  const { isPublished, gemShardsAddress, loading: launchLoading } = useGemShardsLaunch()
+  const { gemShardsAddress, loading: launchLoading } = useGemShardsLaunch()
   const {
     configured,
     distributorAddress,
@@ -37,9 +37,9 @@ export function GemShardRewardsPage() {
     loading: rewardsLoading,
   } = useGemShardRewards()
 
-  const shardCount = Number(shardBalance)
-  const pendingEtn = Number(formatEther(totalPendingWei))
-  const loading = launchLoading || rewardsLoading
+  const shardCount = isConnected ? Number(shardBalance) : 0
+  const pendingEtn = isConnected ? Number(formatEther(totalPendingWei)) : 0
+  const loading = isConnected && (launchLoading || rewardsLoading)
   const canClaim = isConnected && ownsShards && claimableTokenIds.length > 0 && totalPendingWei > 0n
 
   async function handleClaim() {
@@ -59,7 +59,7 @@ export function GemShardRewardsPage() {
     }
   }
 
-  if (!launchLoading && (!configured || !isPublished)) {
+  if (!launchLoading && !configured) {
     return (
       <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-8 text-center">
         <h1 className="text-2xl font-semibold text-white">Gem Shard rewards</h1>
@@ -130,14 +130,7 @@ export function GemShardRewardsPage() {
         <aside className="flex flex-col gap-4 rounded-2xl border border-emerald-900/30 bg-gradient-to-b from-emerald-950/30 to-slate-950 p-6">
           <h2 className="text-lg font-semibold text-white">Your rewards</h2>
 
-          {!isConnected ? (
-            <div className="space-y-4">
-              <p className="text-sm text-slate-400">Connect your wallet to see shard holdings and claimable ETN.</p>
-              <Button className="w-full" onClick={() => open({ view: 'Connect' })}>
-                Connect wallet
-              </Button>
-            </div>
-          ) : loading ? (
+          {loading ? (
             <p className="text-sm text-slate-400">Loading your rewards…</p>
           ) : (
             <>
@@ -152,25 +145,36 @@ export function GemShardRewardsPage() {
               <div className="rounded-xl border border-slate-800/80 bg-slate-950/60 p-4">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Available to claim</p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-300">
-                  {formatRewardBalance(totalPendingWei)}
+                  {formatRewardBalance(isConnected ? totalPendingWei : 0n)}
                 </p>
                 {pendingEtn > 0 && <EtnUsdHint etn={pendingEtn} className="mt-1" />}
               </div>
 
-              <Button
-                className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-500 hover:to-teal-500"
-                disabled={!canClaim || claiming}
-                onClick={handleClaim}
-              >
-                {claiming ? 'Claiming…' : 'Claim rewards'}
-              </Button>
+              {!isConnected ? (
+                <Button className="w-full" onClick={() => open({ view: 'Connect' })}>
+                  Connect wallet
+                </Button>
+              ) : (
+                <Button
+                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50"
+                  disabled={!canClaim || claiming}
+                  onClick={handleClaim}
+                >
+                  {claiming ? 'Claiming…' : 'Claim rewards'}
+                </Button>
+              )}
 
-              {!ownsShards && (
+              {!isConnected && (
+                <p className="text-xs text-slate-500">
+                  Connect your wallet to verify holdings and claim rewards.
+                </p>
+              )}
+              {isConnected && !ownsShards && (
                 <p className="text-xs text-slate-500">
                   You don&apos;t hold any Gem Shards yet. Mint one to start earning launchpad fees.
                 </p>
               )}
-              {ownsShards && totalPendingWei === 0n && (
+              {isConnected && ownsShards && totalPendingWei === 0n && (
                 <p className="text-xs text-slate-500">
                   No rewards to claim right now. Fees will appear here as they are distributed.
                 </p>

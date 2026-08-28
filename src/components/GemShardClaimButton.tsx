@@ -1,15 +1,8 @@
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
-import { useGemShardsLaunch } from '@/hooks/useGemShardsLaunch'
 
-/** Header link to the Gem Shard rewards page. */
+/** Header link to the Gem Shard rewards page — visible to everyone. */
 export function GemShardClaimButton() {
-  const { isPublished, loading } = useGemShardsLaunch()
-
-  if (loading || !isPublished) {
-    return null
-  }
-
   return (
     <Button
       variant="outline"
