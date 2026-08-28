@@ -16,6 +16,9 @@ const bundles = {
     ['_shared/collection-validation.ts', read('_shared/collection-validation.ts')],
     ['_shared/nft-metadata.ts', read('_shared/nft-metadata.ts')],
     ['_shared/storage-paths.ts', read('_shared/storage-paths.ts')],
+    ['_shared/admin.ts', read('_shared/admin.ts')],
+    ['_shared/creator-access.ts', read('_shared/creator-access.ts')],
+    ['_shared/mint-panel-availability.ts', read('_shared/mint-panel-availability.ts')],
   ],
   'sync-token-uri': [
     ['index.ts', read('sync-token-uri/index.ts').replaceAll("'../_shared/", "'./_shared/")],
