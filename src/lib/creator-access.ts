@@ -33,6 +33,20 @@ export const ERC721_BALANCE_ABI = [
   },
 ] as const
 
+export const ERC721_ENUMERABLE_ABI = [
+  ...ERC721_BALANCE_ABI,
+  {
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'index', type: 'uint256' },
+    ],
+    name: 'tokenOfOwnerByIndex',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const
+
 export const CREATOR_ACCESS_COLLECTIONS = [
   {
     key: 'electrogem',
