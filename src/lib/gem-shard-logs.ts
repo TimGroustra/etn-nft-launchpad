@@ -15,7 +15,11 @@ type LogFilter = {
 }
 
 function gemShardsDeployBlock(client: PublicClient): bigint {
-  return GEM_SHARDS_DEPLOY_BLOCK[getChainKey(client.chain.id)]
+  const chainId = client.chain?.id
+  if (chainId == null) {
+    return GEM_SHARDS_DEPLOY_BLOCK.mainnet
+  }
+  return GEM_SHARDS_DEPLOY_BLOCK[getChainKey(chainId)]
 }
 
 /** Walk history in small block ranges so Electroneum RPC log limits are not hit. */

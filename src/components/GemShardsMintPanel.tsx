@@ -365,14 +365,14 @@ export function GemShardsMintPanel({
             </p>
           )}
           <p className="mt-2 max-w-2xl text-slate-400">{description}</p>
+          {variant === 'page' && collection?.contract_address && (
+            <p className="mt-3 text-sm text-slate-500">
+              <ElectroSwapCollectionLink contractAddress={collection.contract_address} showIcon />
+            </p>
+          )}
         </div>
       </div>
       <Card className="border-slate-800 bg-slate-900/60 p-6">{mintActions}</Card>
-      {variant === 'page' && collection?.contract_address && (
-        <p>
-          <ElectroSwapCollectionLink contractAddress={collection.contract_address} showIcon />
-        </p>
-      )}
       </div>
     </>
   )
