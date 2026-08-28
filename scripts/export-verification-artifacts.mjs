@@ -36,6 +36,11 @@ const TARGETS = [
     contractName: 'LaunchpadFactoryERC1155',
     outName: 'launchpad-factory-erc1155-verification.json',
   },
+  {
+    contractPath: 'contracts/GemShards.sol',
+    contractName: 'GemShards',
+    outName: 'gem-shards-verification.json',
+  },
 ]
 
 function findBuildInfo() {

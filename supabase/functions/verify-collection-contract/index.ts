@@ -6,6 +6,27 @@ import {
   verifyCollectionOnExplorer,
 } from '../_shared/contract-verification.ts'
 
+function resolveGemShardsBaseTokenURI(): string {
+  const fromEnv = Deno.env.get('GEM_SHARDS_METADATA_BASE_URL')?.trim()
+  if (fromEnv) return fromEnv.endsWith('/') ? fromEnv : `${fromEnv}/`
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? Deno.env.get('VITE_SUPABASE_URL')
+  if (supabaseUrl) {
+    return `${supabaseUrl.replace(/\/$/, '')}/functions/v1/gem-shard-metadata/`
+  }
+  return ''
+}
+
+async function getGemShardsAddress(
+  supabase: ReturnType<typeof createClient>,
+  chainId: number,
+): Promise<string | null> {
+  const key = chainId === 5201420 ? 'gem_shards_testnet' : 'gem_shards_mainnet'
+  const { data } = await supabase.from('platform_config').select('value').eq('key', key).maybeSingle()
+  const value = data?.value?.trim().toLowerCase()
+  if (!value || value === '0x0000000000000000000000000000000000000000') return null
+  return value
+}
+
 async function getFactoryAddress(
   supabase: ReturnType<typeof createClient>,
   chainId: number,
@@ -54,11 +75,11 @@ serve(async (req) => {
 
     const { data: collection } = await supabase
       .from('collections')
-      .select('id, creator_wallet, contract_address, chain_id, contract_version, token_standard, name')
+      .select('id, creator_wallet, contract_address, chain_id, contract_version, token_standard, name, symbol')
       .eq('id', collectionId)
       .maybeSingle()
     if (!collection) throw new Error('Collection not found')
-    if (collection.creator_wallet !== wallet && !isAdminWallet(wallet)) {
+    if (collection.creator_wallet.toLowerCase() !== wallet && !isAdminWallet(wallet)) {
       throw new Error('Collection not found')
     }
     if (!collection.contract_address) throw new Error('Collection is not published on-chain')
@@ -69,11 +90,16 @@ serve(async (req) => {
     }
 
     const targetChainId = Number(chainId)
-    const factoryAddress = await getFactoryAddress(supabase, targetChainId, collection)
+    const gemShardsAddress = await getGemShardsAddress(supabase, targetChainId)
+    const isGemShards = collection.symbol === 'GSHARD' || gemShardsAddress === address
+    const factoryAddress = isGemShards ? null : await getFactoryAddress(supabase, targetChainId, collection)
     const result = await verifyCollectionOnExplorer(targetChainId, address, factoryAddress, {
       contractVersion: collection.contract_version,
       tokenStandard: collection.token_standard,
       collectionName: collection.name,
+      symbol: collection.symbol,
+      isGemShards,
+      gemShardsBaseTokenURI: isGemShards ? resolveGemShardsBaseTokenURI() : null,
     })
 
     return new Response(JSON.stringify({ success: true, ...result }), {

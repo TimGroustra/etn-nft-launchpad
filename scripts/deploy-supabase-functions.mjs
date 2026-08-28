@@ -36,6 +36,7 @@ const bundles = {
     ['_shared/editable-erc721-verification.json', read('_shared/editable-erc721-verification.json')],
     ['_shared/editable-erc721-v2-verification.json', read('_shared/editable-erc721-v2-verification.json')],
     ['_shared/editable-erc1155-verification.json', read('_shared/editable-erc1155-verification.json')],
+    ['_shared/gem-shards-verification.json', read('_shared/gem-shards-verification.json')],
   ],
 }
 

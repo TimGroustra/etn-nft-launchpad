@@ -43,7 +43,7 @@ INSERT INTO public.collections (
   token_standard
 )
 SELECT
-  '0x126aa663BdeDd6Ae477fd28a7d0b624b8109D15d',
+  '0x126aa663bdedd6ae477fd28a7d0b624b8109d15d',
   'Gem Shards',
   'GSHARD',
   'Hold Gem Shards to earn a share of launchpad platform fees. ElectroGem holders get one free shard per gem (IDs 1–49).',
@@ -52,7 +52,7 @@ SELECT
   495,
   50000,
   0,
-  true,
+  false,
   v.chain_id,
   2,
   'erc721'

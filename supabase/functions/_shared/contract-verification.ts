@@ -10,24 +10,27 @@ const EXPLORER_V2: Record<number, string> = {
   5201420: 'https://testnet-blockexplorer.electroneum.com/api/v2',
 }
 
-type CollectionVerificationKind = 'erc721' | 'erc721_v2' | 'erc1155'
+type CollectionVerificationKind = 'erc721' | 'erc721_v2' | 'erc1155' | 'gem_shards'
 
 const BUNDLE_FILES: Record<CollectionVerificationKind, string> = {
   erc721: 'editable-erc721-verification.json',
   erc721_v2: 'editable-erc721-v2-verification.json',
   erc1155: 'editable-erc1155-verification.json',
+  gem_shards: 'gem-shards-verification.json',
 }
 
 const SOURCE_PATHS: Record<CollectionVerificationKind, string> = {
   erc721: 'contracts/EditableERC721.sol',
   erc721_v2: 'contracts/EditableERC721V2.sol',
   erc1155: 'contracts/EditableERC1155.sol',
+  gem_shards: 'contracts/GemShards.sol',
 }
 
 const BASE_CONTRACT_NAMES: Record<CollectionVerificationKind, string> = {
   erc721: 'EditableERC721',
   erc721_v2: 'EditableERC721V2',
   erc1155: 'EditableERC1155',
+  gem_shards: 'GemShards',
 }
 
 const EDITABLE_ERC721_SOURCE_PATH = SOURCE_PATHS.erc721
@@ -43,7 +46,10 @@ const bundlePromises = new Map<CollectionVerificationKind, Promise<VerificationB
 function resolveCollectionVerificationKind(options?: {
   contractVersion?: number | null
   tokenStandard?: string | null
+  symbol?: string | null
+  isGemShards?: boolean
 }): CollectionVerificationKind {
+  if (options?.isGemShards || options?.symbol === 'GSHARD') return 'gem_shards'
   const version = options?.contractVersion ?? 1
   if (version !== 2) return 'erc721'
   return options?.tokenStandard === 'erc1155' ? 'erc1155' : 'erc721_v2'
@@ -118,6 +124,13 @@ const COLLECTION_ERC1155_ABI = parseAbi([
   'function platformMintFeeBps() view returns (uint96)',
   'function electroGemsCollection() view returns (address)',
   'function clubWatchCollection() view returns (address)',
+])
+
+const GEM_SHARDS_ABI = parseAbi([
+  'function owner() view returns (address)',
+  'function platformRecipient() view returns (address)',
+  'function electroGem() view returns (address)',
+  'function clubWatch() view returns (address)',
 ])
 
 const FACTORY_ABI = parseAbi(['function defaultRoyaltyBps() view returns (uint96)'])
@@ -204,6 +217,57 @@ function normalizeBurnConfig(burnConfig: BurnConfigStruct | BurnConfigTuple): Bu
     }
   }
   return burnConfig
+}
+
+export async function readGemShardsConstructorArgs(
+  contractAddress: `0x${string}`,
+  chainId: number,
+  baseTokenURI: string,
+) {
+  const rpc = CHAIN_RPC[chainId]
+  if (!rpc) throw new Error('Unsupported chain')
+  if (!baseTokenURI) throw new Error('Gem Shards metadata base URL is not configured')
+
+  const client = createPublicClient({
+    chain: {
+      id: chainId,
+      name: chainId === 5201420 ? 'Electroneum Testnet' : 'Electroneum',
+      nativeCurrency: { name: 'ETN', symbol: 'ETN', decimals: 18 },
+      rpcUrls: { default: { http: [rpc] } },
+    },
+    transport: http(rpc),
+  })
+
+  const [initialOwner, platformRecipient, electroGem, clubWatch] = await Promise.all([
+    client.readContract({ address: contractAddress, abi: GEM_SHARDS_ABI, functionName: 'owner' }),
+    client.readContract({ address: contractAddress, abi: GEM_SHARDS_ABI, functionName: 'platformRecipient' }),
+    client.readContract({ address: contractAddress, abi: GEM_SHARDS_ABI, functionName: 'electroGem' }),
+    client.readContract({ address: contractAddress, abi: GEM_SHARDS_ABI, functionName: 'clubWatch' }),
+  ])
+
+  return {
+    initialOwner,
+    platformRecipient,
+    baseTokenURI,
+    electroGem,
+    clubWatch,
+  }
+}
+
+export function encodeGemShardsConstructorArgs(
+  args: Awaited<ReturnType<typeof readGemShardsConstructorArgs>>,
+) {
+  const encoded = encodeAbiParameters(
+    parseAbiParameters('address, address, string, address, address'),
+    [
+      args.initialOwner,
+      args.platformRecipient,
+      args.baseTokenURI,
+      args.electroGem,
+      args.clubWatch,
+    ],
+  )
+  return encoded.startsWith('0x') ? encoded.slice(2) : encoded
 }
 
 export async function readCollectionConstructorArgs(
@@ -418,7 +482,9 @@ export async function submitCollectionVerification(
   // Renaming the contract in source changes the metadata hash and breaks bytecode match.
   // ERC-1155 / V2 collections verify under the canonical implementation name.
   const namedBundle =
-    kind === 'erc1155' || kind === 'erc721_v2' ? bundle : buildNamedVerificationBundle(bundle, collectionName, kind)
+    kind === 'erc1155' || kind === 'erc721_v2' || kind === 'gem_shards'
+      ? bundle
+      : buildNamedVerificationBundle(bundle, collectionName, kind)
 
   const form = new URLSearchParams()
   form.set('module', 'contract')
@@ -463,10 +529,57 @@ export async function verifyCollectionOnExplorer(
     contractVersion?: number | null
     tokenStandard?: string | null
     collectionName?: string | null
+    symbol?: string | null
+    isGemShards?: boolean
+    gemShardsBaseTokenURI?: string | null
   },
 ) {
   const kind = resolveCollectionVerificationKind(options)
   const baseContractLabel = BASE_CONTRACT_NAMES[kind]
+  const explorerName = await getExplorerContractName(chainId, contractAddress)
+  const verified = await isContractVerified(chainId, contractAddress)
+
+  if (kind === 'gem_shards') {
+    const baseTokenURI = options?.gemShardsBaseTokenURI?.trim() ?? ''
+    const constructorArgs = await readGemShardsConstructorArgs(
+      contractAddress as `0x${string}`,
+      chainId,
+      baseTokenURI,
+    )
+    const encodedArgs = encodeGemShardsConstructorArgs(constructorArgs)
+    const collectionLabel = options?.collectionName ?? 'Gem Shards'
+
+    if (verified) {
+      return {
+        status: 'already_verified' as const,
+        displayName: explorerName ?? baseContractLabel,
+        message: `Contract is verified on the explorer as ${baseContractLabel}.`,
+      }
+    }
+
+    const result = await submitCollectionVerification(
+      chainId,
+      contractAddress,
+      encodedArgs,
+      collectionLabel,
+      kind,
+    )
+
+    const explorerNameAfter = await getExplorerContractName(chainId, contractAddress)
+    if (result.status === 'submitted' || result.status === 'already_verified') {
+      return {
+        ...result,
+        displayName: baseContractLabel,
+        message:
+          result.message ??
+          `Contract verified on the explorer as ${baseContractLabel}. Your collection "${collectionLabel}" is identified by its on-chain name() and symbol().`,
+        explorerName: explorerNameAfter ?? baseContractLabel,
+      }
+    }
+
+    return result
+  }
+
   const constructorArgs = await readCollectionConstructorArgs(
     contractAddress as `0x${string}`,
     chainId,
@@ -479,8 +592,6 @@ export async function verifyCollectionOnExplorer(
     kind === 'erc1155'
       ? sanitizeSolidityContractName(options?.collectionName ?? constructorArgs.name)
       : sanitizeSolidityContractName(constructorArgs.name)
-  const explorerName = await getExplorerContractName(chainId, contractAddress)
-  const verified = await isContractVerified(chainId, contractAddress)
 
   if (verified) {
     const collectionLabel =

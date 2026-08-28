@@ -15,7 +15,8 @@ export function useCollections(
     queryFn: async () => {
       let query = supabase.from('collections').select('*').order('created_at', { ascending: false })
       if (walletAddress) {
-        query = query.eq('creator_wallet', walletAddress.toLowerCase())
+        const normalizedWallet = walletAddress.toLowerCase()
+        query = query.ilike('creator_wallet', normalizedWallet)
         if (chainId) query = query.eq('chain_id', chainId)
         if (filter === 'active') query = query.in('status', ['draft', 'published'])
         else if (filter === 'archived') query = query.eq('status', 'archived')
@@ -39,10 +40,11 @@ export function useOtherCollections(walletAddress?: string, chainId?: number, en
     queryKey: ['collections-other', walletAddress, chainId],
     enabled: enabled && Boolean(walletAddress && chainId),
     queryFn: async () => {
+      const normalizedWallet = walletAddress!.toLowerCase()
       let query = supabase
         .from('collections')
         .select('*')
-        .neq('creator_wallet', walletAddress!.toLowerCase())
+        .not('creator_wallet', 'ilike', normalizedWallet)
         .order('created_at', { ascending: false })
       if (chainId) query = query.eq('chain_id', chainId)
       const { data, error } = await query

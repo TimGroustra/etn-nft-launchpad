@@ -635,7 +635,7 @@ export function DashboardPage() {
                     </>
                   ) : (
                     <>
-                      {collection.status === 'draft' && (
+                      {collection.status === 'draft' && collection.symbol !== 'GSHARD' && (
                         <>
                           <Button variant="outline" asChild disabled={isPublishing}>
                               <Link
@@ -666,6 +666,11 @@ export function DashboardPage() {
                             onPublish={publish}
                           />
                         </>
+                      )}
+                      {collection.status === 'draft' && collection.symbol === 'GSHARD' && (
+                        <p className="w-full text-sm text-violet-200">
+                          Use <span className="font-medium text-white">Publish Gem Shards</span> above when you are ready to go live.
+                        </p>
                       )}
                       {collection.contract_address && (
                         <>
