@@ -1,35 +1,24 @@
 import { useMemo } from 'react'
-import { useAccount, useReadContract, useReadContracts } from 'wagmi'
+import { useQuery } from '@tanstack/react-query'
+import { useAccount, usePublicClient, useReadContract, useReadContracts } from 'wagmi'
 import {
   GEM_SHARDS_ABI,
   PUBLISH_FEE_DISTRIBUTOR_ABI,
   resolveGemShardsAddress,
   resolvePublishFeeDistributorAddress,
 } from '@/lib/gem-shards'
+import { fetchGemShardOwnedTokenIds } from '@/lib/gem-shard-logs'
 import { usePlatformConfig } from '@/hooks/usePlatformConfig'
 import { getChainKey } from '@/lib/blockchain'
 import { useNetwork } from '@/context/NetworkContext'
 
-const MAX_SUPPLY = 495
-
-function buildOwnerScanContracts(gemShardsAddress: `0x${string}`, chainId: number, start: number, end: number) {
-  const contracts = []
-  for (let tokenId = start; tokenId <= end; tokenId += 1) {
-    contracts.push({
-      address: gemShardsAddress,
-      abi: GEM_SHARDS_ABI,
-      functionName: 'ownerOf' as const,
-      args: [BigInt(tokenId)],
-      chainId,
-    })
-  }
-  return contracts
-}
+const REWARDS_STALE_MS = 30_000
 
 export function useGemShardRewards() {
   const { address, isConnected } = useAccount()
   const { chain } = useNetwork()
   const networkKey = getChainKey(chain.id)
+  const publicClient = usePublicClient({ chainId: chain.id })
   const { data: platformConfig } = usePlatformConfig()
 
   const gemShardsAddress = resolveGemShardsAddress(networkKey, {
@@ -53,34 +42,22 @@ export function useGemShardRewards() {
     chainId: chain.id,
     query: {
       enabled: configured && Boolean(address),
+      staleTime: REWARDS_STALE_MS,
     },
   })
 
-  const shouldScan = configured && Boolean(address) && (shardBalance ?? 0n) > 0n
+  const ownsShards = (shardBalance ?? 0n) > 0n
 
-  const ownerScanContracts = useMemo(() => {
-    if (!shouldScan) return []
-    return buildOwnerScanContracts(gemShardsAddress, chain.id, 1, MAX_SUPPLY)
-  }, [shouldScan, gemShardsAddress, chain.id])
-
-  const { data: ownerResults, isLoading: ownersLoading } = useReadContracts({
-    contracts: ownerScanContracts,
-    query: {
-      enabled: shouldScan,
-      staleTime: 30_000,
-    },
+  const ownedTokenIdsQuery = useQuery({
+    queryKey: ['gem-shard-owned', gemShardsAddress, chain.id, address],
+    enabled: configured && Boolean(address && publicClient && ownsShards),
+    staleTime: REWARDS_STALE_MS,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    queryFn: () => fetchGemShardOwnedTokenIds(publicClient!, gemShardsAddress, address!),
   })
 
-  const ownedTokenIds = useMemo(() => {
-    if (!ownerResults || !address) return []
-    const owned: number[] = []
-    ownerResults.forEach((result, index) => {
-      if (result.status === 'success' && result.result?.toLowerCase() === address.toLowerCase()) {
-        owned.push(index + 1)
-      }
-    })
-    return owned
-  }, [ownerResults, address])
+  const ownedTokenIds = ownedTokenIdsQuery.data ?? []
 
   const pendingContracts = useMemo(
     () =>
@@ -119,15 +96,18 @@ export function useGemShardRewards() {
     }, 0n)
   }, [pendingResults])
 
+  const loading = ownedTokenIdsQuery.isLoading || pendingLoading
+
   return {
     configured,
     isConnected,
     gemShardsAddress,
     distributorAddress,
     shardBalance: shardBalance ?? 0n,
+    ownsShards,
     ownedTokenIds,
     claimableTokenIds,
     totalPendingWei,
-    loading: ownersLoading || pendingLoading,
+    loading,
   }
 }

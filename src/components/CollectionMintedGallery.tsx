@@ -69,10 +69,8 @@ export function CollectionMintedGallery({ collection }: CollectionMintedGalleryP
   const contractAddress = collection.contract_address
   const chainId = collection.chain_id ?? 52014
 
-  const { items, gemShardTokenIds, isGemShards, isLoading, totalCount } = useCollectionMintedTokens(
-    collection,
-    { enabled: isInView },
-  )
+  const { items, gemShardTokenIds, isGemShards, isLoading, totalCount, onChainMintedCount } =
+    useCollectionMintedTokens(collection, { enabled: isInView })
 
   const visibleGemShardIds = useMemo(
     () => (gemShardTokenIds ?? []).slice(0, visibleCount),
@@ -120,6 +118,8 @@ export function CollectionMintedGallery({ collection }: CollectionMintedGalleryP
       {!isInView ? (
         <p className="text-sm text-slate-500">Scroll down to load minted NFTs.</p>
       ) : galleryLoading && displayedItems.length === 0 ? (
+        <p className="text-slate-400">Loading minted NFTs from the blockchain…</p>
+      ) : totalCount === 0 && (onChainMintedCount ?? 0) > 0 ? (
         <p className="text-slate-400">Loading minted NFTs from the blockchain…</p>
       ) : totalCount === 0 ? (
         <p className="text-slate-500">No NFTs have been minted from this collection yet.</p>

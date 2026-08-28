@@ -7,6 +7,11 @@ import { useGemShardsLaunch } from '@/hooks/useGemShardsLaunch'
 import { PUBLISH_FEE_DISTRIBUTOR_ABI } from '@/lib/gem-shards'
 import { useNetwork } from '@/context/NetworkContext'
 
+function formatClaimBalance(wei: bigint): string {
+  const etn = Number(formatEther(wei))
+  return `${etn.toLocaleString(undefined, { maximumFractionDigits: 4 })} ETN`
+}
+
 export function GemShardClaimButton() {
   const { chain } = useNetwork()
   const { writeContractAsync, isPending } = useWriteContract()
@@ -14,13 +19,14 @@ export function GemShardClaimButton() {
     configured,
     isConnected,
     distributorAddress,
+    ownsShards,
     claimableTokenIds,
     totalPendingWei,
     loading,
   } = useGemShardRewards()
   const { isPublished } = useGemShardsLaunch()
 
-  if (!configured || !isConnected || !isPublished || totalPendingWei <= 0n) {
+  if (!configured || !isConnected || !isPublished || !ownsShards) {
     return null
   }
 
@@ -34,10 +40,23 @@ export function GemShardClaimButton() {
         args: [claimableTokenIds.map((id) => BigInt(id))],
         chainId: chain.id,
       })
-      toast.success(`Claimed ${formatEther(totalPendingWei)} ETN from Gem Shards`)
+      toast.success(`Claimed ${formatClaimBalance(totalPendingWei)}`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Claim failed')
     }
+  }
+
+  const balanceLabel = loading ? '…' : formatClaimBalance(totalPendingWei)
+
+  if (totalPendingWei <= 0n) {
+    return (
+      <span
+        className="hidden text-xs tabular-nums text-emerald-300/80 sm:inline"
+        title="Gem Shard holder rewards available to claim"
+      >
+        {balanceLabel}
+      </span>
+    )
   }
 
   return (
@@ -46,11 +65,10 @@ export function GemShardClaimButton() {
       size="sm"
       onClick={handleClaim}
       disabled={loading || isPending || claimableTokenIds.length === 0}
-      className="border-emerald-800/60 text-emerald-300 hover:bg-emerald-950/40"
+      className="hidden border-emerald-800/60 text-emerald-300 hover:bg-emerald-950/40 sm:inline-flex"
+      title="Claim Gem Shard holder rewards"
     >
-      {loading || isPending
-        ? 'Claiming…'
-        : `Claim ${formatEther(totalPendingWei)} ETN`}
+      {loading || isPending ? 'Claiming…' : `Claim ${balanceLabel}`}
     </Button>
   )
 }

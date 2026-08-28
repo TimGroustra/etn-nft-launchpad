@@ -9,6 +9,7 @@ import { Card, CardDescription, CardTitle } from '@/components/ui/card'
 import { Input, Label } from '@/components/ui/input'
 import { EtnUsdHint } from '@/components/EtnUsdHint'
 import { CollectionMintedGallery } from '@/components/CollectionMintedGallery'
+import { GemShardRewardsPanel } from '@/components/GemShardRewardsPanel'
 import { MintSuccessModal, type MintedTokenInfo } from '@/components/MintSuccessModal'
 import {
   MintPanelBadge,
@@ -397,6 +398,7 @@ export function GemShardsMintPanel({
         </div>
       </div>
       <Card className="border-slate-800 bg-slate-900/60 p-6">{mintActions}</Card>
+      {variant === 'page' && <GemShardRewardsPanel />}
       {variant === 'page' && collection && <CollectionMintedGallery collection={collection} />}
       </div>
     </>

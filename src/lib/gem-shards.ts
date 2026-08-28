@@ -6,6 +6,7 @@ import gemShardsCardImage from '@/assets/gem-shards-card.jpg'
 export const GEM_SHARDS_PAID_MINT_PRICE = parseEther('10000')
 export const GEM_SHARDS_DUAL_HOLDER_DISCOUNT_BPS = 5000n
 export const ELECTROGEM_FREE_MINT_SUPPLY = 49
+export const GEM_SHARDS_MAX_SUPPLY = 495
 export const GEM_SHARDS_CARD_IMAGE = gemShardsCardImage
 export const GEM_SHARDS_MINT_CARD_DESCRIPTION =
   'Collect radiant shards of crystallized energy. Holders earn a share of launchpad fees — each mint reveals a random shard from the 495-piece collection.'

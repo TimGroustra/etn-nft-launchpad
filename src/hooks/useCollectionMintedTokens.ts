@@ -57,12 +57,17 @@ export function useCollectionMintedTokens(
   )
 
   const gemShardTokenIdsQuery = useQuery({
-    queryKey: ['collection-minted-gem-shards', contractAddress, targetChainId],
-    enabled: queryEnabled && Boolean(isGemShards && contractAddress && publicClient),
+    queryKey: ['collection-minted-gem-shards', contractAddress, targetChainId, mintedCount],
+    enabled: queryEnabled
+      && Boolean(isGemShards && contractAddress && publicClient && mintedCount > 0),
     staleTime: MINTED_INDEX_STALE_MS,
     gcTime: 10 * 60_000,
     refetchOnWindowFocus: false,
-    queryFn: async () => fetchGemShardMintedTokenIds(publicClient!, contractAddress!),
+    retry: 1,
+    queryFn: async () => {
+      if (mintedCount <= 0) return []
+      return fetchGemShardMintedTokenIds(publicClient!, contractAddress!)
+    },
   })
 
   const erc721AssignmentsQuery = useQuery({
@@ -153,7 +158,7 @@ export function useCollectionMintedTokens(
       : isErc1155
         ? dbTokensLoading || editionReads.isLoading
         : isGemShards
-          ? gemShardTokenIdsQuery.isLoading
+          ? totalMintedLoading || gemShardTokenIdsQuery.isLoading
           : totalMintedLoading || erc721AssignmentsQuery.isLoading
 
   const totalCount = isGemShards ? gemShardTokenIds.length : items.length
@@ -164,5 +169,6 @@ export function useCollectionMintedTokens(
     isGemShards,
     isLoading,
     totalCount,
+    onChainMintedCount: isGemShards ? mintedCount : undefined,
   }
 }
