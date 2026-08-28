@@ -47,7 +47,6 @@ import { getPublicImageUrl } from '@/lib/supabase'
 import type { Collection } from '@/types/database'
 import { Erc1155PublicMintCard } from '@/components/Erc1155PublicMintCard'
 import { getCollectionTokenStandard } from '@/lib/collection-contract'
-import { getElectroSwapCollectionUrl } from '@/lib/marketplace'
 import { ElectroSwapCollectionLink } from '@/components/ElectroSwapCollectionLink'
 import { markCollectionMintedOut } from '@/lib/api'
 import {
@@ -128,22 +127,9 @@ function MintPanelSoldOutCard({
         </div>
         {collection.contract_address && (
           <MintPanelCardFooter>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" className={mintPanelSecondaryButtonClass()} asChild>
-                <Link to={`/collection/${collection.contract_address}`}>View collection</Link>
-              </Button>
-              {isErc721 && (
-                <Button variant="outline" size="sm" className={mintPanelSecondaryButtonClass()} asChild>
-                  <a
-                    href={getElectroSwapCollectionUrl(collection.contract_address)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    ElectroSwap
-                  </a>
-                </Button>
-              )}
-            </div>
+            <Button variant="outline" size="sm" className={mintPanelSecondaryButtonClass()} asChild>
+              <Link to={`/collection/${collection.contract_address}`}>View collection</Link>
+            </Button>
           </MintPanelCardFooter>
         )}
       </MintPanelCardBody>
@@ -645,20 +631,9 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
         {collection.contract_address && (
           <MintPanelCardFooter>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" className={mintPanelSecondaryButtonClass()} asChild>
-                <Link to={`/collection/${collection.contract_address}`}>View collection</Link>
-              </Button>
-              <Button variant="outline" size="sm" className={mintPanelSecondaryButtonClass()} asChild>
-                <a
-                  href={getElectroSwapCollectionUrl(collection.contract_address)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  ElectroSwap
-                </a>
-              </Button>
-            </div>
+            <Button variant="outline" size="sm" className={mintPanelSecondaryButtonClass()} asChild>
+              <Link to={`/collection/${collection.contract_address}`}>View collection</Link>
+            </Button>
           </MintPanelCardFooter>
         )}
 
