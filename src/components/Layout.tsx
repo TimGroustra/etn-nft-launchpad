@@ -36,7 +36,7 @@ export function Layout() {
               {isConnected ? (
                 <>
                   <WalletDisconnectButton />
-                  <WalletAddress className="max-w-[5.25rem] truncate sm:max-w-none" />
+                  <WalletAddress />
                 </>
               ) : (
                 <WalletConnectButton className="h-7 px-2 text-xs sm:h-9 sm:px-3 sm:text-sm" />

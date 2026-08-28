@@ -10,12 +10,21 @@ export function WalletAddress({ className }: { className?: string }) {
 
   const onWrongNetwork = walletChainId != null && walletChainId !== chain.id
 
+  const suffix = address.slice(-4)
+
   return (
     <span
-      className={`shrink-0 font-mono text-xs sm:max-w-none ${onWrongNetwork ? 'text-amber-400' : 'text-slate-300'} ${className ?? ''}`}
+      className={`shrink-0 font-mono text-xs ${onWrongNetwork ? 'text-amber-400' : 'text-slate-300'} ${className ?? ''}`}
       title={onWrongNetwork ? `Switch to ${chain.name} in your wallet` : address}
     >
-      {onWrongNetwork ? 'Wrong network' : shortenAddress(address)}
+      {onWrongNetwork ? (
+        'Wrong network'
+      ) : (
+        <>
+          <span className="sm:hidden">...{suffix}</span>
+          <span className="hidden sm:inline">{shortenAddress(address)}</span>
+        </>
+      )}
     </span>
   )
 }
