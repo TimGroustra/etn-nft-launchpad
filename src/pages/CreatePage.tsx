@@ -649,8 +649,7 @@ export function CreatePage() {
               <p className="text-sm font-medium text-blue-100">ERC-721 V2 &amp; ERC-1155</p>
               <FieldHint>
                 Choose ERC-721 V2 for unique tokens with random mint support, or ERC-1155 for editioned copies per
-                artwork. Metadata is fixed after publish for collectors; admin wallets can still edit and sync
-                metadata. ERC-1155 owner mint and edition caps stay available from your dashboard.
+                artwork.
               </FieldHint>
             </div>
           )}
