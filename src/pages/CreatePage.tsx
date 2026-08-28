@@ -87,7 +87,7 @@ function PreviewSettingRow({ label, value }: { label: string; value: ReactNode }
 function CreateHero() {
   return (
     <section className="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-6 sm:p-10">
-      <h1 className="text-2xl font-bold sm:text-4xl">Launch editable NFT collections on Electroneum</h1>
+      <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Launch editable NFT collections on Electroneum</h1>
       <p className="mt-3 max-w-2xl text-slate-400">
         Upload artwork, configure CLUB burns, and pay ETN to publish your collection on Electroneum.
         We host images and generate metadata JSON with public URLs — you only upload image files, not links.
