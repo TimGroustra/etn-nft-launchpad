@@ -6,6 +6,8 @@ import { useAppKit } from '@reown/appkit/react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
+import { Input, Label } from '@/components/ui/input'
+import { EtnUsdHint } from '@/components/EtnUsdHint'
 import {
   MintPanelBadge,
   MintPanelCardActions,
@@ -15,6 +17,8 @@ import {
   MintPanelCardHeader,
   MintPanelCardHero,
   MintPanelHighlight,
+  MintPanelStat,
+  MintPanelStats,
   mintPanelCardClass,
   mintPanelPrimaryButtonClass,
   mintPanelSecondaryButtonClass,
@@ -67,6 +71,7 @@ export function GemShardsMintPanel({
   const { writeContractAsync, isPending } = useWriteContract()
   const [mintingFree, setMintingFree] = useState(false)
   const [mintingPaid, setMintingPaid] = useState(false)
+  const [quantity, setQuantity] = useState(1)
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
 
   const mintingLive = isPublished && !isDraft
@@ -91,7 +96,30 @@ export function GemShardsMintPanel({
     query: { enabled: mintingLive && Boolean(address) },
   })
 
+  const { data: totalMinted } = useReadContract({
+    address: contractAddress,
+    abi: GEM_SHARDS_ABI,
+    functionName: 'totalMinted',
+    chainId,
+    query: { enabled: mintingLive },
+  })
+
+  const { data: remainingSupply } = useReadContract({
+    address: contractAddress,
+    abi: GEM_SHARDS_ABI,
+    functionName: 'remainingSupply',
+    chainId,
+    query: { enabled: mintingLive },
+  })
+
   const paidPrice = requiredPaidMintPrice ?? GEM_SHARDS_PAID_MINT_PRICE
+  const mintedCount = Number(totalMinted ?? 0n)
+  const maxSupply = collection?.max_supply ?? 495
+  const maxMintable = Math.max(0, Number(remainingSupply ?? BigInt(maxSupply - mintedCount)))
+  const safeQuantity = Math.min(quantity, Math.max(1, maxMintable || 1))
+  const totalPaidWei = paidPrice * BigInt(safeQuantity)
+  const priceEtn = Number(formatEther(paidPrice))
+  const totalEtn = Number(formatEther(totalPaidWei))
   const weekOneActive = publicSaleOpensAt != null && BigInt(now) < publicSaleOpensAt
   const paidMintAllowed = !weekOneActive || ownsElectroGem
 
@@ -129,20 +157,33 @@ export function GemShardsMintPanel({
   }
 
   async function mintPaid() {
-    if (!address) return
+    if (!address || !publicClient || safeQuantity < 1) return
     setMintingPaid(true)
+    let minted = 0
     try {
-      const hash = await writeContractAsync({
-        address: contractAddress,
-        abi: GEM_SHARDS_ABI,
-        functionName: 'mintPaid',
-        value: paidPrice,
-        chainId: chain.id,
-      })
-      if (publicClient) await publicClient.waitForTransactionReceipt({ hash })
-      toast.success('Minted Gem Shard')
+      for (let index = 0; index < safeQuantity; index += 1) {
+        const hash = await writeContractAsync({
+          address: contractAddress,
+          abi: GEM_SHARDS_ABI,
+          functionName: 'mintPaid',
+          value: paidPrice,
+          chainId: chain.id,
+        })
+        await publicClient.waitForTransactionReceipt({ hash })
+        minted += 1
+      }
+      toast.success(`Minted ${minted} Gem Shard${minted === 1 ? '' : 's'}`)
+      setQuantity(1)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Paid mint failed')
+      if (minted > 0) {
+        toast.error(
+          error instanceof Error
+            ? `Minted ${minted} of ${safeQuantity} before failing: ${error.message}`
+            : `Minted ${minted} of ${safeQuantity} before failing.`,
+        )
+      } else {
+        toast.error(error instanceof Error ? error.message : 'Paid mint failed')
+      }
     } finally {
       setMintingPaid(false)
     }
@@ -161,8 +202,11 @@ export function GemShardsMintPanel({
     )
   }
 
-  const paidMintLabel = mintingPaid ? 'Minting…' : `Mint for ${formatEther(paidPrice)} ETN`
+  const paidMintLabel = mintingPaid
+    ? `Minting${safeQuantity > 1 ? ` ${safeQuantity}…` : '…'}`
+    : `Mint ${safeQuantity} for ${totalEtn.toLocaleString()} ETN`
   const showFreeMintInfo = isConnected && ownsElectroGem
+  const saleActive = maxMintable > 0
 
   const mintActions = isDraft ? (
     <CardDescription>Minting is disabled until you publish from the Dashboard.</CardDescription>
@@ -172,6 +216,22 @@ export function GemShardsMintPanel({
     </Button>
   ) : (
     <div className="space-y-3">
+      <MintPanelStats>
+        <MintPanelStat label="Price">
+          <div>
+            {formatPaidMintPriceLabel(paidPrice)}
+            {hasDualHolderDiscount && paidPrice < GEM_SHARDS_PAID_MINT_PRICE ? (
+              <span className="ml-1.5 text-xs font-medium text-emerald-400">50% off</span>
+            ) : null}
+          </div>
+          <EtnUsdHint etn={priceEtn} align="right" className="mt-0.5" />
+        </MintPanelStat>
+        <MintPanelStat label="Minted">
+          {mintedCount} / {maxSupply}
+        </MintPanelStat>
+        <MintPanelStat label="Remaining">{maxMintable}</MintPanelStat>
+      </MintPanelStats>
+
       {showFreeMintInfo && (
         <MintPanelHighlight tone="violet">
           {freeMintLoading ? (
@@ -200,15 +260,6 @@ export function GemShardsMintPanel({
       )}
 
       <div className="space-y-3 rounded-xl border border-slate-800/80 bg-slate-950/50 p-4">
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4">
-          <span className="text-sm text-slate-400">Paid mint</span>
-          <span className="text-right text-sm font-semibold tabular-nums text-white">
-            {formatPaidMintPriceLabel(paidPrice)}
-            {hasDualHolderDiscount && paidPrice < GEM_SHARDS_PAID_MINT_PRICE ? (
-              <span className="ml-1.5 text-xs font-medium text-emerald-400">50% off</span>
-            ) : null}
-          </span>
-        </div>
         {weekOneActive && (
           <p className="text-xs leading-relaxed text-slate-500">
             {ownsElectroGem
@@ -216,14 +267,38 @@ export function GemShardsMintPanel({
               : `Opens to everyone in ${countdownLabel ?? 'soon'}`}
           </p>
         )}
-        <Button
-          className={mintPanelPrimaryButtonClass('violet')}
-          disabled={!paidMintAllowed || isPending || mintingPaid || mintingFree}
-          onClick={mintPaid}
-        >
-          {paidMintLabel}
-        </Button>
-        {weekOneActive && !ownsElectroGem && (
+        {!saleActive ? (
+          <p className="text-sm text-slate-400">This collection is sold out.</p>
+        ) : (
+          <>
+            <div>
+              <Label htmlFor={`gem-shards-mint-qty-${collection?.id ?? 'panel'}`}>Quantity</Label>
+              <Input
+                id={`gem-shards-mint-qty-${collection?.id ?? 'panel'}`}
+                type="number"
+                min={1}
+                max={maxMintable}
+                value={safeQuantity}
+                disabled={mintingPaid || mintingFree}
+                onChange={(event) =>
+                  setQuantity(Math.max(1, Math.min(maxMintable, Number(event.target.value) || 1)))
+                }
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                One shard per transaction · up to {maxMintable} remaining
+              </p>
+            </div>
+            <Button
+              className={mintPanelPrimaryButtonClass('violet')}
+              disabled={!paidMintAllowed || isPending || mintingPaid || mintingFree}
+              onClick={mintPaid}
+            >
+              {paidMintLabel}
+            </Button>
+            <EtnUsdHint etn={totalEtn} align="right" className="-mt-1" />
+          </>
+        )}
+        {weekOneActive && !ownsElectroGem && saleActive && (
           <p className="text-xs text-amber-300/90">Hold an ElectroGem to mint during week one.</p>
         )}
       </div>
