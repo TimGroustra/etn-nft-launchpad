@@ -73,7 +73,7 @@ export function GemShardsAdminCard() {
             toast.success('Gem Shards published and submitted for explorer verification.')
           }
         } catch (verifyError) {
-          toast.success('Gem Shards published — minting is live.')
+          toast.success('Gem Shards published. Minting is live.')
           toast.error(
             verifyError instanceof Error
               ? `Explorer verification failed: ${verifyError.message}`
@@ -81,7 +81,7 @@ export function GemShardsAdminCard() {
           )
         }
       } else {
-        toast.success('Gem Shards published — minting is now live.')
+        toast.success('Gem Shards published. Minting is now live.')
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Publish failed')
@@ -99,8 +99,8 @@ export function GemShardsAdminCard() {
             Platform fee-sharing collection (495 supply). Saved as{' '}
             <span className="font-medium text-white">{isPublished ? 'published' : 'draft'}</span>
             {isPublished
-              ? ' — minting is live on the NFT Minting Panel and collection page.'
-              : ' — hidden from users until you publish.'}
+              ? '. Minting is live on the NFT Minting Panel and collection page.'
+              : ', hidden from users until you publish.'}
           </CardDescription>
           <p className="mt-2 font-mono text-xs text-slate-500">{gemShardsAddress}</p>
         </div>

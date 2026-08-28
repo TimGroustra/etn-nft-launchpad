@@ -34,7 +34,7 @@ export function TokenAttributesEditor({ attributes, onChange, error }: TokenAttr
       </div>
 
       {attributes.length === 0 ? (
-        <p className="text-xs text-slate-500">No traits yet — add attributes for marketplace filters and display.</p>
+        <p className="text-xs text-slate-500">No traits yet. Add attributes for marketplace filters and display.</p>
       ) : (
         <div className="space-y-2">
           {attributes.map((attr, index) => (

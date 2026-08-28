@@ -921,7 +921,7 @@ export function resolveDeployedCollectionAddress(
 ): `0x${string}` {
   if (receipt.status === 'reverted') {
     throw new Error(
-      'Deploy transaction reverted on-chain (no collection was created). This usually means the publish fee was too low or the factory rejected the deploy — check the transaction on the block explorer.',
+      'Deploy transaction reverted on-chain (no collection was created). This usually means the publish fee was too low or the factory rejected the deploy. Check the transaction on the block explorer.',
     )
   }
 
@@ -930,7 +930,7 @@ export function resolveDeployedCollectionAddress(
 
   if (!collection) {
     throw new Error(
-      'Could not find CollectionDeployed event in the deploy transaction. The transaction may have failed, or the RPC returned incomplete logs — open the transaction in your block explorer and contact support with the tx hash if ETN was deducted.',
+      'Could not find CollectionDeployed event in the deploy transaction. The transaction may have failed, or the RPC returned incomplete logs. Open the transaction in your block explorer and contact support with the tx hash if ETN was deducted.',
     )
   }
 

@@ -107,7 +107,7 @@ export function CollectionMetadataAdminActions({
             }
           : undefined,
       )
-      setLock({ active: true, step: 'Syncing on-chain — approve in your wallet…', progress: 60 })
+      setLock({ active: true, step: 'Syncing on-chain: approve in your wallet…', progress: 60 })
       await syncPublishedCollection(address, collection, writeContractAsync, chain.id)
       toast.success('Collection synced on-chain')
       onComplete?.()

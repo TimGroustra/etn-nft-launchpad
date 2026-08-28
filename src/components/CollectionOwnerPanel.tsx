@@ -318,7 +318,7 @@ export function CollectionOwnerPanel({ collection, chainId, onUpdated }: Collect
         <CardTitle className="text-base">Contract owner</CardTitle>
         <CardDescription className="mt-1">
           On-chain status for your published collection. Configure royalties, mint settings, and metadata before
-          publishing — they cannot be changed here after deploy.
+          publishing. They cannot be changed here after deploy.
         </CardDescription>
       </div>
 
@@ -381,7 +381,7 @@ export function CollectionOwnerPanel({ collection, chainId, onUpdated }: Collect
                     >
                       {readyTokens.map((token) => (
                         <option key={token.id} value={token.token_id ?? ''}>
-                          #{token.token_id} — {token.name} ({Math.max(1, token.edition_size ?? 1)} edition max)
+                          #{token.token_id}: {token.name} ({Math.max(1, token.edition_size ?? 1)} edition max)
                         </option>
                       ))}
                     </select>

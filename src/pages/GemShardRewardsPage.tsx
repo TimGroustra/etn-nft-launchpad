@@ -93,7 +93,7 @@ export function GemShardRewardsPage() {
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-300 sm:text-lg">
             495 radiant shards crystallize launchpad energy into lasting holder value. Every shard
-            earns an equal share of platform fees — hold more shards, earn more rewards.
+            earns an equal share of platform fees. Hold more shards, earn more rewards.
           </p>
         </div>
       </section>
@@ -105,7 +105,7 @@ export function GemShardRewardsPage() {
             <p className="mt-3 text-sm leading-relaxed text-slate-400">
               Gem Shards are the launchpad&apos;s 495-piece holder collection. When fees flow to
               the distributor, half goes to the treasury and half is shared across all 495 shards.
-              Each shard is one equal share — only shards #491–#495 earn double.
+              Each shard is one equal share. Only shards #491–#495 earn double.
             </p>
           </div>
           <div>
@@ -116,7 +116,7 @@ export function GemShardRewardsPage() {
               <li>Direct ETN sent to the fee distributor</li>
             </ul>
             <p className="mt-3 text-sm text-slate-500">
-              Rewards accrue while you hold a shard. Claim anytime — no expiry.
+              Rewards accrue while you hold a shard. Claim anytime; no expiry.
             </p>
           </div>
           {gemShardsAddress && (

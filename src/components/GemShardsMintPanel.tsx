@@ -30,6 +30,8 @@ import { useCreatorAccess } from '@/hooks/useCreatorAccess'
 import { useElectroGemFreeMints } from '@/hooks/useElectroGemFreeMints'
 import { useGemShardsLaunch } from '@/hooks/useGemShardsLaunch'
 import { useAdmin } from '@/hooks/useAdmin'
+import { ELECTROGEMS_NFT_ADDRESS } from '@/lib/creator-access'
+import { ELECTROSWAP_EXTERNAL_LINK_PROPS, getElectroSwapCollectionUrl } from '@/lib/marketplace'
 import {
   GEM_SHARDS_ABI,
   GEM_SHARDS_CARD_IMAGE,
@@ -295,7 +297,17 @@ export function GemShardsMintPanel({
               </>
             )}
             {weekOneActive && !ownsElectroGem && saleActive && (
-              <p className="text-xs text-amber-300/90">Hold an ElectroGem to mint during week one.</p>
+              <p className="text-xs text-amber-300/90">
+                Hold an{' '}
+                <a
+                  href={getElectroSwapCollectionUrl(ELECTROGEMS_NFT_ADDRESS)}
+                  {...ELECTROSWAP_EXTERNAL_LINK_PROPS}
+                  className="font-medium text-amber-300 underline decoration-amber-500/50 hover:decoration-amber-300"
+                >
+                  ElectroGem
+                </a>{' '}
+                to mint during week one.
+              </p>
             )}
           </MintPanelMintSection>
         </>
@@ -361,7 +373,7 @@ export function GemShardsMintPanel({
           <h1 className="text-2xl font-semibold">{title}</h1>
           {isDraft && isAdmin && (
             <p className="mt-2 rounded-md border border-amber-900/50 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
-              Draft — publish from your Dashboard when ready.
+              Draft. Publish from your Dashboard when ready.
             </p>
           )}
           <p className="mt-2 max-w-2xl text-slate-400">{description}</p>

@@ -284,8 +284,8 @@ export function DashboardPage() {
         ...prev,
         step:
           collection.mint_mode === 'batch'
-            ? 'Batch mint — approve the next transaction(s) in your wallet…'
-            : 'Configure public mint — approve the next transaction(s) in your wallet…',
+            ? 'Batch mint: approve the next transaction(s) in your wallet…'
+            : 'Configure public mint: approve the next transaction(s) in your wallet…',
         progress: 68,
       }))
       const baseUri =
@@ -317,7 +317,7 @@ export function DashboardPage() {
 
       setPublishLock((prev) => ({
         ...prev,
-        step: 'Set marketplace royalty — approve in your wallet…',
+        step: 'Set marketplace royalty: approve in your wallet…',
         progress: 82,
       }))
       await configureCollectionRoyalty(
@@ -455,7 +455,7 @@ export function DashboardPage() {
       } else {
         toast.success(
           verification.displayName
-            ? `Verification submitted — explorer should show "${verification.displayName}".`
+            ? `Verification submitted. Explorer should show "${verification.displayName}".`
             : 'Contract verification submitted to the block explorer.',
         )
       }
@@ -738,7 +738,7 @@ export function DashboardPage() {
           <div>
             <h2 className="text-2xl font-bold">Other Collections</h2>
             <p className="text-sm text-slate-400">
-              All launchpad collections on {chain.name} — treasury admin can edit metadata and use owner tools.
+              All launchpad collections on {chain.name}. Treasury admin can edit metadata and use owner tools.
             </p>
           </div>
           {otherCollections.length === 0 ? (
@@ -760,7 +760,7 @@ export function DashboardPage() {
                   >
                     {collection.contract_address && (
                       <p className="text-xs text-amber-300/90">
-                        Treasury admin mode — on-chain actions require the collection owner wallet unless you own the
+                        Treasury admin mode: on-chain actions require the collection owner wallet unless you own the
                         contract.
                       </p>
                     )}

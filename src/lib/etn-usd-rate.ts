@@ -31,7 +31,7 @@ export function usdToEtn(usd: number, usdPerEtn: number): number {
 
 /** Format for display — adapts precision for very small ETN prices. */
 export function formatUsd(amount: number): string {
-  if (!Number.isFinite(amount)) return '—'
+  if (!Number.isFinite(amount)) return '-'
   if (amount >= 1) {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',

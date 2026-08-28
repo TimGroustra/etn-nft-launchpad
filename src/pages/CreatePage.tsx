@@ -90,7 +90,7 @@ function CreateHero() {
       <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Launch editable NFT collections on Electroneum</h1>
       <p className="mt-3 max-w-2xl text-slate-400">
         Upload artwork, configure CLUB burns, and pay ETN to publish your collection on Electroneum.
-        We host images and generate metadata JSON with public URLs — you only upload image files, not links.
+        We host images and generate metadata JSON with public URLs. You only upload image files, not links.
       </p>
     </section>
   )
@@ -699,7 +699,7 @@ export function CreatePage() {
               <p className="font-medium text-blue-50">ERC-1155 minting</p>
               <p className="mt-1 text-blue-100/90">
                 Collectors mint <strong className="text-white">copies</strong> of a chosen type. Random mint order is
-                not used — each type has one metadata URI and an edition cap you set on Artwork.
+                not used. Each type has one metadata URI and an edition cap you set on Artwork.
               </p>
             </div>
           )}
@@ -721,8 +721,8 @@ export function CreatePage() {
                 title="Batch mint at publish"
                 description={
                   erc1155
-                    ? 'Mint the full edition run to your wallet at publish — every copy of every type, using edition sizes from Artwork.'
-                    : 'Upload every token upfront. The full collection is minted to your wallet when you publish — no public sale.'
+                    ? 'Mint the full edition run to your wallet at publish. Every copy of every type, using edition sizes from Artwork.'
+                    : 'Upload every token upfront. The full collection is minted to your wallet when you publish. No public sale.'
                 }
                 onClick={() => setMintMode('batch')}
               />
@@ -799,8 +799,8 @@ export function CreatePage() {
           {isBatch && (
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
               {erc1155
-                ? `Batch mint requires artwork for all ${form.maxSupply} types with edition sizes set. Every copy is minted to your wallet at publish — paid public sale is not available in this mode.`
-                : `Batch mint requires artwork and metadata for all ${form.maxSupply} tokens. Everything is minted to your wallet at publish — paid public sale is not available in this mode.`}
+                ? `Batch mint requires artwork for all ${form.maxSupply} types with edition sizes set. Every copy is minted to your wallet at publish. Paid public sale is not available in this mode.`
+                : `Batch mint requires artwork and metadata for all ${form.maxSupply} tokens. Everything is minted to your wallet at publish. Paid public sale is not available in this mode.`}
             </div>
           )}
 
@@ -816,14 +816,14 @@ export function CreatePage() {
               {isBatch ? (
                 <>
                   When someone <strong className="text-slate-300">resells</strong> your NFT, your contract can earn a
-                  royalty and optionally burn part of it as CLUB. Batch collections mint everything to you at publish —
+                  royalty and optionally burn part of it as CLUB. Batch collections mint everything to you at publish.
                   there is no paid public mint step.
                 </>
               ) : (
                 <>
                   There are two separate moments: when someone <strong className="text-slate-300">resells</strong> your
                   NFT, and when someone <strong className="text-slate-300">buys a new mint</strong>. Resale royalty can
-                  be set high (e.g. 96%) — just leave room for the marketplace&apos;s own fee (~3% on ElectroSwap).
+                  be set high (e.g. 96%). Just leave room for the marketplace&apos;s own fee (~3% on ElectroSwap).
                 </>
               )}
             </CardDescription>
@@ -838,16 +838,16 @@ export function CreatePage() {
             )}
             <ul className="mt-2 list-inside list-disc space-y-1 text-slate-400">
               <li>
-                <span className="text-slate-300">Resale royalty</span> — your cut when the NFT is sold again (0–100%).
-                Add the marketplace fee on top — 96% royalty + 3% fee leaves 1% for the seller.
+                <span className="text-slate-300">Resale royalty</span>: your cut when the NFT is sold again (0–100%).
+                Add the marketplace fee on top. 96% royalty + 3% fee leaves 1% for the seller.
               </li>
               <li>
-                <span className="text-slate-300">Burn from resales</span> — how much of that resale income goes to CLUB
+                <span className="text-slate-300">Burn from resales</span>: how much of that resale income goes to CLUB
                 burns ({MIN_ROYALTY_BURN_PERCENT}–100% minimum). Set 100% if you want it all burned.
               </li>
               {!isBatch && (
                 <li>
-                  <span className="text-slate-300">Burn on new mints</span> —{' '}
+                  <span className="text-slate-300">Burn on new mints</span>:{' '}
                   {hasDualHolderDiscount
                     ? 'optional for dual holders; otherwise required'
                     : `required (${MIN_MINT_BURN_PERCENT}% minimum)`}{' '}
@@ -874,7 +874,7 @@ export function CreatePage() {
             </FieldHint>
             {resaleRoyaltyPercent >= 100 && (
               <p className="mt-2 text-sm text-amber-300">
-                100% royalty plus a ~3% marketplace fee exceeds the sale price — this caused the 103% fee issue. Try 96%
+                100% royalty plus a ~3% marketplace fee exceeds the sale price. This caused the 103% fee issue. Try 96%
                 instead so the seller still receives ~1%.
               </p>
             )}
@@ -904,7 +904,7 @@ export function CreatePage() {
               {minRoyaltyBurnPercent > 0
                 ? `${MIN_ROYALTY_BURN_PERCENT}–100% required`
                 : '0–100% for dual holders'}
-              ). Want everything burned? Set this to 100% — e.g. 96% leaves 4%
+              ). Want everything burned? Set this to 100%. e.g. 96% leaves 4%
               for you to withdraw.
             </FieldHint>
             <FieldError message={fieldErrors.royaltyBurnPercent} />
@@ -936,7 +936,7 @@ export function CreatePage() {
                     {minMintBurnPercent > 0
                       ? `Required for public minting collections (${MIN_MINT_BURN_PERCENT}–100%).`
                       : 'Optional for dual holders (0–100%).'}{' '}
-                    A share of each paid mint is swapped to CLUB and burned — separate from resale royalties above.
+                    A share of each paid mint is swapped to CLUB and burned, separate from resale royalties above.
                   </FieldHint>
                   <FieldError message={fieldErrors.mintBurnPercent} />
                 </div>
@@ -973,10 +973,10 @@ export function CreatePage() {
                   <>
                     {' '}
                     Each row is one <strong className="text-slate-300">type</strong> (shared metadata). Set edition size
-                    for how many copies exist — you do not upload per copy.
+                    for how many copies exist. You do not upload per copy.
                   </>
                 ) : (
-                  <> Bulk import fills the rows below — you can edit every field before saving.</>
+                  <> Bulk import fills the rows below. You can edit every field before saving.</>
                 )}
                 {form.enablePublicMint || isBatch
                   ? erc1155
@@ -1047,7 +1047,7 @@ export function CreatePage() {
                 <span className="sm:hidden">Swipe each image to check artwork and metadata before saving.</span>
                 <span className="hidden sm:inline">
                   Click through each token to verify the artwork and metadata JSON before saving. Royalty fields are
-                  included automatically — <code className="text-slate-400">fee_recipient</code> becomes your collection
+                  included automatically. <code className="text-slate-400">fee_recipient</code> becomes your collection
                   contract at publish.
                 </span>
               </FieldHint>
@@ -1148,7 +1148,7 @@ export function CreatePage() {
           </CardDescription>
           <p className="mt-3 text-sm leading-relaxed text-amber-200/90">
             Saving uploads every image and generates metadata. Large collections (hundreds or thousands of images) can
-            take a long time — keep this tab open until the progress bar finishes. Failed uploads retry automatically;
+            take a long time. Keep this tab open until the progress bar finishes. Failed uploads retry automatically;
             if save stops partway, run save again to resume remaining artwork. On mobile, stay in the browser while
             MetaMask asks you to sign; switching apps can disconnect your wallet mid-save.
           </p>

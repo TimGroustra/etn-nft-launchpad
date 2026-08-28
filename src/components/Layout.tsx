@@ -7,10 +7,8 @@ import { WalletConnectButton } from './WalletConnectButton'
 import { WalletDisconnectButton } from './WalletDisconnectButton'
 import { GemShardClaimButton } from './GemShardClaimButton'
 import { SiteHeaderNav } from './SiteHeaderNav'
-import { useNetwork } from '@/context/NetworkContext'
 
 export function Layout() {
-  const { chain } = useNetwork()
   const { isConnected } = useAccount()
 
   return (
@@ -30,7 +28,6 @@ export function Layout() {
 
           <div className="flex shrink-0 items-center justify-end gap-x-1 gap-y-2 sm:gap-x-3">
             <GemShardClaimButton />
-            <span className="hidden text-xs text-slate-500 sm:inline">{chain.name}</span>
             <NetworkToggle />
             <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
               {isConnected ? (

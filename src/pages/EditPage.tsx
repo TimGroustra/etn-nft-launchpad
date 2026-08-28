@@ -258,7 +258,7 @@ export function EditPage() {
         if (editChanges.needsRoyaltyOnChainSync) {
           setSaveLock((prev) => ({
             ...prev,
-            step: 'Set marketplace royalty — approve in your wallet…',
+            step: 'Set marketplace royalty: approve in your wallet…',
             progress: 92,
           }))
           onWalletStep('Set marketplace royalty (EIP-2981)')
@@ -273,7 +273,7 @@ export function EditPage() {
         if (editChanges.needsRoyaltyBurnOnChainSync) {
           setSaveLock((prev) => ({
             ...prev,
-            step: 'Update royalties burn config — approve in your wallet…',
+            step: 'Update royalties burn config: approve in your wallet…',
             progress: 96,
           }))
           onWalletStep('Update royalties CLUB burn config')
@@ -347,7 +347,7 @@ export function EditPage() {
       if (collection.contract_address) {
         setSaveLock((prev) => ({
           ...prev,
-          step: 'Syncing on-chain — approve in your wallet…',
+          step: 'Syncing on-chain: approve in your wallet…',
           progress: 60,
           walletSteps: activateWalletStep(prev.walletSteps, 'Sync on-chain metadata base URI'),
         }))
@@ -419,7 +419,7 @@ export function EditPage() {
           {isPublishedV2 && isAdmin
             ? 'Admin mode: you can still edit token metadata and images on published V2 collections. Save uploads files, then Sync pushes metadata on-chain.'
             : isPublishedV2 && !canEditMetadata
-              ? 'This V2 collection is published — token metadata cannot be changed here. Use the dashboard owner panel for ERC-1155 owner mint and edition caps.'
+              ? 'This V2 collection is published. Token metadata cannot be changed here. Use the dashboard owner panel for ERC-1155 owner mint and edition caps.'
               : isPublished
                 ? 'Save writes changes to the database. Sync uploads metadata files and updates the on-chain contract.'
                 : 'Save your changes, then publish from the dashboard. Use Sync to prepare metadata files before publishing.'}
@@ -578,7 +578,7 @@ export function EditPage() {
       <div className="flex flex-wrap gap-2">
         {canEditMetadata && (
         <p className="w-full text-sm leading-relaxed text-amber-200/90">
-          Saving uploads every image and metadata file. Large collections can take several minutes — keep this tab open
+          Saving uploads every image and metadata file. Large collections can take several minutes. Keep this tab open
           until the progress bar finishes.
         </p>
         )}

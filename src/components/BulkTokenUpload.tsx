@@ -32,14 +32,14 @@ export function BulkTokenUpload({
       if (result.errors.length > 0) {
         toast.error(result.errors[0])
         if (result.errors.length > 1) {
-          toast.message(`${result.errors.length - 1} more issue(s) — check file naming and JSON format.`)
+          toast.message(`${result.errors.length - 1} more issue(s). Check file naming and JSON format.`)
         }
         return
       }
       onImport(result.tokens, result.importSessionId)
       toast.success(
         isErc1155(tokenStandard)
-          ? `Imported ${result.tokens.length} type(s) — set edition size per row`
+          ? `Imported ${result.tokens.length} type(s). Set edition size per row`
           : `Imported ${result.tokens.length} token(s) into editable rows`,
       )
     } finally {
@@ -59,7 +59,7 @@ export function BulkTokenUpload({
               Upload numbered pairs per <strong className="text-slate-300">type</strong>:{' '}
               <code className="text-slate-300">1.png</code> + optional <code className="text-slate-300">1.json</code>,{' '}
               <code className="text-slate-300">2.png</code> + optional <code className="text-slate-300">2.json</code>,
-              etc. Edition size is set per row after import — not one file per copy.
+              etc. Edition size is set per row after import, not one file per copy.
             </>
           ) : (
             <>

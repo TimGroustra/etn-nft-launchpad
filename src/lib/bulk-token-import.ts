@@ -53,7 +53,7 @@ export async function importBulkTokenFiles(
   for (const file of files) {
     const tokenId = tokenIdFromFilename(file)
     if (tokenId == null) {
-      warnings.push(`Skipped "${file.webkitRelativePath || file.name}" — name must be like 1.png or 2.json.`)
+      warnings.push(`Skipped "${file.webkitRelativePath || file.name}": name must be like 1.png or 2.json.`)
       continue
     }
 
@@ -65,7 +65,7 @@ export async function importBulkTokenFiles(
         continue
       }
       if (entry.image) {
-        warnings.push(`Token #${tokenId}: Multiple images found — using "${file.name}".`)
+        warnings.push(`Token #${tokenId}: Multiple images found. Using "${file.name}".`)
       }
       entry.image = file
     } else if (isJsonFile(file)) {
@@ -75,11 +75,11 @@ export async function importBulkTokenFiles(
         continue
       }
       if (entry.metadata) {
-        warnings.push(`Token #${tokenId}: Multiple JSON files found — using "${file.name}".`)
+        warnings.push(`Token #${tokenId}: Multiple JSON files found. Using "${file.name}".`)
       }
       entry.metadata = parsed.data
     } else {
-      warnings.push(`Skipped "${file.name}" — use PNG/JPEG/WebP/GIF or JSON.`)
+      warnings.push(`Skipped "${file.name}": use PNG/JPEG/WebP/GIF or JSON.`)
     }
     byId.set(tokenId, entry)
   }
@@ -105,7 +105,7 @@ export async function importBulkTokenFiles(
   const resolvedSupply = resolveBulkImportMaxSupplyFromIds(sortedIds)
   if (resolvedSupply > maxSupply) {
     warnings.push(
-      `Found tokens up to #${highestId} — max supply will be raised from ${maxSupply} to ${resolvedSupply}.`,
+      `Found tokens up to #${highestId}. Max supply will be raised from ${maxSupply} to ${resolvedSupply}.`,
     )
   } else if (resolvedSupply > 0 && resolvedSupply < maxSupply) {
     warnings.push(
@@ -136,7 +136,7 @@ export async function importBulkTokenFiles(
     const attributes = entry.metadata?.attributes ?? []
 
     if (!entry.metadata) {
-      warnings.push(`Token #${tokenId}: No JSON file — using default name and empty attributes.`)
+      warnings.push(`Token #${tokenId}: No JSON file. Using default name and empty attributes.`)
     }
 
     let stagedFileKey: string | undefined

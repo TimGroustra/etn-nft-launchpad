@@ -338,7 +338,7 @@ export function Erc1155PublicMintCard({ collection }: Erc1155PublicMintCardProps
               This collection was deployed from an ERC-1155 factory that predates per-type minting. The on-chain
               contract has edition caps but no <code className="text-amber-100">mintEdition</code> function, so buyers
               can only mint types sequentially (one copy per type, in order). Create a new collection after the
-              launchpad ERC-1155 factory is upgraded — redeploying the same collection address is not possible.
+              launchpad ERC-1155 factory is upgraded. Redeploying the same collection address is not possible.
             </p>
           )}
 
