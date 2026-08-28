@@ -128,7 +128,6 @@ const COLLECTION_ERC1155_ABI = parseAbi([
 
 const GEM_SHARDS_ABI = parseAbi([
   'function owner() view returns (address)',
-  'function platformRecipient() view returns (address)',
   'function electroGem() view returns (address)',
   'function clubWatch() view returns (address)',
 ])
@@ -238,16 +237,14 @@ export async function readGemShardsConstructorArgs(
     transport: http(rpc),
   })
 
-  const [initialOwner, platformRecipient, electroGem, clubWatch] = await Promise.all([
+  const [initialOwner, electroGem, clubWatch] = await Promise.all([
     client.readContract({ address: contractAddress, abi: GEM_SHARDS_ABI, functionName: 'owner' }),
-    client.readContract({ address: contractAddress, abi: GEM_SHARDS_ABI, functionName: 'platformRecipient' }),
     client.readContract({ address: contractAddress, abi: GEM_SHARDS_ABI, functionName: 'electroGem' }),
     client.readContract({ address: contractAddress, abi: GEM_SHARDS_ABI, functionName: 'clubWatch' }),
   ])
 
   return {
     initialOwner,
-    platformRecipient,
     baseTokenURI,
     electroGem,
     clubWatch,
@@ -258,10 +255,9 @@ export function encodeGemShardsConstructorArgs(
   args: Awaited<ReturnType<typeof readGemShardsConstructorArgs>>,
 ) {
   const encoded = encodeAbiParameters(
-    parseAbiParameters('address, address, string, address, address'),
+    parseAbiParameters('address, string, address, address'),
     [
       args.initialOwner,
-      args.platformRecipient,
       args.baseTokenURI,
       args.electroGem,
       args.clubWatch,

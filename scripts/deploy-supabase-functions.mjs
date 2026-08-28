@@ -32,6 +32,7 @@ const bundles = {
   'verify-collection-contract': [
     ['index.ts', read('verify-collection-contract/index.ts').replaceAll("'../_shared/", "'./_shared/")],
     ['_shared/utils.ts', read('_shared/utils.ts')],
+    ['_shared/admin.ts', read('_shared/admin.ts')],
     ['_shared/contract-verification.ts', read('_shared/contract-verification.ts')],
     ['_shared/editable-erc721-verification.json', read('_shared/editable-erc721-verification.json')],
     ['_shared/editable-erc721-v2-verification.json', read('_shared/editable-erc721-v2-verification.json')],

@@ -13,9 +13,9 @@
     "previousLaunchpadMinter": "0xf1a218B896d98C68690670B56d6b608894841F2C",
     "v2DeployedAt": "2026-08-26T12:04:02.128Z",
     "PublishFeeDistributor": "0xd6e206EabD292A025b49033b115B5EB744e5529E",
-    "GemShards": "0xbC80e6D3902397c7Eaa2297D70054ECb6C9568e7",
-    "gemShardsDeployedAt": "2026-08-28T12:19:16.047Z",
-    "previousGemShards": "0xD202c613Fd479beb066414b6eAE2F2a4A4A6f2a6"
+    "GemShards": "0x6Cb09B4cB3D2DCa90e720565c101500abe131001",
+    "gemShardsDeployedAt": "2026-08-28T14:10:33.590Z",
+    "previousGemShards": "0xD78fce78F843c4B298208F331d1005cb78f0b9A2"
   },
   "electroneumTestnet": {
     "LaunchpadFactory": "0x368Fe607F06ab5Ee022755Db854e0CC49f7469e7",

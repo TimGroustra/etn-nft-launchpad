@@ -38,7 +38,6 @@ async function main() {
   const GemShards = await ethers.getContractFactory('GemShards')
   const gemShards = await GemShards.deploy(
     deployer.address,
-    distributorAddress,
     metadataBase,
     electroGems,
     clubWatch,

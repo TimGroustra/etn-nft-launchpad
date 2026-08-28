@@ -65,7 +65,6 @@ async function main() {
   )
   const gemShards = await gemFactory.deploy(
     wallet.address,
-    distributorAddress,
     metadataBase,
     electroGems,
     clubWatch,

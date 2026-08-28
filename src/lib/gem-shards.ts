@@ -90,6 +90,20 @@ export const GEM_SHARDS_ABI = [
     stateMutability: 'view',
     type: 'function',
   },
+  {
+    inputs: [],
+    name: 'withdraw',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'to', type: 'address' }],
+    name: 'ownerMint',
+    outputs: [{ name: 'tokenId', type: 'uint256' }],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
 ] as const
 
 export const PUBLISH_FEE_DISTRIBUTOR_ABI = [

@@ -12,6 +12,22 @@ async function waitDeployed(contract) {
   return contract
 }
 
+async function mintPaidAndGetTokenId(gemShards, signer, value = ethers.parseEther('10000')) {
+  const tx = await gemShards.connect(signer).mintPaid({ value })
+  const receipt = await tx.wait()
+  const minted = receipt.logs
+    .map((log) => {
+      try {
+        return gemShards.interface.parseLog(log)
+      } catch {
+        return null
+      }
+    })
+    .find((parsed) => parsed?.name === 'ShardMinted')
+  if (!minted) throw new Error('ShardMinted event missing')
+  return minted.args.tokenId
+}
+
 async function deployGemShardsStack() {
   const [owner, holder, buyer, dualHolder, stranger] = await ethers.getSigners()
 
@@ -36,7 +52,6 @@ async function deployGemShardsStack() {
   const GemShards = await ethers.getContractFactory('GemShards')
   const gemShards = await waitDeployed(
     await GemShards.deploy(
-      owner.address,
       owner.address,
       METADATA_BASE,
       await electroGem.getAddress(),
@@ -74,45 +89,49 @@ describe('PublishFeeDistributor + GemShards', function () {
   it('accrues weighted rewards and settles on transfer', async function () {
     const { holder, buyer, distributor, gemShards } = await deployGemShardsStack()
 
-    await gemShards.connect(holder).mintPaid({ value: ethers.parseEther('10000') })
-    await gemShards.connect(buyer).mintPaid({ value: ethers.parseEther('10000') })
+    const holderTokenId = await mintPaidAndGetTokenId(gemShards, holder)
+    await mintPaidAndGetTokenId(gemShards, buyer)
 
     await buyer.sendTransaction({
       to: await distributor.getAddress(),
       value: ethers.parseEther('10'),
     })
 
-    const pendingBefore = await distributor.pendingReward(1n)
+    const pendingBefore = await distributor.pendingReward(holderTokenId)
     expect(pendingBefore).to.be.gt(0n)
 
-    await gemShards.connect(holder)['safeTransferFrom(address,address,uint256)'](holder.address, buyer.address, 1n)
+    await gemShards.connect(holder)['safeTransferFrom(address,address,uint256)'](
+      holder.address,
+      buyer.address,
+      holderTokenId,
+    )
 
-    const pendingAfter = await distributor.pendingReward(1n)
+    const pendingAfter = await distributor.pendingReward(holderTokenId)
     expect(pendingAfter).to.equal(0n)
-    expect(await distributor.pendingReward(2n)).to.be.gt(0n)
+    expect(await distributor.pendingReward(holderTokenId)).to.equal(0n)
   })
 
   it('allows shard owners to claim accrued rewards', async function () {
     const { holder, distributor, gemShards } = await deployGemShardsStack()
 
-    await gemShards.connect(holder).mintPaid({ value: ethers.parseEther('10000') })
+    const tokenId = await mintPaidAndGetTokenId(gemShards, holder)
 
     await holder.sendTransaction({
       to: await distributor.getAddress(),
       value: ethers.parseEther('4'),
     })
 
-    const pending = await distributor.pendingReward(1n)
+    const pending = await distributor.pendingReward(tokenId)
     expect(pending).to.equal(ethers.parseEther('2'))
 
     const balanceBefore = await ethers.provider.getBalance(holder.address)
-    const tx = await distributor.connect(holder).claim(1n)
+    const tx = await distributor.connect(holder).claim(tokenId)
     const receipt = await tx.wait()
     const gas = receipt.gasUsed * receipt.gasPrice
     const balanceAfter = await ethers.provider.getBalance(holder.address)
 
     expect(balanceAfter + gas - balanceBefore).to.equal(ethers.parseEther('2'))
-    expect(await distributor.pendingReward(1n)).to.equal(0n)
+    expect(await distributor.pendingReward(tokenId)).to.equal(0n)
   })
 
   it('assigns primal token ids double share weight', async function () {
@@ -124,18 +143,27 @@ describe('PublishFeeDistributor + GemShards', function () {
   it('mints a free shard for electro gem holders once per token id', async function () {
     const { holder, gemShards } = await deployGemShardsStack()
 
-    await expect(gemShards.connect(holder).mintFree(1n))
-      .to.emit(gemShards, 'ShardMinted')
-      .withArgs(1n, holder.address, true)
+    const tx = await gemShards.connect(holder).mintFree(1n)
+    const receipt = await tx.wait()
+    const minted = receipt.logs
+      .map((log) => {
+        try {
+          return gemShards.interface.parseLog(log)
+        } catch {
+          return null
+        }
+      })
+      .find((parsed) => parsed?.name === 'ShardMinted')
+    const tokenId = minted.args.tokenId
 
     await expect(gemShards.connect(holder).mintFree(1n)).to.be.revertedWith('Free mint claimed')
-    expect(await gemShards.ownerOf(1n)).to.equal(holder.address)
+    expect(await gemShards.ownerOf(tokenId)).to.equal(holder.address)
   })
 
   it('emits ERC-4906 metadata updates when rewards change', async function () {
     const { holder, distributor, gemShards } = await deployGemShardsStack()
 
-    await gemShards.connect(holder).mintPaid({ value: ethers.parseEther('10000') })
+    const tokenId = await mintPaidAndGetTokenId(gemShards, holder)
 
     await expect(
       holder.sendTransaction({
@@ -144,7 +172,7 @@ describe('PublishFeeDistributor + GemShards', function () {
       }),
     ).to.emit(gemShards, 'BatchMetadataUpdate')
 
-    await expect(distributor.connect(holder).claim(1n)).to.emit(gemShards, 'MetadataUpdate')
+    await expect(distributor.connect(holder).claim(tokenId)).to.emit(gemShards, 'MetadataUpdate')
   })
 
   it('charges dual holders 50% on paid mint', async function () {
@@ -155,9 +183,10 @@ describe('PublishFeeDistributor + GemShards', function () {
 
     expect(await gemShards.requiredPaidMintPrice(dualHolder.address)).to.equal(ethers.parseEther('5000'))
 
-    await expect(gemShards.connect(dualHolder).mintPaid({ value: ethers.parseEther('5000') }))
-      .to.emit(gemShards, 'ShardMinted')
-      .withArgs(1n, dualHolder.address, false)
+    await expect(gemShards.connect(dualHolder).mintPaid({ value: ethers.parseEther('5000') })).to.emit(
+      gemShards,
+      'ShardMinted',
+    )
   })
 
   it('rejects non-electrogem paid mint during week one', async function () {
@@ -173,9 +202,10 @@ describe('PublishFeeDistributor + GemShards', function () {
 
     await time.increase(7 * 24 * 60 * 60 + 1)
 
-    await expect(gemShards.connect(buyer).mintPaid({ value: ethers.parseEther('10000') }))
-      .to.emit(gemShards, 'ShardMinted')
-      .withArgs(1n, buyer.address, false)
+    await expect(gemShards.connect(buyer).mintPaid({ value: ethers.parseEther('10000') })).to.emit(
+      gemShards,
+      'ShardMinted',
+    )
   })
 
   it('rejects mints while minting is disabled', async function () {
@@ -187,5 +217,53 @@ describe('PublishFeeDistributor + GemShards', function () {
     await expect(
       gemShards.connect(holder).mintPaid({ value: ethers.parseEther('10000') }),
     ).to.be.revertedWith('Minting not enabled')
+  })
+
+  it('mints random token ids instead of sequential order', async function () {
+    const { holder, buyer, gemShards } = await deployGemShardsStack()
+
+    const first = await mintPaidAndGetTokenId(gemShards, holder)
+    const second = await mintPaidAndGetTokenId(gemShards, buyer)
+
+    expect(first).to.not.equal(second)
+    expect(await gemShards.totalMinted()).to.equal(2n)
+    expect(await gemShards.remainingSupply()).to.equal(493n)
+  })
+
+  it('keeps paid mint revenue in the contract for owner withdraw', async function () {
+    const { owner, holder, gemShards } = await deployGemShardsStack()
+
+    await mintPaidAndGetTokenId(gemShards, holder)
+
+    const contractBalance = await ethers.provider.getBalance(await gemShards.getAddress())
+    expect(contractBalance).to.equal(ethers.parseEther('10000'))
+
+    const ownerBalanceBefore = await ethers.provider.getBalance(owner.address)
+    const tx = await gemShards.connect(owner).withdraw()
+    const receipt = await tx.wait()
+    const gas = receipt.gasUsed * receipt.gasPrice
+    const ownerBalanceAfter = await ethers.provider.getBalance(owner.address)
+
+    expect(ownerBalanceAfter + gas - ownerBalanceBefore).to.equal(ethers.parseEther('10000'))
+    expect(await ethers.provider.getBalance(await gemShards.getAddress())).to.equal(0n)
+  })
+
+  it('allows owner mint without payment', async function () {
+    const { owner, gemShards } = await deployGemShardsStack()
+
+    const tx = await gemShards.connect(owner).ownerMint(owner.address)
+    const receipt = await tx.wait()
+    const minted = receipt.logs
+      .map((log) => {
+        try {
+          return gemShards.interface.parseLog(log)
+        } catch {
+          return null
+        }
+      })
+      .find((parsed) => parsed?.name === 'ShardMinted')
+
+    expect(minted).to.not.equal(undefined)
+    expect(await gemShards.ownerOf(minted.args.tokenId)).to.equal(owner.address)
   })
 })

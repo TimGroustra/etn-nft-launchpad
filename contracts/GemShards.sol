@@ -30,31 +30,29 @@ contract GemShards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard, IERC4906 {
     uint256 public immutable publicSaleOpensAt;
 
     address public distributor;
-    address public platformRecipient;
     bool public mintingEnabled;
 
     string private _baseTokenURI;
-    uint256 private _nextTokenId = 1;
+    uint256 private _mintedCount;
+    uint256[] private _availableTokenIds;
+    bool private _mintPoolReady;
 
     mapping(uint256 => bool) public electroGemFreeMintClaimed;
 
     event DistributorUpdated(address distributor);
-    event PlatformRecipientUpdated(address recipient);
     event BaseURIUpdated(string baseURI);
     event MintingEnabledUpdated(bool enabled);
     event ShardMinted(uint256 indexed tokenId, address indexed to, bool freeMint);
+    event Withdrawn(address indexed recipient, uint256 amount);
 
     constructor(
         address initialOwner,
-        address platformRecipient_,
         string memory baseTokenURI_,
         address electroGem_,
         address clubWatch_
     ) ERC721("Gem Shards", "GSHARD") Ownable(initialOwner) {
-        require(platformRecipient_ != address(0), "Invalid recipient");
         require(electroGem_ != address(0), "Invalid electro gem");
         require(clubWatch_ != address(0), "Invalid club watch");
-        platformRecipient = platformRecipient_;
         electroGem = electroGem_;
         clubWatch = clubWatch_;
         publicSaleOpensAt = block.timestamp + PUBLIC_SALE_DELAY;
@@ -65,12 +63,6 @@ contract GemShards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard, IERC4906 {
     function setDistributor(address distributor_) external onlyOwner {
         distributor = distributor_;
         emit DistributorUpdated(distributor_);
-    }
-
-    function setPlatformRecipient(address recipient) external onlyOwner {
-        require(recipient != address(0), "Invalid recipient");
-        platformRecipient = recipient;
-        emit PlatformRecipientUpdated(recipient);
     }
 
     function setBaseURI(string calldata baseTokenURI_) external onlyOwner {
@@ -94,7 +86,12 @@ contract GemShards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard, IERC4906 {
     }
 
     function totalMinted() public view returns (uint256) {
-        return _nextTokenId > 0 ? _nextTokenId - 1 : 0;
+        return _mintedCount;
+    }
+
+    function remainingSupply() public view returns (uint256) {
+        if (!_mintPoolReady) return MAX_SUPPLY;
+        return _availableTokenIds.length;
     }
 
     function requiredPaidMintPrice(address payer) public view returns (uint256) {
@@ -111,7 +108,7 @@ contract GemShards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard, IERC4906 {
         require(IERC721(electroGem).ownerOf(electroGemTokenId) == msg.sender, "Not electro gem owner");
 
         electroGemFreeMintClaimed[electroGemTokenId] = true;
-        tokenId = _mintNext(msg.sender);
+        tokenId = _mintRandom(msg.sender);
         emit ShardMinted(tokenId, msg.sender, true);
     }
 
@@ -124,12 +121,25 @@ contract GemShards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard, IERC4906 {
         uint256 price = requiredPaidMintPrice(msg.sender);
         require(msg.value >= price, "Insufficient payment");
 
-        tokenId = _mintNext(msg.sender);
-
-        (bool sent, ) = platformRecipient.call{value: msg.value}("");
-        require(sent, "Payment failed");
+        tokenId = _mintRandom(msg.sender);
 
         emit ShardMinted(tokenId, msg.sender, false);
+    }
+
+    /// @notice Owner mint for treasury allocations (no payment).
+    function ownerMint(address to) external onlyOwner nonReentrant returns (uint256 tokenId) {
+        tokenId = _mintRandom(to);
+        emit ShardMinted(tokenId, to, false);
+    }
+
+    /// @notice Withdraw paid mint revenue accumulated in this contract.
+    function withdraw() external onlyOwner nonReentrant {
+        uint256 balance = address(this).balance;
+        require(balance > 0, "No balance");
+        address recipient = owner();
+        (bool sent, ) = recipient.call{value: balance}("");
+        require(sent, "Withdraw failed");
+        emit Withdrawn(recipient, balance);
     }
 
     function notifyMetadataUpdate(uint256 tokenId) external {
@@ -156,10 +166,28 @@ contract GemShards is ERC721, ERC2981, Ownable2Step, ReentrancyGuard, IERC4906 {
         return interfaceId == bytes4(0x49064906) || super.supportsInterface(interfaceId);
     }
 
-    function _mintNext(address to) private returns (uint256 tokenId) {
-        require(_nextTokenId <= MAX_SUPPLY, "Sold out");
-        tokenId = _nextTokenId;
-        _nextTokenId++;
+    function _ensureMintPool() private {
+        if (_mintPoolReady) return;
+        for (uint256 i = 1; i <= MAX_SUPPLY; i++) {
+            _availableTokenIds.push(i);
+        }
+        _mintPoolReady = true;
+    }
+
+    function _mintRandom(address to) private returns (uint256 tokenId) {
+        _ensureMintPool();
+        uint256 len = _availableTokenIds.length;
+        require(len > 0, "Sold out");
+
+        uint256 slot = uint256(
+            keccak256(abi.encodePacked(block.prevrandao, msg.sender, _mintedCount, len))
+        ) % len;
+
+        tokenId = _availableTokenIds[slot];
+        _availableTokenIds[slot] = _availableTokenIds[len - 1];
+        _availableTokenIds.pop();
+        _mintedCount++;
+
         _safeMint(to, tokenId);
     }
 

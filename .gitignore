@@ -13,3 +13,4 @@ supabase/.temp
 bulk-upload
 .vercel
 .env.vercel.pull
+.env*
