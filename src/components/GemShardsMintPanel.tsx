@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
 import { Input, Label } from '@/components/ui/input'
 import { EtnUsdHint } from '@/components/EtnUsdHint'
-import { buildMintedTokenInfo, MintSuccessModal, type MintedTokenInfo } from '@/components/MintSuccessModal'
+import { MintSuccessModal, type MintedTokenInfo } from '@/components/MintSuccessModal'
 import {
   MintPanelBadge,
   MintPanelCardActions,
@@ -30,13 +30,13 @@ import { useCreatorAccess } from '@/hooks/useCreatorAccess'
 import { useElectroGemFreeMints } from '@/hooks/useElectroGemFreeMints'
 import { useGemShardsLaunch } from '@/hooks/useGemShardsLaunch'
 import { useAdmin } from '@/hooks/useAdmin'
-import { useCollectionTokens } from '@/hooks/useCollections'
 import {
   GEM_SHARDS_ABI,
   GEM_SHARDS_CARD_IMAGE,
   GEM_SHARDS_MINT_CARD_DESCRIPTION,
   GEM_SHARDS_PAID_MINT_PRICE,
   formatPaidMintPriceLabel,
+  fetchGemShardsMintDisplayInfo,
   parseGemShardsMintReceipt,
   type GemShardsContractAddress,
 } from '@/lib/gem-shards'
@@ -79,7 +79,6 @@ export function GemShardsMintPanel({
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
   const [mintSuccessOpen, setMintSuccessOpen] = useState(false)
   const [mintedTokens, setMintedTokens] = useState<MintedTokenInfo[]>([])
-  const { data: tokens = [] } = useCollectionTokens(collection?.id)
 
   const mintingLive = isPublished && !isDraft
   const freeMintsRemaining = eligibleTokenIds.length
@@ -142,13 +141,15 @@ export function GemShardsMintPanel({
     return () => window.clearInterval(timer)
   }, [weekOneActive])
 
-  function showMintSuccess(tokenIds: number[]) {
+  async function showMintSuccess(tokenIds: number[]) {
     if (tokenIds.length === 0) return
+    const displayInfo = await fetchGemShardsMintDisplayInfo(tokenIds)
     setMintedTokens(
-      buildMintedTokenInfo(
-        tokenIds.map((tokenId) => ({ onChainTokenId: tokenId, metadataIndex: tokenId })),
-        tokens,
-      ),
+      displayInfo.map((info) => ({
+        tokenId: info.tokenId,
+        name: info.name,
+        imageUrl: info.imageUrl,
+      })),
     )
     setMintSuccessOpen(true)
   }

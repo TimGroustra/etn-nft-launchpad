@@ -1,5 +1,6 @@
 import { formatEther, parseEther, parseEventLogs, type TransactionReceipt } from 'viem'
 import type { NetworkKey } from '@/lib/blockchain'
+import { getMetadataPublicOrigin } from '@/lib/metadata-public-urls'
 import gemShardsCardImage from '@/assets/gem-shards-card.jpg'
 
 export const GEM_SHARDS_PAID_MINT_PRICE = parseEther('10000')
@@ -269,4 +270,77 @@ export function parseGemShardsMintReceipt(
   })
     .filter((event) => event.args.from?.toLowerCase() === ZERO_MINT_ADDRESS)
     .map((event) => Number(event.args.tokenId))
+}
+
+export function getGemShardImageFileName(tokenId: number): string {
+  return `${String(tokenId).padStart(3, '0')}.png`
+}
+
+export function getGemShardPublicStorageUrl(storagePath: string): string {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim().replace(/\/$/, '')
+  if (!supabaseUrl) {
+    return `${getMetadataPublicOrigin()}/gem-shards/${storagePath}`
+  }
+  return `${supabaseUrl}/storage/v1/object/public/gem-shards/${storagePath}`
+}
+
+export function getGemShardImageUrl(tokenId: number): string {
+  return getGemShardPublicStorageUrl(`images/${getGemShardImageFileName(tokenId)}`)
+}
+
+function getGemShardMetadataApiUrl(tokenId: number): string {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim().replace(/\/$/, '')
+  if (!supabaseUrl) return ''
+  return `${supabaseUrl}/functions/v1/gem-shard-metadata/${tokenId}`
+}
+
+export type GemShardDisplayInfo = {
+  tokenId: number
+  name: string
+  imageUrl: string
+}
+
+export async function fetchGemShardDisplayInfo(tokenId: number): Promise<GemShardDisplayInfo> {
+  const imageUrl = getGemShardImageUrl(tokenId)
+  const apiUrl = getGemShardMetadataApiUrl(tokenId)
+
+  if (apiUrl) {
+    try {
+      const response = await fetch(apiUrl)
+      if (response.ok) {
+        const metadata = (await response.json()) as { name?: string; image?: string }
+        return {
+          tokenId,
+          name: metadata.name?.trim() || `Gem Shard #${tokenId}`,
+          imageUrl: typeof metadata.image === 'string' && metadata.image ? metadata.image : imageUrl,
+        }
+      }
+    } catch {
+      // Fall back to static metadata below.
+    }
+  }
+
+  try {
+    const response = await fetch(getGemShardPublicStorageUrl(`metadata/${tokenId}.json`))
+    if (response.ok) {
+      const metadata = (await response.json()) as { name?: string }
+      return {
+        tokenId,
+        name: metadata.name?.trim() || `Gem Shard #${tokenId}`,
+        imageUrl,
+      }
+    }
+  } catch {
+    // Use generic fallback below.
+  }
+
+  return {
+    tokenId,
+    name: `Gem Shard #${tokenId}`,
+    imageUrl,
+  }
+}
+
+export async function fetchGemShardsMintDisplayInfo(tokenIds: number[]): Promise<GemShardDisplayInfo[]> {
+  return Promise.all(tokenIds.map((tokenId) => fetchGemShardDisplayInfo(tokenId)))
 }
