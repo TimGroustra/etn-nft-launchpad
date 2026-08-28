@@ -92,9 +92,8 @@ export function GemShardRewardsPage() {
             Gem Shards
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-300 sm:text-lg">
-            Five hundred radiant shards crystallize launchpad energy into lasting holder value.
-            Each shard earns a weighted share of platform fees — the rarer the shard, the larger
-            your slice of every collection publish and mint.
+            495 radiant shards crystallize launchpad energy into lasting holder value. Every shard
+            earns an equal share of platform fees — hold more shards, earn more rewards.
           </p>
         </div>
       </section>
@@ -105,8 +104,8 @@ export function GemShardRewardsPage() {
             <h2 className="text-lg font-semibold text-white">What Gem Shards do</h2>
             <p className="mt-3 text-sm leading-relaxed text-slate-400">
               Gem Shards are the launchpad&apos;s 495-piece holder collection. When fees flow to
-              the distributor, half goes to the treasury and half is shared across all minted shards
-              by weight. Standard shards count as one share; Primal shards (#491–#495) count double.
+              the distributor, half goes to the treasury and half is shared across all 495 shards.
+              Each shard is one equal share — only shards #491–#495 earn double.
             </p>
           </div>
           <div>
