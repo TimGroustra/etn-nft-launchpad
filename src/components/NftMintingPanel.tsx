@@ -45,6 +45,7 @@ import { getPublicImageUrl } from '@/lib/supabase'
 import type { Collection } from '@/types/database'
 import { Erc1155PublicMintCard } from '@/components/Erc1155PublicMintCard'
 import { getCollectionTokenStandard } from '@/lib/collection-contract'
+import { getElectroSwapCollectionUrl } from '@/lib/marketplace'
 import { GemShardsMintPanel } from '@/components/GemShardsMintPanel'
 import {
   GEM_SHARDS_CARD_IMAGE,
@@ -78,9 +79,11 @@ type PublicMintCardProps = {
 function MintPanelSoldOutCard({
   collection,
   isGemShards,
+  isErc721,
 }: {
   collection: Collection
   isGemShards: boolean
+  isErc721: boolean
 }) {
   const { data: tokens = [] } = useCollectionTokens(collection.id)
   const previewToken = tokens.find((token) => token.image_storage_path)
@@ -109,6 +112,18 @@ function MintPanelSoldOutCard({
             badge={<MintPanelBadge tone="soldOut">Minted out</MintPanelBadge>}
           />
           <MintPanelCardDescription className="text-slate-500">{description}</MintPanelCardDescription>
+          {isErc721 && collection.contract_address && (
+            <p className="text-sm text-slate-500">
+              <a
+                href={getElectroSwapCollectionUrl(collection.contract_address)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-400 hover:underline"
+              >
+                View on ElectroSwap
+              </a>
+            </p>
+          )}
         </div>
         {collection.contract_address && (
           <MintPanelCardFooter>
@@ -130,7 +145,13 @@ function MintPanelSoldOutCollectionCard({ collection }: { collection: Collection
     gem_shards_testnet: platformConfig?.gem_shards_testnet,
   })
 
-  return <MintPanelSoldOutCard collection={collection} isGemShards={isGemShards} />
+  return (
+    <MintPanelSoldOutCard
+      collection={collection}
+      isGemShards={isGemShards}
+      isErc721={getCollectionTokenStandard(collection) === 'erc721'}
+    />
+  )
 }
 
 function MintPanelCollectionCard({

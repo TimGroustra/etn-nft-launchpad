@@ -1,26 +1,34 @@
 import { useParams } from 'react-router-dom'
+import { ExternalLink } from 'lucide-react'
 import { useCollection } from '@/hooks/useCollections'
+import { useMintPanelAvailability } from '@/hooks/useMintPanelAvailability'
 import { getExplorerContractUrl, getChainKey } from '@/lib/blockchain'
+import { getCollectionTokenStandard } from '@/lib/collection-contract'
 import { formatMintModeLabel, formatPercentFromBps } from '@/lib/create-collection-validation'
+import { getElectroSwapCollectionUrl } from '@/lib/marketplace'
 import { shortenAddress } from '@/lib/utils'
 import { usePlatformConfig } from '@/hooks/usePlatformConfig'
 import { isGemShardsContract } from '@/lib/gem-shards'
 import { GemShardsMintPanel } from '@/components/GemShardsMintPanel'
+import type { Collection } from '@/types/database'
 
-export function CollectionPage() {
-  const { address } = useParams()
-  const { data: collection, isLoading } = useCollection(address)
-  const { data: platformConfig } = usePlatformConfig()
-
-  if (isLoading) return <p className="text-slate-400">Loading collection...</p>
-  if (!collection) return <p className="text-red-400">Collection not found</p>
-
+function CollectionPageContent({
+  collection,
+  platformConfig,
+}: {
+  collection: Collection
+  platformConfig?: {
+    gem_shards_mainnet?: string | null
+    gem_shards_testnet?: string | null
+  } | null
+}) {
+  const { isFullyMinted, isLoading: availabilityLoading } = useMintPanelAvailability(collection)
   const networkKey = getChainKey(collection.chain_id ?? 52014)
   const isGemShards =
     collection.contract_address
     && isGemShardsContract(collection.contract_address, networkKey, {
-      gem_shards_mainnet: platformConfig?.gem_shards_mainnet,
-      gem_shards_testnet: platformConfig?.gem_shards_testnet,
+      gem_shards_mainnet: platformConfig?.gem_shards_mainnet ?? undefined,
+      gem_shards_testnet: platformConfig?.gem_shards_testnet ?? undefined,
     })
 
   if (isGemShards && collection.contract_address) {
@@ -33,6 +41,11 @@ export function CollectionPage() {
       />
     )
   }
+
+  const isErc721 = getCollectionTokenStandard(collection) === 'erc721'
+  const electroSwapUrl = collection.contract_address
+    ? getElectroSwapCollectionUrl(collection.contract_address)
+    : null
 
   return (
     <div className="space-y-6">
@@ -71,7 +84,37 @@ export function CollectionPage() {
           </p>
         )}
       </div>
-      <p className="text-slate-400">Mint this collection from the home NFT Minting Panel.</p>
+      {availabilityLoading ? (
+        <p className="text-slate-400">Checking mint availability…</p>
+      ) : isFullyMinted && isErc721 && electroSwapUrl ? (
+        <p className="text-slate-400">
+          This collection is minted out.{' '}
+          <a
+            href={electroSwapUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-blue-400 hover:underline"
+          >
+            View on ElectroSwap
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </p>
+      ) : isFullyMinted ? (
+        <p className="text-slate-400">This collection is fully minted.</p>
+      ) : (
+        <p className="text-slate-400">Mint this collection from the home NFT Minting Panel.</p>
+      )}
     </div>
   )
+}
+
+export function CollectionPage() {
+  const { address } = useParams()
+  const { data: collection, isLoading } = useCollection(address)
+  const { data: platformConfig } = usePlatformConfig()
+
+  if (isLoading) return <p className="text-slate-400">Loading collection...</p>
+  if (!collection) return <p className="text-red-400">Collection not found</p>
+
+  return <CollectionPageContent collection={collection} platformConfig={platformConfig} />
 }
