@@ -15,25 +15,25 @@ export function mintPanelCardClass({
 } = {}) {
   if (soldOut) {
     return cn(
-      'group relative flex h-full flex-col overflow-hidden rounded-2xl border border-slate-800/50',
+      'group relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/20',
       'bg-gradient-to-b from-slate-900/40 to-slate-950/80 shadow-lg shadow-black/20',
     )
   }
 
   if (accent === 'violet') {
     return cn(
-      'group relative flex h-full flex-col overflow-hidden rounded-2xl border border-violet-500/25',
+      'group relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/30',
       'bg-gradient-to-b from-slate-900/95 via-slate-950 to-slate-950',
       'shadow-lg shadow-violet-950/20 transition duration-300',
-      'hover:border-violet-400/40 hover:shadow-xl hover:shadow-violet-950/30',
+      'hover:border-white/50 hover:shadow-xl hover:shadow-violet-950/30',
     )
   }
 
   return cn(
-    'group relative flex h-full flex-col overflow-hidden rounded-2xl border border-slate-800/80',
+    'group relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/30',
     'bg-gradient-to-b from-slate-900/90 to-slate-950',
     'shadow-lg shadow-black/30 transition duration-300',
-    'hover:border-slate-600/90 hover:shadow-xl hover:shadow-blue-950/20',
+    'hover:border-white/50 hover:shadow-xl hover:shadow-blue-950/20',
   )
 }
 
