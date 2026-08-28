@@ -1,16 +1,20 @@
 import type { DraftToken } from '@/lib/create-collection-validation'
 import { findSequentialImportGaps, resolveBulkImportMaxSupplyFromIds } from '@/lib/collection-token-readiness'
+import {
+  buildSessionStagedFileKey,
+  DRAFT_FILE_STAGE_THRESHOLD,
+  stageDraftFile,
+} from '@/lib/draft-file-store'
 import { parseMetadataJson, type ParsedTokenMetadata } from '@/lib/metadata-import'
 import { validateImageFileSync } from '@/lib/validate-upload-image'
-
 const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif'])
 
 export type BulkImportResult = {
   tokens: DraftToken[]
   warnings: string[]
   errors: string[]
+  importSessionId?: string
 }
-
 function basename(path: string): string {
   const parts = path.split(/[/\\]/)
   return parts[parts.length - 1] ?? path
@@ -111,6 +115,14 @@ export async function importBulkTokenFiles(
 
   const tokens: DraftToken[] = []
   const importErrors: string[] = []
+  const stageToDisk = sortedIds.length >= DRAFT_FILE_STAGE_THRESHOLD
+  const importSessionId = stageToDisk ? crypto.randomUUID() : undefined
+
+  if (stageToDisk) {
+    warnings.push(
+      `Large import (${sortedIds.length} tokens): artwork is staged locally so your browser can upload reliably. Keep this tab open until save completes.`,
+    )
+  }
 
   for (const tokenId of sortedIds) {
     const entry = byId.get(tokenId)!
@@ -127,12 +139,24 @@ export async function importBulkTokenFiles(
       warnings.push(`Token #${tokenId}: No JSON file — using default name and empty attributes.`)
     }
 
-    tokens.push({ tokenId, name, description, file: entry.image, attributes })
+    let stagedFileKey: string | undefined
+    let file: File | null = entry.image
+    if (stageToDisk && importSessionId) {
+      stagedFileKey = buildSessionStagedFileKey(importSessionId, tokenId)
+      await stageDraftFile(stagedFileKey, entry.image)
+      file = null
+    }
+
+    tokens.push({ tokenId, name, description, file, stagedFileKey, attributes })
   }
 
-  return { tokens, warnings, errors: [...errors, ...importErrors] }
+  return {
+    tokens,
+    warnings,
+    errors: [...errors, ...importErrors],
+    importSessionId,
+  }
 }
-
 async function readMetadataFile(file: File, tokenId: number) {
   const text = await file.text()
   return parseMetadataJson(text, `Token #${tokenId} (${file.name})`)

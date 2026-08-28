@@ -29,6 +29,20 @@ export function usesFactoryV2(collection: Pick<Collection, 'contract_version'>):
   return !isLegacyCollection(collection)
 }
 
+export function isPublishedV2Collection(
+  collection: Pick<Collection, 'contract_version' | 'status'>,
+): boolean {
+  return usesFactoryV2(collection) && collection.status === 'published'
+}
+
+/** V2 metadata is immutable after publish for everyone except admins (support tooling). */
+export function canEditV2Metadata(
+  collection: Pick<Collection, 'contract_version' | 'status'>,
+  isAdmin: boolean,
+): boolean {
+  return !isPublishedV2Collection(collection) || isAdmin
+}
+
 export function formatTokenStandardLabel(standard: TokenStandard): string {
   return standard === 'erc1155' ? 'ERC-1155 (editioned)' : 'ERC-721'
 }

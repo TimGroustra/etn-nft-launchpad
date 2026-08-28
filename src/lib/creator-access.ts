@@ -67,13 +67,22 @@ export function hasCreatorNftAccess(holdings: CreatorNftHoldings): boolean {
   return holdings.ownsElectroGem || holdings.ownsClubWatch
 }
 
+export function isDualHolder(holdings: CreatorNftHoldings): boolean {
+  return holdings.ownsElectroGem && holdings.ownsClubWatch
+}
+
+/** Waived when the wallet holds at least one NFT from each collection. */
+export function hasPlatformMintFeeExempt(holdings: CreatorNftHoldings): boolean {
+  return isDualHolder(holdings)
+}
+
 /** Whether the wallet may use creator tools (create, edit drafts, publish). */
-export function canAccessCreatorTools(isAdmin: boolean, holdings: CreatorNftHoldings): boolean {
-  return isAdmin || hasCreatorNftAccess(holdings)
+export function canAccessCreatorTools(_isAdmin: boolean, _holdings: CreatorNftHoldings): boolean {
+  return true
 }
 
 export function getPublishFeeDiscountBps(holdings: CreatorNftHoldings): bigint {
-  if (holdings.ownsElectroGem && holdings.ownsClubWatch) return DUAL_HOLDER_DISCOUNT_BPS
+  if (isDualHolder(holdings)) return DUAL_HOLDER_DISCOUNT_BPS
   return 0n
 }
 

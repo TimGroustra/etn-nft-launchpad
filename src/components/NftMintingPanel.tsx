@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { Link } from 'react-router-dom'
 
@@ -18,6 +18,7 @@ import { Input, Label } from '@/components/ui/input'
 import { buildMintedTokenInfo, MintSuccessModal, type MintedTokenInfo } from '@/components/MintSuccessModal'
 import { EtnUsdHint } from '@/components/EtnUsdHint'
 import { useCollectionTokens, useMintPanelCollections } from '@/hooks/useCollections'
+import { useMintPanelAvailability } from '@/hooks/useMintPanelAvailability'
 import { usePlatformConfig } from '@/hooks/usePlatformConfig'
 
 import { useNetwork } from '@/context/NetworkContext'
@@ -39,23 +40,59 @@ import {
   resolveLaunchpadMintPaymentWei,
   shouldUseLaunchpadMinter,
 } from '@/lib/launchpad-minter'
-import { hasCreatorNftAccess } from '@/lib/creator-access'
+import { hasPlatformMintFeeExempt } from '@/lib/creator-access'
 
 import { getPublicImageUrl } from '@/lib/supabase'
 
 import type { Collection } from '@/types/database'
 import { Erc1155PublicMintCard } from '@/components/Erc1155PublicMintCard'
 import { getCollectionTokenStandard } from '@/lib/collection-contract'
-
-
+import { GemShardsMintPanel } from '@/components/GemShardsMintPanel'
+import { isGemShardsContract } from '@/lib/gem-shards'
 
 type PublicMintCardProps = {
-
   collection: Collection
-
 }
 
+function MintPanelCollectionCard({
+  collection,
+  onAvailabilityResolved,
+}: {
+  collection: Collection
+  onAvailabilityResolved: (collectionId: string, visible: boolean) => void
+}) {
+  const { data: platformConfig } = usePlatformConfig()
+  const { hideFromPanel, isLoading } = useMintPanelAvailability(collection)
+  const networkKey = getChainKey(collection.chain_id ?? 52014)
+  const isGemShards = isGemShardsContract(collection.contract_address, networkKey, {
+    gem_shards_mainnet: platformConfig?.gem_shards_mainnet,
+    gem_shards_testnet: platformConfig?.gem_shards_testnet,
+  })
 
+  useEffect(() => {
+    if (isLoading) return
+    onAvailabilityResolved(collection.id, !hideFromPanel)
+  }, [collection.id, hideFromPanel, isLoading, onAvailabilityResolved])
+
+  if (hideFromPanel) return null
+
+  if (isGemShards && collection.contract_address) {
+    return (
+      <GemShardsMintPanel
+        variant="panel"
+        collection={collection}
+        contractAddress={collection.contract_address as `0x${string}`}
+        chainId={collection.chain_id ?? 52014}
+      />
+    )
+  }
+
+  if (getCollectionTokenStandard(collection) === 'erc1155') {
+    return <Erc1155PublicMintCard collection={collection} />
+  }
+
+  return <PublicMintCard collection={collection} />
+}
 
 export function PublicMintCard({ collection }: PublicMintCardProps) {
 
@@ -64,7 +101,7 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
   const { isAdmin } = useAdmin()
   const { holdings } = useCreatorAccess()
   const { data: platformConfig } = usePlatformConfig()
-  const platformFeeExempt = hasCreatorNftAccess(holdings)
+  const platformFeeExempt = hasPlatformMintFeeExempt(holdings)
 
   const { open } = useAppKit()
 
@@ -569,8 +606,22 @@ export function NftMintingPanel() {
   const { canAccessCreatorTools } = useCanAccessCreatorTools()
 
   const { data: collections = [], isLoading } = useMintPanelCollections(chain.id, isAdmin)
+  const [availabilityById, setAvailabilityById] = useState<Record<string, boolean>>({})
 
+  useEffect(() => {
+    setAvailabilityById({})
+  }, [collections])
 
+  const handleAvailabilityResolved = useCallback((collectionId: string, visible: boolean) => {
+    setAvailabilityById((prev) => {
+      if (prev[collectionId] === visible) return prev
+      return { ...prev, [collectionId]: visible }
+    })
+  }, [])
+
+  const resolvedCount = Object.keys(availabilityById).length
+  const allResolved = collections.length > 0 && resolvedCount === collections.length
+  const anyVisible = Object.values(availabilityById).some(Boolean)
 
   return (
 
@@ -618,16 +669,30 @@ export function NftMintingPanel() {
 
         </Card>
 
+      ) : allResolved && !anyVisible ? (
+
+        <Card className="p-6">
+
+          <CardTitle>All panel collections are sold out</CardTitle>
+
+          <CardDescription className="mt-2">
+
+            Every collection on the minting panel has been fully minted. Check back later for new drops.
+
+          </CardDescription>
+
+        </Card>
+
       ) : (
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {collections.map((collection) =>
-            getCollectionTokenStandard(collection) === 'erc1155' ? (
-              <Erc1155PublicMintCard key={collection.id} collection={collection} />
-            ) : (
-              <PublicMintCard key={collection.id} collection={collection} />
-            ),
-          )}
+          {collections.map((collection) => (
+            <MintPanelCollectionCard
+              key={collection.id}
+              collection={collection}
+              onAvailabilityResolved={handleAvailabilityResolved}
+            />
+          ))}
         </div>
 
       )}

@@ -17,7 +17,7 @@ import { useCreatorAccess } from '@/hooks/useCreatorAccess'
 import {
   formatPlatformMintFeePercent,
 } from '@/lib/platform-fees'
-import { hasCreatorNftAccess } from '@/lib/creator-access'
+import { hasPlatformMintFeeExempt } from '@/lib/creator-access'
 import { getCollectionContractAbi, getChainKey, LAUNCHPAD_MINTER_ABI } from '@/lib/blockchain'
 import {
   collectionHasLegacyOnChainMintFee,
@@ -43,7 +43,7 @@ export function Erc1155PublicMintCard({ collection }: Erc1155PublicMintCardProps
   const { isAdmin } = useAdmin()
   const { holdings } = useCreatorAccess()
   const { data: platformConfig } = usePlatformConfig()
-  const platformFeeExempt = hasCreatorNftAccess(holdings)
+  const platformFeeExempt = hasPlatformMintFeeExempt(holdings)
   const { open } = useAppKit()
   const { chain } = useNetwork()
   const publicClient = usePublicClient({ chainId: collection.chain_id ?? chain.id })

@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useAccount, useWriteContract } from 'wagmi'
+import { useAccount } from 'wagmi'
+import { useChainWriteContract } from '@/hooks/useChainWriteContract'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { OperationLockOverlay } from '@/components/OperationLockOverlay'
 import { useAdmin } from '@/hooks/useAdmin'
 import { useNetwork } from '@/context/NetworkContext'
-import { usesFactoryV2 } from '@/lib/collection-contract'
 import { prepareCollectionMetadata, syncPublishedCollection } from '@/lib/publish-collection'
 import type { Collection } from '@/types/database'
 
@@ -24,14 +24,14 @@ export function CollectionMetadataAdminActions({
   const { address } = useAccount()
   const { isAdmin } = useAdmin()
   const { chain } = useNetwork()
-  const { writeContractAsync } = useWriteContract()
+  const { writeContractAsync } = useChainWriteContract()
   const [lock, setLock] = useState<{ active: boolean; step: string; progress: number | null }>({
     active: false,
     step: '',
     progress: null,
   })
 
-  if (!isAdmin || !usesFactoryV2(collection)) return null
+  if (!isAdmin) return null
 
   const editUrl = collection.contract_address
     ? `/collection/${collection.contract_address}/edit`
@@ -95,6 +95,17 @@ export function CollectionMetadataAdminActions({
             progress: total > 0 ? 10 + Math.round((completed / total) * 40) : 25,
           })
         },
+        collection.contract_address
+          ? {
+              applyOnChainForMinted: {
+                writeContractAsync,
+                contractAddress: collection.contract_address as `0x${string}`,
+                chainId: chain.id,
+                mintMode: collection.mint_mode,
+                collection,
+              },
+            }
+          : undefined,
       )
       setLock({ active: true, step: 'Syncing on-chain — approve in your wallet…', progress: 60 })
       await syncPublishedCollection(address, collection, writeContractAsync, chain.id)
@@ -118,7 +129,7 @@ export function CollectionMetadataAdminActions({
       />
       <Button variant="outline" asChild disabled={busy}>
         <Link to={editUrl} tabIndex={busy ? -1 : undefined} aria-disabled={busy}>
-          Edit
+          Admin edit
         </Link>
       </Button>
       <Button variant="outline" onClick={() => void handleSave()} disabled={busy}>

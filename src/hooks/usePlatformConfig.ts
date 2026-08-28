@@ -13,6 +13,12 @@ interface PlatformConfig {
   launchpad_minter_mainnet?: string
   launchpad_minter_testnet?: string
   launchpad_v2_preview_enabled?: string
+  gem_shards_mainnet?: string
+  gem_shards_testnet?: string
+  publish_fee_distributor_mainnet?: string
+  publish_fee_distributor_testnet?: string
+  gem_shards_status_mainnet?: string
+  gem_shards_status_testnet?: string
 }
 
 async function fetchPlatformConfig(): Promise<PlatformConfig> {
@@ -36,6 +42,12 @@ async function fetchPlatformConfig(): Promise<PlatformConfig> {
     if (row.key === 'launchpad_v2_preview_enabled') config.launchpad_v2_preview_enabled = row.value
     if (row.key === 'launchpad_minter_mainnet') config.launchpad_minter_mainnet = row.value
     if (row.key === 'launchpad_minter_testnet') config.launchpad_minter_testnet = row.value
+    if (row.key === 'gem_shards_mainnet') config.gem_shards_mainnet = row.value
+    if (row.key === 'gem_shards_testnet') config.gem_shards_testnet = row.value
+    if (row.key === 'publish_fee_distributor_mainnet') config.publish_fee_distributor_mainnet = row.value
+    if (row.key === 'publish_fee_distributor_testnet') config.publish_fee_distributor_testnet = row.value
+    if (row.key === 'gem_shards_status_mainnet') config.gem_shards_status_mainnet = row.value
+    if (row.key === 'gem_shards_status_testnet') config.gem_shards_status_testnet = row.value
   }
   return config
 }

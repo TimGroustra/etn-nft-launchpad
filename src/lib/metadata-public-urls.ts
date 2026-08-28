@@ -17,8 +17,10 @@ export function getPublicMetadataUrl(collectionId: string, tokenId: number): str
 }
 
 /** Proxy URL for a file in the collection-images bucket (`{collectionId}/{tokenId}.png`). */
-export function getPublicImageUrlFromPath(imageStoragePath: string): string {
+export function getPublicImageUrlFromPath(imageStoragePath: string, cacheBust?: string | number): string {
   if (!imageStoragePath) return ''
   const normalized = imageStoragePath.replace(/^\/+/, '')
-  return `${getMetadataPublicOrigin()}/i/${normalized}`
+  const base = `${getMetadataPublicOrigin()}/i/${normalized}`
+  if (cacheBust == null || cacheBust === '') return base
+  return `${base}?v=${encodeURIComponent(String(cacheBust))}`
 }

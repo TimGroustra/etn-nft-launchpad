@@ -4,8 +4,8 @@ import { Rocket } from 'lucide-react'
 import { NetworkToggle } from './NetworkToggle'
 import { WalletBalance } from './WalletBalance'
 import { WalletConnectButton } from './WalletConnectButton'
+import { GemShardClaimButton } from './GemShardClaimButton'
 import { useNetwork } from '@/context/NetworkContext'
-import { useCanAccessCreatorTools } from '@/hooks/useCanAccessCreatorTools'
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   `rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
@@ -14,7 +14,6 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
 
 export function Layout() {
   const { chain } = useNetwork()
-  const { canAccessCreatorTools, holdingsLoading } = useCanAccessCreatorTools()
   const { isConnected } = useAccount()
 
   return (
@@ -36,7 +35,7 @@ export function Layout() {
               <NavLink to="/dashboard" className={navLinkClass}>
                 Dashboard
               </NavLink>
-              {isConnected && !holdingsLoading && canAccessCreatorTools && (
+              {isConnected && (
                 <NavLink to="/create" className={navLinkClass}>
                   Create
                 </NavLink>
@@ -44,6 +43,7 @@ export function Layout() {
             </nav>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-x-1.5 gap-y-2 sm:ml-auto sm:gap-x-3">
+            <GemShardClaimButton />
             <span className="hidden text-xs text-slate-500 sm:inline">{chain.name}</span>
             <WalletBalance />
             <NetworkToggle />

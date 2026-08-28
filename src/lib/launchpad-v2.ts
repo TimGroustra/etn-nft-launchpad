@@ -1,5 +1,3 @@
-import { isAdminWallet } from '@/lib/admin'
-
 export type LaunchpadV2PlatformConfig = {
   launchpad_v2_preview_enabled?: string
 }
@@ -10,12 +8,12 @@ export function isLaunchpadV2PreviewEnabled(
   return config?.launchpad_v2_preview_enabled !== 'false'
 }
 
-/** Admins only: ERC-721 V2, ERC-1155, full ERC-4906, and V2 factories. */
+/** ERC-721 V2, ERC-1155, and V2 factories when enabled in platform config. */
 export function canUseLaunchpadV2(
-  walletAddress?: string | null,
+  _walletAddress?: string | null,
   config?: LaunchpadV2PlatformConfig | null,
 ): boolean {
-  return isAdminWallet(walletAddress) && isLaunchpadV2PreviewEnabled(config)
+  return isLaunchpadV2PreviewEnabled(config)
 }
 
 export function resolveContractVersionForCreate(

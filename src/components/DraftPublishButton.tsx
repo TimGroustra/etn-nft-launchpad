@@ -1,8 +1,10 @@
 import { formatEther } from 'viem'
+import { useAccount } from 'wagmi'
 import { Button } from '@/components/ui/button'
 import { useResolvedPublishFeeWei } from '@/hooks/useResolvedPublishFeeWei'
 import { useCreatorAccess } from '@/hooks/useCreatorAccess'
 import { resolvePublishFeeWei } from '@/lib/creator-access'
+import { isTreasuryWallet } from '@/lib/blockchain'
 import type { Collection } from '@/types/database'
 
 type DraftPublishButtonProps = {
@@ -28,6 +30,7 @@ export function DraftPublishButton({
   confirming,
   onPublish,
 }: DraftPublishButtonProps) {
+  const { address } = useAccount()
   const { holdings } = useCreatorAccess()
   const { data: resolvedFeeWei, isLoading: feeLoading } = useResolvedPublishFeeWei(
     factoryAddress,
@@ -41,6 +44,7 @@ export function DraftPublishButton({
   const tierFeeLabel = formatEther(localEstimate.tierFeeWei)
   const showPublishDiscount =
     localEstimate.discountBps > 0n && feeWei < localEstimate.tierFeeWei
+  const isTreasury = isTreasuryWallet(address)
 
   const disabled =
     isPublishing ||
@@ -56,6 +60,8 @@ export function DraftPublishButton({
     label = 'Loading fee…'
   } else if (collection.contract_address) {
     label = 'Complete publish'
+  } else if (isTreasury && feeWei > 0n) {
+    label = `Publish (${feeLabel} ETN, $0 net)`
   } else if (showPublishDiscount) {
     label = `Publish (${feeLabel} ETN, 50% off ${tierFeeLabel})`
   } else {

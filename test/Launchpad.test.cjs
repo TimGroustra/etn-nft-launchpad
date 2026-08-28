@@ -353,7 +353,46 @@ describe('EditableERC721', function () {
     expect(await nft.ownerOf(1)).to.equal(buyer.address)
   })
 
-  it('waives launchpad platform mint fee for ElectroGem or Club Watch holders', async function () {
+  it('waives launchpad platform mint fee when buyer holds both ElectroGem and Club Watch', async function () {
+    const [owner, treasury, buyer] = await ethers.getSigners()
+    const MockHolderNFT = await ethers.getContractFactory('MockHolderNFT')
+    const electroGems = await waitDeployed(await MockHolderNFT.deploy())
+    const clubWatch = await waitDeployed(await MockHolderNFT.deploy())
+
+    const LaunchpadMinter = await ethers.getContractFactory('LaunchpadMinter')
+    const launchpadMinter = await waitDeployed(
+      await LaunchpadMinter.deploy(300, treasury.address, await electroGems.getAddress(), await clubWatch.getAddress()),
+    )
+
+    const { nft } = await deployNft(
+      { mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 },
+      owner,
+      {
+        treasury: treasury.address,
+        platformMintFeeBps: 300,
+        electroGems: await electroGems.getAddress(),
+        clubWatch: await clubWatch.getAddress(),
+      },
+    )
+
+    await nft.connect(owner).setBaseURI('ipfs://collection/')
+    await nft.connect(owner).setMintPrice(ethers.parseEther('100'))
+    await nft.connect(owner).setMintable(true)
+    await electroGems.mint(buyer.address, 1)
+    await clubWatch.mint(buyer.address, 1)
+
+    expect(await launchpadMinter.requiredMintPayment(await nft.getAddress(), buyer.address, 1)).to.equal(
+      ethers.parseEther('100'),
+    )
+
+    const treasuryBefore = await ethers.provider.getBalance(treasury.address)
+    await launchpadMinter.connect(buyer).mintERC721(await nft.getAddress(), 1, { value: ethers.parseEther('100') })
+    const treasuryAfter = await ethers.provider.getBalance(treasury.address)
+    expect(treasuryAfter - treasuryBefore).to.equal(0n)
+    expect(await nft.ownerOf(1)).to.equal(buyer.address)
+  })
+
+  it('charges launchpad platform mint fee when buyer holds only one holder NFT', async function () {
     const [owner, treasury, buyer] = await ethers.getSigners()
     const MockHolderNFT = await ethers.getContractFactory('MockHolderNFT')
     const electroGems = await waitDeployed(await MockHolderNFT.deploy())
@@ -381,14 +420,8 @@ describe('EditableERC721', function () {
     await electroGems.mint(buyer.address, 1)
 
     expect(await launchpadMinter.requiredMintPayment(await nft.getAddress(), buyer.address, 1)).to.equal(
-      ethers.parseEther('100'),
+      ethers.parseEther('103'),
     )
-
-    const treasuryBefore = await ethers.provider.getBalance(treasury.address)
-    await launchpadMinter.connect(buyer).mintERC721(await nft.getAddress(), 1, { value: ethers.parseEther('100') })
-    const treasuryAfter = await ethers.provider.getBalance(treasury.address)
-    expect(treasuryAfter - treasuryBefore).to.equal(0n)
-    expect(await nft.ownerOf(1)).to.equal(buyer.address)
   })
 
   it('accepts marketplace mint payment at mint price only', async function () {
@@ -536,4 +569,94 @@ describe('EditableERC721', function () {
     expect(await nft.totalSupply()).to.equal(1n)
     expect(await nft.totalMinted()).to.equal(1n)
   })
+})
+
+describe('EditableERC721V2 ElectroSwap mint gas', function () {
+  const ES_MINTER_V3 = '0x41B8c31e35317124a7a4895ea034538C213c060f'
+  // Failed ElectroSwap qty-2 txs exhausted ~460k gas on mainnet; hardhat runs ~1.45x cheaper.
+  const MAINNET_ES_GAS_CEILING = {
+    1: 340_000n,
+    2: 460_000n,
+    3: 620_000n,
+    4: 780_000n,
+    5: 940_000n,
+  }
+  const HARDHAT_TO_MAINNET_NUM = 145n
+  const HARDHAT_TO_MAINNET_DEN = 100n
+
+  function hardhatGasCeiling(mainnetCeiling) {
+    return (mainnetCeiling * HARDHAT_TO_MAINNET_DEN) / HARDHAT_TO_MAINNET_NUM
+  }
+
+  async function installEsMinterRuntime() {
+    const MockEsMinter = await ethers.getContractFactory('MockEsMinter')
+    const mock = await waitDeployed(await MockEsMinter.deploy())
+    const code = await ethers.provider.getCode(await mock.getAddress())
+    await ethers.provider.send('hardhat_setCode', [ES_MINTER_V3, code])
+  }
+
+  async function deployV2Nft(owner, { maxSupply = 10, randomPublicMint = true } = {}) {
+    const { wetn, club, router } = await deploySwapMocks()
+    const NFT = await ethers.getContractFactory('EditableERC721V2')
+    const nft = await waitDeployed(
+      await NFT.deploy(
+        'EditableV2',
+        'ED2',
+        owner.address,
+        await club.getAddress(),
+        await wetn.getAddress(),
+        await router.getAddress(),
+        { mintBurnBps: 0n, burnOnMint: false, royaltyBurnBps: 0 },
+        maxSupply,
+        500,
+        owner.address,
+        300,
+        ethers.ZeroAddress,
+        ethers.ZeroAddress,
+      ),
+    )
+    await nft.connect(owner).setBaseURI('ipfs://collection/')
+    await nft.connect(owner).setMintPrice(ethers.parseEther('1'))
+    if (randomPublicMint) {
+      await nft.connect(owner).setRandomPublicMint(true)
+    }
+    await nft.connect(owner).setMintable(true)
+    await nft.connect(owner).ownerMint(owner.address, '1.json')
+    return nft
+  }
+
+  async function measureEsMinterPath(nft, owner, buyer, qty) {
+    await installEsMinterRuntime()
+    await ethers.provider.send('hardhat_impersonateAccount', [ES_MINTER_V3])
+    await owner.sendTransaction({ to: ES_MINTER_V3, value: ethers.parseEther('100') })
+    const esMinter = await ethers.getSigner(ES_MINTER_V3)
+    const esContract = await ethers.getContractAt('MockEsMinter', ES_MINTER_V3, esMinter)
+
+    const base = ethers.parseEther('1') * BigInt(qty)
+    const buyerAddress = await buyer.getAddress()
+    const tx = await esContract.mint(await nft.getAddress(), qty, buyerAddress, {
+      value: base,
+      gasLimit: 5_000_000n,
+    })
+    const receipt = await tx.wait()
+
+    await ethers.provider.send('hardhat_stopImpersonatingAccount', [ES_MINTER_V3])
+    return receipt.gasUsed
+  }
+
+  for (const qty of [1, 2, 3, 4, 5]) {
+    it(`supports random public mint qty ${qty} through EsMinterV3 within ElectroSwap gas budget`, async function () {
+      const [owner, buyer] = await ethers.getSigners()
+      const nft = await deployV2Nft(owner)
+      const gasUsed = await measureEsMinterPath(nft, owner, buyer, qty)
+      const ceiling = hardhatGasCeiling(MAINNET_ES_GAS_CEILING[qty])
+
+      expect(gasUsed).to.be.lte(ceiling)
+      expect(await nft.totalSupply()).to.equal(BigInt(qty) + 1n)
+      for (let tokenId = 2n; tokenId <= BigInt(qty) + 1n; tokenId++) {
+        expect(await nft.ownerOf(tokenId)).to.equal(await buyer.getAddress())
+        expect(await nft.tokenURI(tokenId)).to.match(/^ipfs:\/\/collection\/\d+\.json$/)
+      }
+    })
+  }
 })

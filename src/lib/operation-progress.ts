@@ -46,7 +46,12 @@ export function completeWalletSteps(steps: WalletApprovalStep[]): WalletApproval
   return steps.map((step) => ({ ...step, done: true, active: false }))
 }
 
-export function saveDraftProgress(completed: number, total: number, phase: 'validating' | 'creating' | 'uploading' | 'finishing'): {
+export function saveDraftProgress(
+  completed: number,
+  total: number,
+  phase: 'validating' | 'creating' | 'uploading' | 'saving' | 'finishing',
+  detail?: { retrying?: boolean },
+): {
   active: true
   step: string
   progress: number | null
@@ -60,13 +65,26 @@ export function saveDraftProgress(completed: number, total: number, phase: 'vali
   if (phase === 'finishing') {
     return { active: true, step: 'Finishing up…', progress: 98 }
   }
+  if (phase === 'saving') {
+    if (total <= 0) {
+      return { active: true, step: 'Saving token metadata…', progress: 92 }
+    }
+    const ratio = completed / total
+    return {
+      active: true,
+      step: `Saving token metadata (${completed} of ${total})…`,
+      progress: 88 + ratio * 8,
+    }
+  }
   if (total <= 0) {
-    return { active: true, step: 'Uploading artwork & metadata…', progress: null }
+    return { active: true, step: 'Uploading artwork…', progress: null }
   }
   const ratio = completed / total
   return {
     active: true,
-    step: `Uploading token ${completed} of ${total}…`,
-    progress: 12 + ratio * 84,
+    step: detail?.retrying
+      ? `Retrying upload (${completed} of ${total} done)…`
+      : `Uploading artwork (${completed} of ${total})…`,
+    progress: 12 + ratio * 74,
   }
 }

@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { getSessionHeaders } from './auth'
+import { withRetry } from './resilient-retry'
 import type { Collection, CollectionToken } from '@/types/database'
 import type { FunctionsError } from '@supabase/supabase-js'
 
@@ -37,17 +38,18 @@ async function invokeFunction<T = Record<string, unknown>>(
   functionName: string,
   body: Record<string, unknown>,
 ): Promise<T> {
-  const { data, error } = await supabase.functions.invoke(functionName, {
-    body,
-    headers: getSessionHeaders(),
-  })
-  if (error) throw new Error(extractFunctionError(data, error))
-  if (data && typeof data === 'object' && 'error' in data && (data as { error?: string }).error) {
-    throw new Error(String((data as { error: string }).error))
-  }
-  return data as T
+  return withRetry(async () => {
+    const { data, error } = await supabase.functions.invoke(functionName, {
+      body,
+      headers: getSessionHeaders(),
+    })
+    if (error) throw new Error(extractFunctionError(data, error))
+    if (data && typeof data === 'object' && 'error' in data && (data as { error?: string }).error) {
+      throw new Error(String((data as { error: string }).error))
+    }
+    return data as T
+  }, { maxAttempts: 4 })
 }
-
 export async function createCollection(walletAddress: string, input: CollectionInput): Promise<Collection> {
   const data = await invokeFunction<{ collection: Collection }>('collection-api', {
     action: 'create_collection',
@@ -167,6 +169,7 @@ export async function syncTokenUri(
   contractAddress?: string
   functionName?: string
   args?: unknown[]
+  minted?: boolean
 }> {
   return invokeFunction('sync-token-uri', {
     walletAddress,
@@ -175,25 +178,61 @@ export async function syncTokenUri(
   })
 }
 
+export async function batchUpsertTokens(
+  walletAddress: string,
+  payload: {
+    collectionId: string
+    tokens: Array<{
+      tokenId: number
+      name: string
+      description?: string
+      attributes?: unknown[]
+      imageStoragePath: string
+      editionSize?: number
+    }>
+  },
+): Promise<CollectionToken[]> {
+  const data = await invokeFunction<{ tokens: CollectionToken[] }>('collection-api', {
+    action: 'batch_upsert_tokens',
+    walletAddress,
+    ...payload,
+  })
+  return data.tokens
+}
+
 export async function uploadImage(
   walletAddress: string,
   collectionId: string,
   tokenId: number,
   file: File,
 ): Promise<string> {
-  const buffer = await file.arrayBuffer()
-  const bytes = new Uint8Array(buffer)
-  let binary = ''
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
-  const imageBase64 = btoa(binary)
-
-  const data = await invokeFunction<{ path: string }>('collection-api', {
-    action: 'upload_image',
+  const contentType = file.type || 'image/png'
+  const prepared = await invokeFunction<{ path: string; signedUrl: string }>('collection-api', {
+    action: 'prepare_image_upload',
     walletAddress,
     collectionId,
     tokenId,
-    contentType: file.type || 'image/png',
-    imageBase64,
+    contentType,
   })
-  return data.path
+
+  const uploadResponse = await withRetry(
+    () =>
+      fetch(prepared.signedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': contentType },
+        body: file,
+      }),
+    { maxAttempts: 5 },
+  )
+  if (!uploadResponse.ok) {
+    throw new Error(`Image upload failed (${uploadResponse.status}). Try a smaller file or different format.`)
+  }
+
+  return prepared.path
+}
+export async function publishGemShards(network: 'mainnet' | 'testnet') {
+  return invokeFunction<{ status: string; network: string }>('gem-shards-api', {
+    action: 'publish_gem_shards',
+    network,
+  })
 }

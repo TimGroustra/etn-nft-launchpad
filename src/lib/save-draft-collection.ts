@@ -1,24 +1,9 @@
-import { addToken, deleteToken, updateCollection, updateToken, uploadImage } from '@/lib/api'
-
-const SAVE_CONCURRENCY = 4
-
-async function mapWithConcurrency<T>(
-  items: T[],
-  limit: number,
-  fn: (item: T, index: number) => Promise<void>,
-): Promise<void> {
-  if (items.length === 0) return
-  let nextIndex = 0
-
-  async function worker() {
-    while (nextIndex < items.length) {
-      const index = nextIndex++
-      await fn(items[index], index)
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()))
-}
+import { deleteToken, updateCollection } from '@/lib/api'
+import {
+  type PreparedUploadRow,
+  type UploadProgressDetail,
+  uploadAndPersistDraftTokens,
+} from '@/lib/collection-upload'
 import {
   clampRoyaltyBurnPercent,
   clampMintBurnPercent,
@@ -36,7 +21,7 @@ import {
 } from '@/lib/create-collection-validation'
 import { dedupeDbTokensByTokenId, getRowTokenId } from '@/lib/draft-token-rows'
 import type { NftAttribute } from '@/lib/nft-metadata'
-import { assertStoragePathForCollection, validateCollectionImagePath } from '@/lib/storage-paths'
+import { assertStoragePathForCollection } from '@/lib/storage-paths'
 import type { Collection, CollectionToken } from '@/types/database'
 
 export type CollectionEditChanges = {
@@ -167,8 +152,12 @@ export async function saveDraftCollection(
   form: CreateCollectionForm,
   tokens: DraftToken[],
   existingDbTokens: CollectionToken[] = [],
-  collectionMeta?: Pick<Collection, 'chain_id'>,
+  collectionMeta?: Pick<Collection, 'chain_id' | 'name' | 'symbol' | 'description' | 'mint_mode' | 'max_supply' | 'mint_burn_bps' | 'burn_on_mint' | 'royalty_burn_bps' | 'royalty_bps' | 'mint_price_etn' | 'max_mint_per_wallet' | 'show_on_mint_panel' | 'mint_panel_admin_only' | 'random_public_mint'>,
   onProgress?: (completed: number, total: number) => void,
+  options?: {
+    importSessionId?: string | null
+    onDetailProgress?: (detail: UploadProgressDetail) => void
+  },
 ) {
   const sanitized = sanitizeFormForMode(form, tokens)
   const dedupedExisting = dedupeDbTokensByTokenId(existingDbTokens)
@@ -179,87 +168,63 @@ export async function saveDraftCollection(
       .map((token) => [token.token_id!, token]),
   )
 
-  await updateCollection(walletAddress, collectionId, {
-    name: sanitized.name.trim(),
-    symbol: sanitized.symbol.trim().toUpperCase(),
-    description: sanitized.description,
-    mintMode: sanitized.mintMode,
-    maxSupply: sanitized.maxSupply,
-    mintBurnBps:
-      sanitized.mintMode === 'lazy'
-        ? mintBurnBpsFromPercent(sanitized.mintBurnPercent)
-        : percentToBps(Number(sanitized.mintBurnPercent)),
-    burnOnMint: sanitized.burnOnMint,
-    royaltyBurnBps: royaltyBurnBpsFromPercent(sanitized.royaltyBurnPercent),
-    royaltyBps: percentToBps(Number(sanitized.royaltyPercent)),
-    mintPriceEtn: sanitized.enablePublicMint ? Number(sanitized.mintPriceEtn) : 0,
-    maxMintPerWallet: Number(sanitized.maxMintPerWallet) || 0,
-    showOnMintPanel: sanitized.enablePublicMint && sanitized.showOnMintPanel,
-    ...(sanitized.mintPanelAdminOnly !== undefined
-      ? { mintPanelAdminOnly: sanitized.enablePublicMint && sanitized.mintPanelAdminOnly }
-      : {}),
-    randomPublicMint: sanitized.enablePublicMint && sanitized.randomPublicMint,
-    chainId: collectionMeta?.chain_id ?? undefined,
-  })
+  if (!collectionMeta || !collectionFormMatchesCollection(sanitized, collectionMeta)) {
+    await updateCollection(walletAddress, collectionId, {
+      name: sanitized.name.trim(),
+      symbol: sanitized.symbol.trim().toUpperCase(),
+      description: sanitized.description,
+      mintMode: sanitized.mintMode,
+      maxSupply: sanitized.maxSupply,
+      mintBurnBps:
+        sanitized.mintMode === 'lazy'
+          ? mintBurnBpsFromPercent(sanitized.mintBurnPercent)
+          : percentToBps(Number(sanitized.mintBurnPercent)),
+      burnOnMint: sanitized.burnOnMint,
+      royaltyBurnBps: royaltyBurnBpsFromPercent(sanitized.royaltyBurnPercent),
+      royaltyBps: percentToBps(Number(sanitized.royaltyPercent)),
+      mintPriceEtn: sanitized.enablePublicMint ? Number(sanitized.mintPriceEtn) : 0,
+      maxMintPerWallet: Number(sanitized.maxMintPerWallet) || 0,
+      showOnMintPanel: sanitized.enablePublicMint && sanitized.showOnMintPanel,
+      ...(sanitized.mintPanelAdminOnly !== undefined
+        ? { mintPanelAdminOnly: sanitized.enablePublicMint && sanitized.mintPanelAdminOnly }
+        : {}),
+      randomPublicMint: sanitized.enablePublicMint && sanitized.randomPublicMint,
+      chainId: collectionMeta?.chain_id ?? undefined,
+    })
+  }
 
   const keptByTokenId = new Map<number, string>()
-  const activeRows: { token: DraftToken; rowIndex: number }[] = []
+  const activeRows: PreparedUploadRow[] = []
 
   for (let rowIndex = 0; rowIndex < tokens.length; rowIndex++) {
     const token = tokens[rowIndex]
     if (isTokenRowEmpty(token)) continue
-    activeRows.push({ token, rowIndex })
+    activeRows.push({ token, rowIndex, tokenId: getRowTokenId(token, rowIndex) })
   }
 
   onProgress?.(0, activeRows.length)
-  let completed = 0
+  options?.onDetailProgress?.({ phase: 'uploading', completed: 0, total: activeRows.length })
 
-  await mapWithConcurrency(activeRows, SAVE_CONCURRENCY, async ({ token, rowIndex }) => {
-    const tokenId = getRowTokenId(token, rowIndex)
-    let imagePath = token.existingImagePath ?? undefined
+  const uploaded = await uploadAndPersistDraftTokens(
+    walletAddress,
+    collectionId,
+    activeRows,
+    existingByTokenId,
+    existingByDbId,
+    {
+      importSessionId: options?.importSessionId,
+      onProgress: (detail) => {
+        options?.onDetailProgress?.(detail)
+        if (detail.phase === 'uploading') {
+          onProgress?.(detail.completed, detail.total)
+        }
+      },
+    },
+  )
 
-    if (token.file) {
-      imagePath = await uploadImage(walletAddress, collectionId, tokenId, token.file)
-    } else if (imagePath) {
-      const pathError = validateCollectionImagePath(collectionId, tokenId, imagePath)
-      if (pathError) throw new Error(`Token #${tokenId}: ${pathError}`)
-    }
-
-    if (!imagePath) {
-      throw new Error(`Token #${tokenId} is missing an image.`)
-    }
-
-    const payload = {
-      name: token.name.trim(),
-      description: token.description.trim(),
-      attributes: getTokenAttributesForSave(token),
-      imageStoragePath: imagePath,
-      editionSize: Math.max(1, Number(token.editionSize ?? 1)),
-    }
-
-    const existingRow =
-      (token.dbTokenId ? existingByDbId.get(token.dbTokenId) : undefined) ??
-      existingByTokenId.get(tokenId)
-
-    if (existingRow) {
-      await updateToken(walletAddress, {
-        tokenId: existingRow.id,
-        tokenNumber: tokenId,
-        ...payload,
-      })
-      keptByTokenId.set(tokenId, existingRow.id)
-    } else {
-      const created = await addToken(walletAddress, {
-        collectionId,
-        tokenId,
-        ...payload,
-      })
-      keptByTokenId.set(tokenId, created.id)
-    }
-
-    completed += 1
-    onProgress?.(completed, activeRows.length)
-  })
+  for (const [tokenId, dbId] of uploaded.entries()) {
+    keptByTokenId.set(tokenId, dbId)
+  }
 
   for (const existing of dedupedExisting) {
     if (existing.token_id == null) continue
@@ -267,6 +232,47 @@ export async function saveDraftCollection(
     if (keptId === existing.id) continue
     await deleteToken(walletAddress, existing.id)
   }
+}
+
+function collectionFormMatchesCollection(
+  form: CreateCollectionForm,
+  collection: Pick<
+    Collection,
+    | 'name'
+    | 'symbol'
+    | 'description'
+    | 'mint_mode'
+    | 'max_supply'
+    | 'mint_burn_bps'
+    | 'burn_on_mint'
+    | 'royalty_burn_bps'
+    | 'royalty_bps'
+    | 'mint_price_etn'
+    | 'max_mint_per_wallet'
+    | 'show_on_mint_panel'
+    | 'mint_panel_admin_only'
+    | 'random_public_mint'
+    | 'chain_id'
+  >,
+): boolean {
+  const current = collectionToForm(collection as Collection)
+  return (
+    form.name.trim() === current.name.trim() &&
+    form.symbol.trim().toUpperCase() === current.symbol.trim().toUpperCase() &&
+    form.description === current.description &&
+    form.mintMode === current.mintMode &&
+    form.maxSupply === current.maxSupply &&
+    form.mintBurnPercent === current.mintBurnPercent &&
+    form.burnOnMint === current.burnOnMint &&
+    form.royaltyBurnPercent === current.royaltyBurnPercent &&
+    form.royaltyPercent === current.royaltyPercent &&
+    form.mintPriceEtn === current.mintPriceEtn &&
+    form.maxMintPerWallet === current.maxMintPerWallet &&
+    form.enablePublicMint === current.enablePublicMint &&
+    form.showOnMintPanel === current.showOnMintPanel &&
+    (form.mintPanelAdminOnly ?? false) === (current.mintPanelAdminOnly ?? false) &&
+    form.randomPublicMint === current.randomPublicMint
+  )
 }
 
 export function collectionToUpdatePayload(collection: Collection, overrides: Record<string, unknown> = {}) {

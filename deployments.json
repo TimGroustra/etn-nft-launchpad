@@ -6,11 +6,16 @@
     "deployer": "0x126aa663BdeDd6Ae477fd28a7d0b624b8109D15d",
     "txHash": "0x00a07990053962fea20e924ecd29c5852c4a6aa21c7519f7426525ae86439a38",
     "swapRouter": "0x5A3AB7e9f405250B36e7e0a4654c1052EADC1F07",
-    "LaunchpadFactoryERC721V2": "0x138ce43b4a1280c64cec643f87c8351337c09515",
+    "LaunchpadFactoryERC721V2": "0x1024343962B163fE416C8984D730B43627b0D82a",
     "LaunchpadFactoryERC1155": "0x5baa6D81Df03af08187A6cA9A42e771086f68B2d",
-    "LaunchpadMinter": "0xabb43aef01a230e02e1c416666c1e7664b0660e5",
-    "launchpadMinterDeployedAt": "2026-08-26T10:17:00.000Z",
-    "v2DeployedAt": "2026-08-26T10:17:47.221Z"
+    "LaunchpadMinter": "0xd3E7a43fbeBde69073f82C89D2c47b75e556Fb9a",
+    "launchpadMinterDeployedAt": "2026-08-28T12:42:00.000Z",
+    "previousLaunchpadMinter": "0xf1a218B896d98C68690670B56d6b608894841F2C",
+    "v2DeployedAt": "2026-08-26T12:04:02.128Z",
+    "PublishFeeDistributor": "0xd6e206EabD292A025b49033b115B5EB744e5529E",
+    "GemShards": "0xbC80e6D3902397c7Eaa2297D70054ECb6C9568e7",
+    "gemShardsDeployedAt": "2026-08-28T12:19:16.047Z",
+    "previousGemShards": "0xD202c613Fd479beb066414b6eAE2F2a4A4A6f2a6"
   },
   "electroneumTestnet": {
     "LaunchpadFactory": "0x368Fe607F06ab5Ee022755Db854e0CC49f7469e7",
@@ -20,6 +25,10 @@
     "deployedAt": "2026-08-21T22:04:56.454Z",
     "deployer": "0x126aa663BdeDd6Ae477fd28a7d0b624b8109D15d",
     "txHash": "0xdc72eb00ea646c88830c71bae7600824c1bf824d8ab09efd3a93351ac418cfd6",
-    "note": "Editable factory with mintBurnBps (% of mint price) — swap addresses, publish fee, treasury, and default royalty are owner-configurable"
+    "note": "Editable factory with mintBurnBps (% of mint price) — swap addresses, publish fee, treasury, and default royalty are owner-configurable",
+    "PublishFeeDistributor": "0x04a02940BaD8f51673a87149Acb656b4ef736989",
+    "GemShards": "0x53B72F6f910eCEeEe57374604A5730bA07352ea2",
+    "LaunchpadMinter": "0x8Cf63C9246df7bDdC7962CC975f192C7f3631276",
+    "gemShardsDeployedAt": "2026-08-28T09:39:45.037Z"
   }
 }

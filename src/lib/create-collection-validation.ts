@@ -23,25 +23,35 @@ export function estimateSellerRemainderPercent(
   return Math.max(0, 100 - royaltyPercent - marketplaceFeePercent)
 }
 
-export function clampRoyaltyBurnPercent(percent: string): string {
+export type CollectionValidationOptions = {
+  dualHolderBurnExempt?: boolean
+}
+
+export function clampRoyaltyBurnPercent(
+  percent: string,
+  minPercent: number = MIN_ROYALTY_BURN_PERCENT,
+): string {
   const num = Number(formatPercentDisplay(percent)) || 0
-  const clamped = Math.max(MIN_ROYALTY_BURN_PERCENT, Math.min(100, num))
+  const clamped = Math.max(minPercent, Math.min(100, num))
   return formatPercentDisplay(String(clamped))
 }
 
-export function clampMintBurnPercent(percent: string): string {
+export function clampMintBurnPercent(percent: string, minPercent: number = MIN_MINT_BURN_PERCENT): string {
   const num = Number(formatPercentDisplay(percent)) || 0
-  const clamped = Math.max(MIN_MINT_BURN_PERCENT, Math.min(100, num))
+  const clamped = Math.max(minPercent, Math.min(100, num))
   return formatPercentDisplay(String(clamped))
 }
 
-export function royaltyBurnBpsFromPercent(percent: string): number {
-  const num = Number(clampRoyaltyBurnPercent(percent)) || MIN_ROYALTY_BURN_PERCENT
+export function royaltyBurnBpsFromPercent(
+  percent: string,
+  minPercent: number = MIN_ROYALTY_BURN_PERCENT,
+): number {
+  const num = Number(clampRoyaltyBurnPercent(percent, minPercent)) || minPercent
   return Math.min(10_000, Math.round(num * 100))
 }
 
-export function mintBurnBpsFromPercent(percent: string): number {
-  const num = Number(clampMintBurnPercent(percent)) || MIN_MINT_BURN_PERCENT
+export function mintBurnBpsFromPercent(percent: string, minPercent: number = MIN_MINT_BURN_PERCENT): number {
+  const num = Number(clampMintBurnPercent(percent, minPercent)) || minPercent
   return Math.min(10_000, Math.round(num * 100))
 }
 
@@ -70,6 +80,8 @@ export type DraftToken = {
   name: string
   description: string
   file: File | null
+  /** IndexedDB key when artwork is staged for large bulk imports or resume. */
+  stagedFileKey?: string | null
   existingImagePath?: string | null
   attributes: NftAttribute[]
   editionSize?: number
@@ -225,8 +237,15 @@ export function canEnablePublicMint(form: CreateCollectionForm): boolean {
   return form.mintMode !== 'batch'
 }
 
-export function sanitizeFormForMode(form: CreateCollectionForm, _tokens: DraftToken[]): CreateCollectionForm {
+export function sanitizeFormForMode(
+  form: CreateCollectionForm,
+  _tokens: DraftToken[],
+  options?: CollectionValidationOptions,
+): CreateCollectionForm {
   const next = { ...form }
+  const dualHolderBurnExempt = Boolean(options?.dualHolderBurnExempt)
+  const minRoyaltyBurn = dualHolderBurnExempt ? 0 : MIN_ROYALTY_BURN_PERCENT
+  const minMintBurn = dualHolderBurnExempt ? 0 : MIN_MINT_BURN_PERCENT
 
   if (next.mintMode === 'batch') {
     next.enablePublicMint = false
@@ -248,12 +267,16 @@ export function sanitizeFormForMode(form: CreateCollectionForm, _tokens: DraftTo
     next.randomPublicMint = false
   }
 
-  if (next.mintMode === 'lazy') {
+  if (next.mintMode === 'lazy' && !dualHolderBurnExempt) {
     next.burnOnMint = true
-    next.mintBurnPercent = clampMintBurnPercent(next.mintBurnPercent || String(MIN_MINT_BURN_PERCENT))
+    next.mintBurnPercent = clampMintBurnPercent(next.mintBurnPercent || String(MIN_MINT_BURN_PERCENT), minMintBurn)
+  } else if (next.mintMode === 'lazy' && dualHolderBurnExempt && !next.burnOnMint) {
+    next.mintBurnPercent = '0'
+  } else if (next.burnOnMint) {
+    next.mintBurnPercent = clampMintBurnPercent(next.mintBurnPercent || String(minMintBurn), minMintBurn)
   }
 
-  next.royaltyBurnPercent = clampRoyaltyBurnPercent(next.royaltyBurnPercent)
+  next.royaltyBurnPercent = clampRoyaltyBurnPercent(next.royaltyBurnPercent, minRoyaltyBurn)
 
   return next
 }
@@ -406,9 +429,13 @@ export function validateCreateStep(
   step: number,
   form: CreateCollectionForm,
   tokens: DraftToken[],
+  options?: CollectionValidationOptions,
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = []
-  const f = sanitizeFormForMode(form, tokens)
+  const dualHolderBurnExempt = Boolean(options?.dualHolderBurnExempt)
+  const minRoyaltyBurn = dualHolderBurnExempt ? 0 : MIN_ROYALTY_BURN_PERCENT
+  const minMintBurn = dualHolderBurnExempt ? 0 : MIN_MINT_BURN_PERCENT
+  const f = sanitizeFormForMode(form, tokens, options)
 
   if (step === 0) {
     const name = f.name.trim()
@@ -463,14 +490,17 @@ export function validateCreateStep(
     }
 
     const royalty = Number(f.royaltyBurnPercent)
-    if (!Number.isFinite(royalty) || royalty < MIN_ROYALTY_BURN_PERCENT || royalty > 100) {
+    if (!Number.isFinite(royalty) || royalty < minRoyaltyBurn || royalty > 100) {
       issues.push({
         field: 'royaltyBurnPercent',
-        message: `Burn from resales must be between ${MIN_ROYALTY_BURN_PERCENT}% and 100%.`,
+        message:
+          minRoyaltyBurn > 0
+            ? `Burn from resales must be between ${MIN_ROYALTY_BURN_PERCENT}% and 100%.`
+            : 'Burn from resales must be between 0% and 100%.',
       })
     }
 
-    if (f.mintMode === 'lazy') {
+    if (f.mintMode === 'lazy' && !dualHolderBurnExempt) {
       if (!f.burnOnMint) {
         issues.push({
           field: 'burnOnMint',
@@ -478,7 +508,7 @@ export function validateCreateStep(
         })
       }
       const mintBurn = Number(f.mintBurnPercent)
-      if (!Number.isFinite(mintBurn) || mintBurn < MIN_MINT_BURN_PERCENT || mintBurn > 100) {
+      if (!Number.isFinite(mintBurn) || mintBurn < minMintBurn || mintBurn > 100) {
         issues.push({
           field: 'mintBurnPercent',
           message: `Mint CLUB burn must be between ${MIN_MINT_BURN_PERCENT}% and 100% for public minting collections.`,
@@ -503,22 +533,30 @@ export function validateCreateStep(
   return issues
 }
 
-export function validateBeforeSave(form: CreateCollectionForm, tokens: DraftToken[]): ValidationIssue[] {
+export function validateBeforeSave(
+  form: CreateCollectionForm,
+  tokens: DraftToken[],
+  options?: CollectionValidationOptions,
+): ValidationIssue[] {
   const all: ValidationIssue[] = []
   for (let step = 0; step <= 3; step++) {
-    all.push(...validateCreateStep(step, form, tokens))
+    all.push(...validateCreateStep(step, form, tokens, options))
   }
   return dedupeIssues(all)
 }
 
-export function inferDraftResumeStep(form: CreateCollectionForm, tokens: DraftToken[]): number {
-  const sanitized = sanitizeFormForMode(form, tokens)
+export function inferDraftResumeStep(
+  form: CreateCollectionForm,
+  tokens: DraftToken[],
+  options?: CollectionValidationOptions,
+): number {
+  const sanitized = sanitizeFormForMode(form, tokens, options)
   for (let step = 0; step <= 3; step++) {
-    if (validateCreateStep(step, sanitized, tokens).length > 0) {
+    if (validateCreateStep(step, sanitized, tokens, options).length > 0) {
       return step
     }
   }
-  return validateBeforeSave(sanitized, tokens).length === 0 ? 4 : 3
+  return validateBeforeSave(sanitized, tokens, options).length === 0 ? 4 : 3
 }
 
 export function dedupeIssues(issues: ValidationIssue[]): ValidationIssue[] {
@@ -561,7 +599,11 @@ export type SavedTokenShape = {
 export function validateCollectionForPublish(
   collection: SavedCollectionShape,
   tokens: SavedTokenShape[],
+  options?: CollectionValidationOptions,
 ): ValidationIssue[] {
+  const dualHolderBurnExempt = Boolean(options?.dualHolderBurnExempt)
+  const minRoyaltyBurnBps = dualHolderBurnExempt ? 0 : MIN_ROYALTY_BURN_BPS
+  const minMintBurnBps = dualHolderBurnExempt ? 0 : MIN_MINT_BURN_BPS
   const publicMint = Number(collection.mint_price_etn ?? 0) > 0
   const issues: ValidationIssue[] = []
   const analysis = analyzeCollectionTokenCoverage(collection.max_supply, tokens)
@@ -609,15 +651,18 @@ export function validateCollectionForPublish(
   }
 
   const royaltyBurnBps = Number(collection.royalty_burn_bps ?? 0)
-  if (royaltyBurnBps < MIN_ROYALTY_BURN_BPS) {
+  if (royaltyBurnBps < minRoyaltyBurnBps) {
     issues.push({
       field: 'royaltyBurnPercent',
-      message: `Burn from resales must be at least ${MIN_ROYALTY_BURN_PERCENT}%.`,
+      message:
+        minRoyaltyBurnBps > 0
+          ? `Burn from resales must be at least ${MIN_ROYALTY_BURN_PERCENT}%.`
+          : 'Burn from resales cannot be negative.',
     })
   }
 
-  if (collection.mint_mode === 'lazy') {
-    if (!collection.burn_on_mint || Number(collection.mint_burn_bps ?? 0) < MIN_MINT_BURN_BPS) {
+  if (collection.mint_mode === 'lazy' && !dualHolderBurnExempt) {
+    if (!collection.burn_on_mint || Number(collection.mint_burn_bps ?? 0) < minMintBurnBps) {
       issues.push({
         field: 'mintBurnPercent',
         message: `Public minting collections require at least ${MIN_MINT_BURN_PERCENT}% of mint price burned as CLUB.`,

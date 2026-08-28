@@ -1,25 +1,26 @@
 import { Link } from 'react-router-dom'
 import { useAccount } from 'wagmi'
-import { useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi'
+import { useWaitForTransactionReceipt, useReadContract } from 'wagmi'
+import { useChainWriteContract } from '@/hooks/useChainWriteContract'
 import { createPublicClient, http, type TransactionReceipt } from 'viem'
 import { toast } from 'sonner'
 import { useState, type ReactNode } from 'react'
 import { ChevronDown } from 'lucide-react'
-import { useCollections, useArchivedCollections } from '@/hooks/useCollections'
+import { useCollections, useArchivedCollections, useOtherCollections } from '@/hooks/useCollections'
 import { WalletAuthButton, useWalletAuth } from '@/hooks/useWalletAuth'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
 import { CollectionOwnerPanel } from '@/components/CollectionOwnerPanel'
-import { CreatorAccessUpsell } from '@/components/CreatorAccessUpsell'
+import { GemShardsAdminCard } from '@/components/GemShardsAdminCard'
+import { HolderPerksCard } from '@/components/HolderPerksCard'
 import { DraftPublishButton } from '@/components/DraftPublishButton'
 import { CollectionMetadataAdminActions } from '@/components/CollectionMetadataAdminActions'
 import { WalletConnectButton } from '@/components/WalletConnectButton'
 import { useNetwork } from '@/context/NetworkContext'
 import { formatEther } from 'viem'
-import { FACTORY_ABI, FACTORY_V2_ABI, getChainId, getPublishFeeWei, readRequiredPublishFeeWei, resolveDeployedCollectionAddress } from '@/lib/blockchain'
+import { FACTORY_ABI, FACTORY_V2_ABI, getChainId, getPublishFeeWei, readRequiredPublishFeeWei, resolveDeployedCollectionAddress, isTreasuryWallet } from '@/lib/blockchain'
 import { usePlatformConfig, resolveFactoryAddress, resolveFactoryV2Address } from '@/hooks/usePlatformConfig'
 import { getCollectionTokenStandard, getFactoryDeployFunction, usesFactoryV2 } from '@/lib/collection-contract'
-import { useCanAccessCreatorTools } from '@/hooks/useCanAccessCreatorTools'
 import { useAdmin } from '@/hooks/useAdmin'
 import { useCreatorAccess } from '@/hooks/useCreatorAccess'
 import { PUBLISH_FEE_SUPPLY_UNIT } from '@/lib/platform-fees'
@@ -33,17 +34,23 @@ import { activateWalletStep, buildPublishWalletSteps, completeWalletSteps } from
 import { cn } from '@/lib/utils'
 import type { Collection } from '@/types/database'
 
+function shortWallet(wallet: string) {
+  return `${wallet.slice(0, 6)}…${wallet.slice(-4)}`
+}
+
 function CollectionAccordionItem({
   collection,
   expanded,
   onToggle,
   disabled = false,
+  subtitle,
   children,
 }: {
   collection: Collection
   expanded: boolean
   onToggle: () => void
   disabled?: boolean
+  subtitle?: string
   children: ReactNode
 }) {
   const networkLabel =
@@ -67,6 +74,7 @@ function CollectionAccordionItem({
             {collection.status} · {formatMintModeLabel(collection.mint_mode)} · {collection.symbol}
             {networkLabel ? ` · ${networkLabel}` : ''}
           </CardDescription>
+          {subtitle && <p className="mt-1 text-xs text-slate-500">{subtitle}</p>}
           {collection.contract_address && !expanded && (
             <p className="mt-1 text-xs text-green-400">Published on-chain</p>
           )}
@@ -83,15 +91,21 @@ function CollectionAccordionItem({
 export function DashboardPage() {
   const { address, isConnected } = useAccount()
   const { isAuthenticated } = useWalletAuth()
-  const { canAccessCreatorTools } = useCanAccessCreatorTools()
   const { isAdmin } = useAdmin()
-  const { hasDualHolderDiscount, holdingsLoading, holdings } = useCreatorAccess()
+  const isTreasuryAdmin = isTreasuryWallet(address)
+  const { hasDualHolderDiscount, holdings } = useCreatorAccess()
   const { network, chain } = useNetwork()
   const chainId = getChainId(network)
   const { data: collections = [], refetch: refetchActive } = useCollections(address, chainId, 'active')
   const { data: archivedCollections = [], refetch: refetchArchived } = useArchivedCollections(address, chainId)
+  const { data: otherCollections = [], refetch: refetchOther } = useOtherCollections(
+    address,
+    chainId,
+    isTreasuryAdmin,
+  )
   const [view, setView] = useState<'active' | 'archive'>('active')
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [expandedOtherId, setExpandedOtherId] = useState<string | null>(null)
   const [publishingId, setPublishingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [archivingId, setArchivingId] = useState<string | null>(null)
@@ -108,7 +122,7 @@ export function DashboardPage() {
     isPublishing,
     'Publishing is in progress. Leaving now may leave your collection in an incomplete state.',
   )
-  const { writeContractAsync, data: txHash } = useWriteContract()
+  const { writeContractAsync, data: txHash } = useChainWriteContract()
   const { isLoading: confirming } = useWaitForTransactionReceipt({ hash: txHash })
 
   const { data: platformConfig } = usePlatformConfig()
@@ -128,6 +142,7 @@ export function DashboardPage() {
   const refetchAll = () => {
     void refetchActive()
     void refetchArchived()
+    if (isTreasuryAdmin) void refetchOther()
   }
 
   const publish = async (collection: (typeof collections)[0]) => {
@@ -159,7 +174,7 @@ export function DashboardPage() {
           name: t.name ?? '',
           image_storage_path: t.image_storage_path,
         }]
-      }))
+      }), { dualHolderBurnExempt: hasDualHolderDiscount })
       const publishError = firstIssueMessage(publishIssues)
       if (publishError) {
         toast.error(publishError)
@@ -476,7 +491,6 @@ export function DashboardPage() {
             Manage your NFT collections on {chain.name}. Connect a wallet to view your drafts and published collections.
           </p>
         </div>
-        <CreatorAccessUpsell />
         <Card>
           <CardTitle>Connect wallet</CardTitle>
           <CardDescription className="mt-2">Connect an Electroneum wallet to sign in and manage your collections.</CardDescription>
@@ -495,7 +509,6 @@ export function DashboardPage() {
           <h1 className="text-3xl font-bold">Creator Dashboard</h1>
           <p className="mt-2 text-sm text-slate-400">Sign in to view and manage your collections on {chain.name}.</p>
         </div>
-        <CreatorAccessUpsell />
         <Card>
           <CardTitle>Sign in required</CardTitle>
           <CardDescription className="mt-2">Authenticate with your connected wallet to access your dashboard.</CardDescription>
@@ -506,8 +519,6 @@ export function DashboardPage() {
       </div>
     )
   }
-
-  const showCreatorUpsell = !holdingsLoading && !canAccessCreatorTools
 
   return (
     <div className="space-y-6">
@@ -536,6 +547,7 @@ export function DashboardPage() {
             onClick={() => {
               setView('active')
               setExpandedId(null)
+              setExpandedOtherId(null)
             }}
           >
             Active ({collections.length})
@@ -546,11 +558,12 @@ export function DashboardPage() {
             onClick={() => {
               setView('archive')
               setExpandedId(null)
+              setExpandedOtherId(null)
             }}
           >
             Archive ({archivedCollections.length})
           </Button>
-          {view === 'active' && canAccessCreatorTools && (
+          {view === 'active' && (
             <Button asChild disabled={isPublishing}>
               <Link to="/create" tabIndex={isPublishing ? -1 : undefined} aria-disabled={isPublishing}>
                 New Collection
@@ -560,7 +573,9 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {showCreatorUpsell && <CreatorAccessUpsell />}
+      <GemShardsAdminCard />
+
+      {!hasDualHolderDiscount && view === 'active' && <HolderPerksCard />}
 
       {hasDualHolderDiscount && view === 'active' && (
         <Card className="border-emerald-500/30 bg-emerald-500/10 p-4">
@@ -622,25 +637,15 @@ export function DashboardPage() {
                     <>
                       {collection.status === 'draft' && (
                         <>
-                          {usesFactoryV2(collection) && isAdmin ? (
-                            <CollectionMetadataAdminActions
-                              collection={collection}
-                              disabled={isPublishing}
-                              onComplete={() => void refetchAll()}
-                            />
-                          ) : (
-                            canAccessCreatorTools && (
-                              <Button variant="outline" asChild disabled={isPublishing}>
-                                <Link
-                                  to={`/draft/${collection.id}/edit`}
-                                  tabIndex={isPublishing ? -1 : undefined}
-                                  aria-disabled={isPublishing}
-                                >
-                                  Edit
-                                </Link>
-                              </Button>
-                            )
-                          )}
+                          <Button variant="outline" asChild disabled={isPublishing}>
+                              <Link
+                                to={`/draft/${collection.id}/edit`}
+                                tabIndex={isPublishing ? -1 : undefined}
+                                aria-disabled={isPublishing}
+                              >
+                                Edit
+                              </Link>
+                            </Button>
                           <Button
                             variant="outline"
                             onClick={() => deleteDraft(collection)}
@@ -664,12 +669,23 @@ export function DashboardPage() {
                       )}
                       {collection.contract_address && (
                         <>
-                          {usesFactoryV2(collection) && isAdmin && (
+                          {isAdmin && (
                             <CollectionMetadataAdminActions
                               collection={collection}
                               disabled={isPublishing}
                               onComplete={() => void refetchAll()}
                             />
+                          )}
+                          {!isAdmin && !usesFactoryV2(collection) && (
+                            <Button variant="outline" asChild disabled={isPublishing}>
+                              <Link
+                                to={`/collection/${collection.contract_address}/edit`}
+                                tabIndex={isPublishing ? -1 : undefined}
+                                aria-disabled={isPublishing}
+                              >
+                                Edit
+                              </Link>
+                            </Button>
                           )}
                           <Button variant="outline" asChild disabled={isPublishing}>
                             <Link
@@ -710,6 +726,90 @@ export function DashboardPage() {
             )
           })}
         </div>
+      )}
+
+      {view === 'active' && isTreasuryAdmin && (
+        <section className="space-y-4 border-t border-slate-800 pt-8">
+          <div>
+            <h2 className="text-2xl font-bold">Other Collections</h2>
+            <p className="text-sm text-slate-400">
+              All launchpad collections on {chain.name} — treasury admin can edit metadata and use owner tools.
+            </p>
+          </div>
+          {otherCollections.length === 0 ? (
+            <Card>
+              <CardDescription>No other collections on {chain.name}.</CardDescription>
+            </Card>
+          ) : (
+            <div className="grid gap-4">
+              {otherCollections.map((collection) => {
+                const expanded = expandedOtherId === collection.id
+                return (
+                  <CollectionAccordionItem
+                    key={collection.id}
+                    collection={collection}
+                    expanded={expanded}
+                    disabled={isPublishing}
+                    subtitle={`Creator ${shortWallet(collection.creator_wallet)}`}
+                    onToggle={() => setExpandedOtherId(expanded ? null : collection.id)}
+                  >
+                    {collection.contract_address && (
+                      <p className="text-xs text-amber-300/90">
+                        Treasury admin mode — on-chain actions require the collection owner wallet unless you own the
+                        contract.
+                      </p>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      {collection.status === 'draft' && (
+                        <Button variant="outline" asChild disabled={isPublishing}>
+                          <Link
+                            to={`/draft/${collection.id}/edit`}
+                            tabIndex={isPublishing ? -1 : undefined}
+                            aria-disabled={isPublishing}
+                          >
+                            Admin edit
+                          </Link>
+                        </Button>
+                      )}
+                      {collection.contract_address && (
+                        <>
+                          <CollectionMetadataAdminActions
+                            collection={collection}
+                            disabled={isPublishing}
+                            onComplete={() => void refetchAll()}
+                          />
+                          <Button variant="outline" asChild disabled={isPublishing}>
+                            <Link
+                              to={`/collection/${collection.contract_address}`}
+                              tabIndex={isPublishing ? -1 : undefined}
+                              aria-disabled={isPublishing}
+                            >
+                              View
+                            </Link>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => verifyOnExplorer(collection)}
+                            disabled={isPublishing || verifyingId === collection.id}
+                          >
+                            {verifyingId === collection.id ? 'Verifying…' : 'Verify on explorer'}
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                    {collection.contract_address && (
+                      <CollectionOwnerPanel
+                        collection={collection}
+                        chainId={chain.id}
+                        onUpdated={() => void refetchAll()}
+                      />
+                    )}
+                  </CollectionAccordionItem>
+                )
+              })}
+            </div>
+          )}
+        </section>
       )}
     </div>
   )

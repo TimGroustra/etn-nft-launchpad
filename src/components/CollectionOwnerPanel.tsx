@@ -1,17 +1,39 @@
-import { useAccount, useBalance, useReadContract, useWriteContract } from 'wagmi'
-import { formatEther, parseEther } from 'viem'
-import { useState } from 'react'
+import { useAccount, useBalance, useReadContract } from 'wagmi'
+import { formatEther, getAddress, isAddress, parseEther } from 'viem'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { CardDescription, CardTitle } from '@/components/ui/card'
-import { NFT_ABI } from '@/lib/blockchain'
+import { Input, Label } from '@/components/ui/input'
+import { getCollectionContractAbi, NFT_ABI } from '@/lib/blockchain'
 import { syncTokenUri, updateToken } from '@/lib/api'
 import { getOnChainTokenUriSuffix } from '@/lib/collection-metadata'
 import { getCollectionTokenStandard } from '@/lib/collection-contract'
 import { configureErc1155EditionCaps } from '@/lib/publish-collection'
 import { formatPercentDisplay } from '@/lib/create-collection-validation'
 import { useCollectionTokens } from '@/hooks/useCollections'
-import type { Collection } from '@/types/database'
+import { useChainWriteContract } from '@/hooks/useChainWriteContract'
+import type { Collection, CollectionToken } from '@/types/database'
+
+const SET_EDITION_CAP_ABI = [
+  {
+    inputs: [
+      { name: 'tokenId', type: 'uint256' },
+      { name: 'cap', type: 'uint256' },
+    ],
+    name: 'setEditionCap',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+] as const
+
+function isTokenMetadataReady(token: CollectionToken): boolean {
+  return Boolean(token.token_id != null && token.name.trim() && token.image_storage_path)
+}
+
+const selectClassName =
+  'flex h-9 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-1 text-sm text-white shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-500'
 
 interface CollectionOwnerPanelProps {
   collection: Collection
@@ -22,8 +44,11 @@ interface CollectionOwnerPanelProps {
 export function CollectionOwnerPanel({ collection, chainId, onUpdated }: CollectionOwnerPanelProps) {
   const contractAddress = collection.contract_address as `0x${string}` | undefined
   const { address } = useAccount()
-  const { writeContractAsync, isPending } = useWriteContract()
+  const { writeContractAsync, isPending } = useChainWriteContract()
   const { data: tokens = [] } = useCollectionTokens(collection.id)
+  const tokenStandard = getCollectionTokenStandard(collection)
+  const isErc1155 = tokenStandard === 'erc1155'
+  const contractAbi = getCollectionContractAbi(collection)
 
   const { data: owner } = useReadContract({
     address: contractAddress,
@@ -90,14 +115,60 @@ export function CollectionOwnerPanel({ collection, chainId, onUpdated }: Collect
 
   const [ownerMinting, setOwnerMinting] = useState(false)
   const [syncingCaps, setSyncingCaps] = useState(false)
+  const [selectedTokenId, setSelectedTokenId] = useState<number | null>(null)
+  const [mintAmount, setMintAmount] = useState('1')
+  const [recipient, setRecipient] = useState('')
+
+  const mintedOnChain = totalMinted !== undefined ? Number(totalMinted) : null
+  const nextOnChainTokenId = mintedOnChain != null ? mintedOnChain + 1 : null
+
+  const readyTokens = useMemo(
+    () =>
+      tokens
+        .filter(isTokenMetadataReady)
+        .sort((a, b) => (a.token_id ?? 0) - (b.token_id ?? 0)),
+    [tokens],
+  )
+
+  useEffect(() => {
+    if (selectedTokenId != null) return
+    const preferred = readyTokens.find((token) => token.token_id === nextOnChainTokenId)
+    const fallback = readyTokens[0]
+    const nextId = preferred?.token_id ?? fallback?.token_id ?? null
+    if (nextId != null) setSelectedTokenId(nextId)
+  }, [readyTokens, selectedTokenId, nextOnChainTokenId])
+
+  useEffect(() => {
+    if (address) setRecipient(address)
+  }, [address])
+
+  const { data: selectedEditionCap, isLoading: selectedEditionCapLoading } = useReadContract({
+    address: contractAddress,
+    abi: contractAbi,
+    functionName: 'editionCap',
+    args: selectedTokenId != null ? [BigInt(selectedTokenId)] : undefined,
+    chainId,
+    query: {
+      enabled: Boolean(contractAddress && isErc1155 && selectedTokenId != null),
+    },
+  })
+
+  const { data: selectedEditionMinted, isLoading: selectedEditionMintedLoading } = useReadContract({
+    address: contractAddress,
+    abi: contractAbi,
+    functionName: 'editionMinted',
+    args: selectedTokenId != null ? [BigInt(selectedTokenId)] : undefined,
+    chainId,
+    query: {
+      enabled: Boolean(contractAddress && isErc1155 && selectedTokenId != null),
+    },
+  })
 
   if (!contractAddress) return null
 
   const isOwner = owner && address && owner.toLowerCase() === address.toLowerCase()
   if (!isOwner) return null
 
-  const mintedOnChain = totalMinted !== undefined ? Number(totalMinted) : null
-  const nextOnChainTokenId = mintedOnChain != null ? mintedOnChain + 1 : null
   const nextDbToken = tokens.find((token) => token.token_id === nextOnChainTokenId && !token.minted)
 
   const royaltyPercent =
@@ -105,8 +176,78 @@ export function CollectionOwnerPanel({ collection, chainId, onUpdated }: Collect
       ? formatPercentDisplay(String(Number((royaltyInfo[1] * 10_000n) / parseEther('100')) / 100))
       : '…'
 
-  const isErc1155Lazy =
-    getCollectionTokenStandard(collection) === 'erc1155' && collection.mint_mode === 'lazy'
+  const isErc1155Lazy = isErc1155 && collection.mint_mode === 'lazy'
+
+  const selectedDbToken = readyTokens.find((token) => token.token_id === selectedTokenId) ?? null
+  const selectedEditionSize = Math.max(1, selectedDbToken?.edition_size ?? 1)
+  const onChainCap = selectedEditionCap ?? 0n
+  const onChainMinted = selectedEditionMinted ?? 0n
+  const maxMintAmount =
+    onChainCap === 0n ? selectedEditionSize : Number(onChainCap - onChainMinted)
+  const editionStateLoading = selectedEditionCapLoading || selectedEditionMintedLoading
+  const parsedMintAmount = Number.parseInt(mintAmount, 10)
+  const mintAmountValid =
+    Number.isFinite(parsedMintAmount) && parsedMintAmount > 0 && parsedMintAmount <= maxMintAmount
+  const recipientValid = Boolean(recipient.trim() && isAddress(recipient.trim()))
+
+  const ownerMintErc1155 = async () => {
+    if (!address || selectedTokenId == null || !selectedDbToken?.token_id) {
+      toast.error('Choose a type with complete metadata to owner mint.')
+      return
+    }
+    if (!recipientValid) {
+      toast.error('Enter a valid recipient wallet address.')
+      return
+    }
+    if (!mintAmountValid) {
+      toast.error(`Enter a quantity between 1 and ${Math.max(0, maxMintAmount)}.`)
+      return
+    }
+
+    setOwnerMinting(true)
+    try {
+      const recipientAddress = getAddress(recipient.trim())
+      const amount = BigInt(parsedMintAmount)
+      const tokenId = BigInt(selectedTokenId)
+      const editionSize = BigInt(selectedEditionSize)
+
+      await syncTokenUri(address, collection.id, selectedTokenId)
+      const onChainUri = getOnChainTokenUriSuffix(selectedTokenId)
+
+      if (onChainCap === 0n) {
+        await writeContractAsync({
+          address: contractAddress,
+          abi: SET_EDITION_CAP_ABI,
+          functionName: 'setEditionCap',
+          args: [tokenId, editionSize],
+          chainId,
+        })
+      }
+
+      const hash = await writeContractAsync({
+        address: contractAddress,
+        abi: contractAbi,
+        functionName: 'ownerMint',
+        args: [recipientAddress, tokenId, amount, onChainUri],
+        chainId,
+      })
+
+      if (!hash) throw new Error('Owner mint did not return a transaction hash')
+
+      const totalMintedAfter = onChainMinted + amount
+      const shouldMarkMinted = totalMintedAfter >= editionSize || !selectedDbToken.minted
+      if (shouldMarkMinted) {
+        await updateToken(address, { tokenId: selectedDbToken.id, minted: true, mintTxHash: hash })
+      }
+
+      toast.success(`Minted ${parsedMintAmount} cop${parsedMintAmount === 1 ? 'y' : 'ies'} of type #${selectedTokenId}`)
+      onUpdated?.()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Owner mint failed')
+    } finally {
+      setOwnerMinting(false)
+    }
+  }
 
   const ownerMintNext = async () => {
     if (!address || nextOnChainTokenId == null || !nextDbToken?.token_id) {
@@ -118,6 +259,7 @@ export function CollectionOwnerPanel({ collection, chainId, onUpdated }: Collect
     try {
       await syncTokenUri(address, collection.id, nextOnChainTokenId)
       const onChainUri = getOnChainTokenUriSuffix(nextOnChainTokenId)
+
       const hash = await writeContractAsync({
         address: contractAddress,
         abi: NFT_ABI,
@@ -125,6 +267,9 @@ export function CollectionOwnerPanel({ collection, chainId, onUpdated }: Collect
         args: [address, onChainUri],
         chainId,
       })
+
+      if (!hash) throw new Error('Owner mint did not return a transaction hash')
+
       await updateToken(address, { tokenId: nextDbToken.id, minted: true, mintTxHash: hash })
       toast.success(`Minted #${nextOnChainTokenId} to your wallet`)
       onUpdated?.()
@@ -179,7 +324,7 @@ export function CollectionOwnerPanel({ collection, chainId, onUpdated }: Collect
 
       <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
         <div>
-          <dt className="text-slate-500">Minted on-chain</dt>
+          <dt className="text-slate-500">{isErc1155 ? 'Types minted on-chain' : 'Minted on-chain'}</dt>
           <dd className="font-medium text-white">
             {mintedOnChain ?? '…'} / {collection.max_supply}
           </dd>
@@ -213,28 +358,110 @@ export function CollectionOwnerPanel({ collection, chainId, onUpdated }: Collect
       </dl>
 
       {collection.mint_mode === 'lazy' && (
-        <section className="space-y-2">
+        <section className="space-y-3">
           <h3 className="text-sm font-semibold text-slate-200">Owner minting</h3>
-          <p className="text-xs text-slate-500">
-            Mints the next sequential token to your wallet. No paid sale fee applies.
-          </p>
-          {nextOnChainTokenId != null && nextOnChainTokenId <= collection.max_supply ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={ownerMintNext}
-                disabled={ownerMinting || isPending || !nextDbToken}
-              >
-                {ownerMinting
-                  ? 'Minting…'
-                  : nextDbToken
-                    ? `Owner mint #${nextOnChainTokenId}`
-                    : `Token #${nextOnChainTokenId} metadata not ready`}
-              </Button>
-            </div>
+          {isErc1155 ? (
+            <>
+              <p className="text-xs text-slate-500">
+                Mint copies of any type to a wallet you choose. Edition caps are set automatically on first mint if
+                needed. No paid sale fee applies.
+              </p>
+              {readyTokens.length > 0 ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="owner-mint-type">Type</Label>
+                    <select
+                      id="owner-mint-type"
+                      className={selectClassName}
+                      value={selectedTokenId ?? ''}
+                      onChange={(event) => {
+                        setSelectedTokenId(Number(event.target.value))
+                        setMintAmount('1')
+                      }}
+                    >
+                      {readyTokens.map((token) => (
+                        <option key={token.id} value={token.token_id ?? ''}>
+                          #{token.token_id} — {token.name} ({Math.max(1, token.edition_size ?? 1)} edition max)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="owner-mint-qty">Quantity</Label>
+                    <Input
+                      id="owner-mint-qty"
+                      type="number"
+                      min={1}
+                      max={Math.max(1, maxMintAmount)}
+                      value={mintAmount}
+                      onChange={(event) => setMintAmount(event.target.value)}
+                    />
+                    <p className="text-xs text-slate-500">
+                      {editionStateLoading
+                        ? 'Loading on-chain edition state…'
+                        : maxMintAmount > 0
+                          ? `${Number(onChainMinted)} / ${onChainCap === 0n ? selectedEditionSize : Number(onChainCap)} minted on-chain · up to ${maxMintAmount} available`
+                          : 'Edition cap reached for this type'}
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="owner-mint-recipient">Recipient wallet</Label>
+                    <Input
+                      id="owner-mint-recipient"
+                      value={recipient}
+                      onChange={(event) => setRecipient(event.target.value)}
+                      placeholder="0x…"
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void ownerMintErc1155()}
+                      disabled={
+                        ownerMinting ||
+                        isPending ||
+                        !selectedDbToken ||
+                        editionStateLoading ||
+                        maxMintAmount <= 0 ||
+                        !mintAmountValid ||
+                        !recipientValid
+                      }
+                    >
+                      {ownerMinting ? 'Minting…' : 'Owner mint'}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  Add name and artwork for at least one type before owner minting.
+                </p>
+              )}
+            </>
           ) : (
-            <p className="text-xs text-slate-500">All tokens minted on-chain.</p>
+            <>
+              <p className="text-xs text-slate-500">
+                Mints the next sequential token to your wallet. No paid sale fee applies.
+              </p>
+              {nextOnChainTokenId != null && nextOnChainTokenId <= collection.max_supply ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void ownerMintNext()}
+                    disabled={ownerMinting || isPending || !nextDbToken}
+                  >
+                    {ownerMinting
+                      ? 'Minting…'
+                      : nextDbToken
+                        ? `Owner mint #${nextOnChainTokenId}`
+                        : `Token #${nextOnChainTokenId} metadata not ready`}
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">All tokens minted on-chain.</p>
+              )}
+            </>
           )}
         </section>
       )}

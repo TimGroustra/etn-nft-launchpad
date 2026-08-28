@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { useAccount, useWriteContract } from 'wagmi'
+import { useAccount } from 'wagmi'
+import { useChainWriteContract } from '@/hooks/useChainWriteContract'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useCollection, useCollectionTokens } from '@/hooks/useCollections'
@@ -21,7 +22,7 @@ import {
   MIN_ROYALTY_BURN_PERCENT,
   sanitizePercentInput,
 } from '@/lib/create-collection-validation'
-import { getCollectionTokenStandard, usesFactoryV2 } from '@/lib/collection-contract'
+import { canEditV2Metadata, getCollectionTokenStandard, isPublishedV2Collection } from '@/lib/collection-contract'
 import { buildDraftRowsFromDb, buildEditableTokenRows, dedupeDbTokensByTokenId, getRowTokenId, resolveBulkImportMaxSupply } from '@/lib/draft-token-rows'
 import { assertStoragePathForCollection } from '@/lib/storage-paths'
 import {
@@ -38,11 +39,11 @@ import {
   syncPublishedCollection,
 } from '@/lib/publish-collection'
 import { updateCollection } from '@/lib/api'
-import { validateImageFileAsync } from '@/lib/validate-upload-image'
 import { Input, Label } from '@/components/ui/input'
 import { OperationLockOverlay, type WalletApprovalStep } from '@/components/OperationLockOverlay'
 import { useNavigationGuard } from '@/hooks/useNavigationGuard'
 import { activateWalletStep, completeWalletSteps, saveDraftProgress } from '@/lib/operation-progress'
+import type { UploadProgressDetail } from '@/lib/collection-upload'
 import { useAdmin } from '@/hooks/useAdmin'
 
 export function EditPage() {
@@ -54,7 +55,7 @@ export function EditPage() {
   const queryClient = useQueryClient()
   const { data: collection, refetch: refetchCollection } = useCollection(collectionKey)
   const { data: dbTokens = [], refetch: refetchTokens, isFetched } = useCollectionTokens(collection?.id)
-  const { writeContractAsync } = useWriteContract()
+  const { writeContractAsync } = useChainWriteContract()
   const { isAdmin } = useAdmin()
   const [tokens, setTokens] = useState<DraftToken[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -142,6 +143,12 @@ export function EditPage() {
       return
     }
 
+    const metadataLocked = !canEditV2Metadata(collection, isAdmin)
+    if (metadataLocked && (editChanges.metadataChanged || editChanges.royaltySettingsChanged)) {
+      toast.error('Published V2 collection metadata cannot be changed.')
+      return
+    }
+
     const publicMintEnabled = Number(collection.mint_price_etn ?? 0) > 0
     if (showOnMintPanel && !publicMintEnabled) {
       toast.error('Enable public mint before listing on the NFT Minting Panel.')
@@ -156,7 +163,7 @@ export function EditPage() {
       walletSteps.push({ label: 'Update royalties CLUB burn config' })
     }
 
-    const { step: validateStep, progress: validateProgress } = saveDraftProgress(0, 0, 'validating')
+    const { step: validateStep, progress: validateProgress } = saveDraftProgress(0, 0, 'uploading')
     setSaveLock({ active: true, step: validateStep, progress: validateProgress, walletSteps })
 
     const onWalletStep = (label: string) => {
@@ -167,19 +174,22 @@ export function EditPage() {
       }))
     }
 
+    const handleUploadDetailProgress = (detail: UploadProgressDetail) => {
+      if (detail.phase === 'saving') {
+        setSaveLock((prev) => ({
+          ...prev,
+          ...saveDraftProgress(detail.completed, detail.total, 'saving'),
+        }))
+        return
+      }
+      setSaveLock((prev) => ({
+        ...prev,
+        ...saveDraftProgress(detail.completed, detail.total, 'uploading', { retrying: detail.retrying }),
+      }))
+    }
+
     try {
       if (editChanges.metadataChanged || editChanges.royaltySettingsChanged) {
-        for (let i = 0; i < tokens.length; i++) {
-          const file = tokens[i].file
-          if (!file) continue
-          const imageError = await validateImageFileAsync(file)
-          if (imageError) {
-            toast.error(`Token #${getRowTokenId(tokens[i], i)}: ${imageError}`)
-            setSaveLock({ active: false, step: '', progress: null, walletSteps: [] })
-            return
-          }
-        }
-
         const activeTokens = tokens.filter((token) => !isTokenRowEmpty(token))
         const resolvedMaxSupply = resolveBulkImportMaxSupply(activeTokens) || collection.max_supply
         const activeCount = activeTokens.length
@@ -206,6 +216,9 @@ export function EditPage() {
               ...prev,
               ...saveDraftProgress(completed, total, 'uploading'),
             }))
+          },
+          {
+            onDetailProgress: handleUploadDetailProgress,
           },
         )
       } else if (editChanges.mintPanelChanged || editChanges.mintPanelAdminOnlyChanged) {
@@ -318,6 +331,17 @@ export function EditPage() {
             progress: total > 0 ? 10 + Math.round((completed / total) * 40) : 25,
           }))
         },
+        collection.contract_address
+          ? {
+              applyOnChainForMinted: {
+                writeContractAsync,
+                contractAddress: collection.contract_address as `0x${string}`,
+                chainId: chain.id,
+                mintMode: collection.mint_mode,
+                collection,
+              },
+            }
+          : undefined,
       )
 
       if (collection.contract_address) {
@@ -359,14 +383,25 @@ export function EditPage() {
       </Card>
     )
   }
-  if (collection.creator_wallet !== address?.toLowerCase() || !isAuthenticated) {
+  if (collection.creator_wallet !== address?.toLowerCase() && !isAdmin) {
     return <Card><CardTitle>Only the collection creator can edit metadata.</CardTitle></Card>
   }
+  if (!isAuthenticated) {
+    return <Card><CardTitle>Sign in required to edit metadata.</CardTitle></Card>
+  }
 
-  const isPublished = Boolean(collection.contract_address)
+  const isPublished = collection.status === 'published' && Boolean(collection.contract_address)
   const publicMintEnabled = Number(collection.mint_price_etn ?? 0) > 0
   const tokenStandard = getCollectionTokenStandard(collection)
-  const showV2AdminActions = usesFactoryV2(collection) && isAdmin
+  const canEditMetadata = canEditV2Metadata(collection, isAdmin)
+  const isPublishedV2 = isPublishedV2Collection(collection)
+  const canSaveChanges = Boolean(
+    editChanges?.hasChanges &&
+      (canEditMetadata ||
+        (isPublishedV2 &&
+          (editChanges.mintPanelChanged || editChanges.mintPanelAdminOnlyChanged))),
+  )
+  const canSyncOnChain = canEditMetadata && isPublished
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -381,10 +416,13 @@ export function EditPage() {
       <div>
         <h1 className="text-2xl font-bold">Edit {collection.name}</h1>
         <p className="text-sm text-slate-400">
-          Update names, descriptions, images, and attributes. Bulk import fills the editable rows below.
-          {isPublished
-            ? ' Save writes changes to the database. Sync uploads metadata files and updates the on-chain contract.'
-            : ' Save your changes, then publish from the dashboard. Use Sync to prepare metadata files before publishing.'}
+          {isPublishedV2 && isAdmin
+            ? 'Admin mode: you can still edit token metadata and images on published V2 collections. Save uploads files, then Sync pushes metadata on-chain.'
+            : isPublishedV2 && !canEditMetadata
+              ? 'This V2 collection is published — token metadata cannot be changed here. Use the dashboard owner panel for ERC-1155 owner mint and edition caps.'
+              : isPublished
+                ? 'Save writes changes to the database. Sync uploads metadata files and updates the on-chain contract.'
+                : 'Save your changes, then publish from the dashboard. Use Sync to prepare metadata files before publishing.'}
         </p>
       </div>
 
@@ -455,6 +493,8 @@ export function EditPage() {
           Marketplace resale royalty is enforced on-chain via EIP-2981. Royalties burn applies when you withdraw from
           the contract.
         </CardDescription>
+        {canEditMetadata ? (
+          <>
         <div>
           <Label htmlFor="edit-royalty-percent">Resale royalty (%)</Label>
           <Input
@@ -490,15 +530,25 @@ export function EditPage() {
             {MIN_ROYALTY_BURN_PERCENT}–100% of contract royalties swapped to CLUB and burned on resale income.
           </FieldHint>
         </div>
+          </>
+        ) : (
+          <p className="text-sm text-slate-400">
+            Resale royalty: {royaltyPercent}% · CLUB burn: {royaltyBurnPercent}% (fixed after publish for V2
+            collections).
+          </p>
+        )}
       </Card>
 
+      {canEditMetadata && (
       <BulkTokenUpload
         maxSupply={collection.max_supply}
         onImport={handleBulkImport}
         disabled={isSaving}
         tokenStandard={tokenStandard}
       />
+      )}
 
+      {canEditMetadata && (
       <Card className="space-y-4">
         <CardTitle>{tokenStandard === 'erc1155' ? 'Type metadata' : 'Token metadata'}</CardTitle>
         <CardDescription>
@@ -523,18 +573,21 @@ export function EditPage() {
           />
         ))}
       </Card>
+      )}
 
       <div className="flex flex-wrap gap-2">
+        {canEditMetadata && (
         <p className="w-full text-sm leading-relaxed text-amber-200/90">
           Saving uploads every image and metadata file. Large collections can take several minutes — keep this tab open
           until the progress bar finishes.
         </p>
-        {(showV2AdminActions || !usesFactoryV2(collection)) && (
-          <Button onClick={handleSave} disabled={isSaving || !editChanges?.hasChanges}>
+        )}
+        {canSaveChanges && (
+          <Button onClick={handleSave} disabled={isSaving}>
             {isSaving ? 'Saving…' : 'Save'}
           </Button>
         )}
-        {(showV2AdminActions || !usesFactoryV2(collection)) && (
+        {canSyncOnChain && (
           <Button
             variant="outline"
             onClick={() => void handleSync()}

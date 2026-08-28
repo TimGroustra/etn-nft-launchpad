@@ -33,6 +33,25 @@ export function useArchivedCollections(walletAddress?: string, chainId?: number)
   return useCollections(walletAddress, chainId, 'archived')
 }
 
+/** All launchpad collections not created by this wallet (treasury dashboard). */
+export function useOtherCollections(walletAddress?: string, chainId?: number, enabled = false) {
+  return useQuery({
+    queryKey: ['collections-other', walletAddress, chainId],
+    enabled: enabled && Boolean(walletAddress && chainId),
+    queryFn: async () => {
+      let query = supabase
+        .from('collections')
+        .select('*')
+        .neq('creator_wallet', walletAddress!.toLowerCase())
+        .order('created_at', { ascending: false })
+      if (chainId) query = query.eq('chain_id', chainId)
+      const { data, error } = await query
+      if (error) throw error
+      return data as Collection[]
+    },
+  })
+}
+
 export function useMintPanelCollections(chainId?: number, isAdmin = false) {
   return useQuery({
     queryKey: ['mint-panel-collections', chainId, isAdmin],

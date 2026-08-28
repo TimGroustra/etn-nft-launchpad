@@ -30,16 +30,24 @@ export const electroneumTestnet = defineChain({
 
 export type NetworkKey = 'mainnet' | 'testnet'
 
-export const SUPPORTED_CHAINS = [electroneum, electroneumTestnet] as const
+/** When false, the app is mainnet-only for every wallet (treasury/admin included). */
+export const TESTNET_ENABLED =
+  import.meta.env.VITE_TESTNET_ENABLED === 'true' || import.meta.env.VITE_TESTNET_ENABLED === '1'
 
-function toCustomRpcUrls(chain: (typeof SUPPORTED_CHAINS)[number]): CustomRpcUrlMap[keyof CustomRpcUrlMap] {
+export const SUPPORTED_CHAINS = (
+  TESTNET_ENABLED ? [electroneum, electroneumTestnet] : [electroneum]
+) as readonly [typeof electroneum, ...typeof electroneum[]]
+
+function toCustomRpcUrls(chain: { rpcUrls: { default: { http: readonly string[] } } }): CustomRpcUrlMap[keyof CustomRpcUrlMap] {
   return chain.rpcUrls.default.http.map((url) => ({ url }))
 }
 
 /** Reown AppKit balance + wagmi transports for Electroneum RPCs (not in WalletConnect defaults). */
 export const CUSTOM_RPC_URLS: CustomRpcUrlMap = {
   [`eip155:${electroneum.id}`]: toCustomRpcUrls(electroneum),
-  [`eip155:${electroneumTestnet.id}`]: toCustomRpcUrls(electroneumTestnet),
+  ...(TESTNET_ENABLED
+    ? { [`eip155:${electroneumTestnet.id}`]: toCustomRpcUrls(electroneumTestnet) }
+    : {}),
 }
 
 export function getChainKey(chainId: number): NetworkKey {
@@ -70,7 +78,7 @@ export const WETN_ADDRESS = '0x138DAFbDA0CCB3d8E39C19edb0510Fc31b7C1c77'
 export const ELECTROSWAP_V3_ROUTER = '0x5A3AB7e9f405250B36e7e0a4654c1052EADC1F07' as const
 export const DEAD_ADDRESS = '0x000000000000000000000000000000000000dEaD' as const
 
-/** Factory treasury — only this wallet may switch the app to testnet. */
+/** Factory treasury address (sole admin wallet). */
 export const TREASURY_ADDRESS = (
   import.meta.env.VITE_TREASURY_ADDRESS ?? '0x126aa663BdeDd6Ae477fd28a7d0b624b8109D15d'
 ).toLowerCase() as `0x${string}`

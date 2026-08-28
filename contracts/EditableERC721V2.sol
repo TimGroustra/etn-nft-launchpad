@@ -37,6 +37,8 @@ contract EditableERC721V2 is
     address public immutable electroGemsCollection;
     address public immutable clubWatchCollection;
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
+    /// @dev ElectroSwap marketplace minter on Electroneum mainnet (implements IERC721Receiver).
+    address internal constant ELECTROSWAP_ES_MINTER_V3 = 0x41B8c31e35317124a7a4895ea034538C213c060f;
 
     BurnConfig public burnConfig;
     uint256 public maxSupply;
@@ -49,6 +51,7 @@ contract EditableERC721V2 is
     bool private _suppressRoyaltyBurn;
 
     mapping(uint256 => bool) private _metadataIndexUsed;
+    mapping(uint256 => uint256) private _tokenMetadataIndex;
     uint256[] private _availableMetadataIds;
     bool private _publicMintPoolReady;
 
@@ -133,6 +136,7 @@ contract EditableERC721V2 is
 
     function setTokenURI(uint256 tokenId, string calldata uri) external onlyOwner {
         _requireOwned(tokenId);
+        delete _tokenMetadataIndex[tokenId];
         _setTokenURI(tokenId, uri);
         emit MetadataUpdate(tokenId);
     }
@@ -141,6 +145,7 @@ contract EditableERC721V2 is
         require(tokenIds.length == uris.length, "Length mismatch");
         for (uint256 i = 0; i < tokenIds.length; i++) {
             _requireOwned(tokenIds[i]);
+            delete _tokenMetadataIndex[tokenIds[i]];
             _setTokenURI(tokenIds[i], uris[i]);
             emit MetadataUpdate(tokenIds[i]);
         }
@@ -198,12 +203,20 @@ contract EditableERC721V2 is
         uint256 base = mintPrice * mintCount;
         require(msg.value >= base, "Insufficient payment");
 
+        address recipient = msg.sender;
         uint256 firstTokenId = _nextTokenId;
-        for (uint256 i = 0; i < mintCount; i++) {
-            if (randomPublicMint) {
-                _mintWithRandomMetadata(msg.sender);
-            } else {
-                _mintWithComposedURI(msg.sender);
+        if (randomPublicMint) {
+            _ensurePublicMintPool();
+            unchecked {
+                for (uint256 i = 0; i < mintCount; ++i) {
+                    _mintRandomPublicToken(recipient);
+                }
+            }
+        } else {
+            unchecked {
+                for (uint256 i = 0; i < mintCount; ++i) {
+                    _mintSequentialPublicToken(recipient);
+                }
             }
         }
         if (firstTokenId < _nextTokenId) {
@@ -231,28 +244,30 @@ contract EditableERC721V2 is
         return tokenIds;
     }
 
-    function _mintWithComposedURI(address to) internal returns (uint256) {
+    function _mintSequentialPublicToken(address to) private {
         require(_nextTokenId <= maxSupply, "Max supply reached");
         uint256 tokenId = _nextTokenId++;
-        _safeMint(to, tokenId);
-        _setTokenURI(tokenId, _composeMetadataSuffix(tokenId));
-        return tokenId;
+        _tokenMetadataIndex[tokenId] = tokenId;
+        _mintPublicToken(to, tokenId);
     }
 
-    function _mintWithRandomMetadata(address to) internal returns (uint256 tokenId) {
-        _ensurePublicMintPool();
+    function _mintRandomPublicToken(address to) private {
         require(_nextTokenId <= maxSupply, "Max supply reached");
         require(_availableMetadataIds.length > 0, "No metadata remaining");
 
-        tokenId = _nextTokenId++;
-        uint256 metadataIndex = _drawRandomMetadataIndex();
-        _safeMint(to, tokenId);
-        _setTokenURI(tokenId, _composeMetadataSuffix(metadataIndex));
-        emit PublicMintAssigned(tokenId, metadataIndex);
+        uint256 tokenId = _nextTokenId++;
+        uint256 metadataIndex = _drawRandomMetadataIndex(tokenId);
+        _tokenMetadataIndex[tokenId] = metadataIndex;
+        _mintPublicToken(to, tokenId);
     }
 
-    function _composeMetadataSuffix(uint256 metadataIndex) internal pure returns (string memory) {
-        return string(abi.encodePacked(Strings.toString(metadataIndex), ".json"));
+    /// @dev EOAs and ElectroSwap EsMinter skip IERC721Receiver checks to save gas on batch mints.
+    function _mintPublicToken(address to, uint256 tokenId) private {
+        if (to.code.length == 0 || to == ELECTROSWAP_ES_MINTER_V3) {
+            _mint(to, tokenId);
+        } else {
+            _safeMint(to, tokenId);
+        }
     }
 
     function _ensurePublicMintPool() private {
@@ -265,23 +280,11 @@ contract EditableERC721V2 is
         _publicMintPoolReady = true;
     }
 
-    function _drawRandomMetadataIndex() private returns (uint256 metadataIndex) {
+    function _drawRandomMetadataIndex(uint256 tokenId) private returns (uint256 metadataIndex) {
         uint256 len = _availableMetadataIds.length;
         require(len > 0, "No metadata remaining");
 
-        uint256 slot = uint256(
-            keccak256(
-                abi.encodePacked(
-                    block.prevrandao,
-                    block.timestamp,
-                    block.number,
-                    msg.sender,
-                    _nextTokenId,
-                    len,
-                    gasleft()
-                )
-            )
-        ) % len;
+        uint256 slot = uint256(keccak256(abi.encodePacked(block.prevrandao, msg.sender, tokenId, len))) % len;
 
         metadataIndex = _availableMetadataIds[slot];
         _availableMetadataIds[slot] = _availableMetadataIds[len - 1];
@@ -381,6 +384,11 @@ contract EditableERC721V2 is
     /// @dev ERC721URIStorage concatenates baseURI + stored suffix. If a full URL was stored by mistake,
     /// return the absolute URI instead of base + absolute (which breaks wallets/explorers).
     function _resolveMintedTokenURI(uint256 tokenId) internal view returns (string memory) {
+        uint256 metadataIndex = _tokenMetadataIndex[tokenId];
+        if (metadataIndex != 0) {
+            return string(abi.encodePacked(_baseTokenURI, Strings.toString(metadataIndex), ".json"));
+        }
+
         string memory uri = super.tokenURI(tokenId);
         string memory base = _baseURI();
         if (bytes(base).length == 0) {

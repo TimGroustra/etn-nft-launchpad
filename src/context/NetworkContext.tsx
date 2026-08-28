@@ -6,6 +6,7 @@ import {
   getChainByKey,
   getChainKey,
   isTreasuryWallet,
+  TESTNET_ENABLED,
   type NetworkKey,
 } from '@/lib/blockchain'
 
@@ -31,7 +32,7 @@ function readStoredNetwork(allowTestnet: boolean): NetworkKey {
 export function NetworkProvider({ children }: { children: ReactNode }) {
   const { address, chainId, isConnected } = useAccount()
   const { switchChainAsync, isPending } = useSwitchChain()
-  const canSwitchNetwork = isTreasuryWallet(address)
+  const canSwitchNetwork = TESTNET_ENABLED && isTreasuryWallet(address)
   const [network, setNetworkState] = useState<NetworkKey>(() => readStoredNetwork(false))
 
   const chain = useMemo(() => getChainByKey(network), [network])

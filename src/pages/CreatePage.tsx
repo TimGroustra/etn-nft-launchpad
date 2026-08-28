@@ -26,6 +26,7 @@ import {
   MIN_MINT_BURN_PERCENT,
   MIN_ROYALTY_BURN_PERCENT,
   royaltyBurnBpsFromPercent,
+  mintBurnBpsFromPercent,
   sanitizeFormForMode,
   validateBeforeSave,
   validateCreateStep,
@@ -34,11 +35,13 @@ import {
   percentToBps,
   sanitizePercentInput,
   type CreateCollectionForm,
+  type CollectionValidationOptions,
   type DraftToken,
   type MintMode,
 } from '@/lib/create-collection-validation'
 import { buildEditableTokenRows, buildDraftRowsFromDb, getRowTokenId, resolveBulkImportMaxSupply } from '@/lib/draft-token-rows'
 import { collectionToForm, saveDraftCollection } from '@/lib/save-draft-collection'
+import type { UploadProgressDetail } from '@/lib/collection-upload'
 import { IMAGE_RULES, validateImageFileAsync } from '@/lib/validate-upload-image'
 import { MetadataGuidancePanel } from '@/components/MetadataGuidancePanel'
 import { MintPriceFields } from '@/components/MintPriceFields'
@@ -53,6 +56,7 @@ import { useNavigationGuard } from '@/hooks/useNavigationGuard'
 import { saveDraftProgress } from '@/lib/operation-progress'
 import { getPublicImageUrl } from '@/lib/supabase'
 import { useLaunchpadV2 } from '@/hooks/useLaunchpadV2'
+import { useCreatorAccess } from '@/hooks/useCreatorAccess'
 import {
   resolveContractVersionForCreate,
   resolveTokenStandardForCreate,
@@ -203,6 +207,7 @@ export function CreatePage() {
   ])
   const [previewItems, setPreviewItems] = useState<NftPreviewItem[]>([])
   const [loadedDraft, setLoadedDraft] = useState(!isEditingDraft)
+  const [importSessionId, setImportSessionId] = useState<string | null>(null)
   const [saveLock, setSaveLock] = useState<{ active: boolean; step: string; progress: number | null }>({
     active: false,
     step: '',
@@ -214,6 +219,13 @@ export function CreatePage() {
     'Your draft is still uploading. Leaving now may leave it incomplete.',
   )
   const { canUseLaunchpadV2, platformConfig } = useLaunchpadV2()
+  const { hasDualHolderDiscount } = useCreatorAccess()
+  const validationOptions = useMemo<CollectionValidationOptions>(
+    () => ({ dualHolderBurnExempt: hasDualHolderDiscount }),
+    [hasDualHolderDiscount],
+  )
+  const minRoyaltyBurnPercent = hasDualHolderDiscount ? 0 : MIN_ROYALTY_BURN_PERCENT
+  const minMintBurnPercent = hasDualHolderDiscount ? 0 : MIN_MINT_BURN_PERCENT
   const erc1155 = isErc1155(form.tokenStandard)
   const totalEditionCopies = useMemo(
     () => countCompleteEditionSizes(tokens, isTokenRowComplete),
@@ -246,12 +258,12 @@ export function CreatePage() {
       existingCollection.max_supply,
       existingCollection.id,
     )
-    const loadedForm = sanitizeFormForMode(collectionToForm(existingCollection), loadedTokens)
+    const loadedForm = sanitizeFormForMode(collectionToForm(existingCollection), loadedTokens, validationOptions)
 
     setForm(loadedForm)
     setTokens(loadedTokens)
     setCollectionId(existingCollection.id)
-    setStep(inferDraftResumeStep(loadedForm, loadedTokens))
+    setStep(inferDraftResumeStep(loadedForm, loadedTokens, validationOptions))
     setLoadedDraft(true)
   }, [
     isEditingDraft,
@@ -301,8 +313,8 @@ export function CreatePage() {
   }, [tokens, form.royaltyPercent])
 
   const currentStepIssues = useMemo(
-    () => validateCreateStep(step, form, tokens),
-    [step, form, tokens],
+    () => validateCreateStep(step, form, tokens, validationOptions),
+    [step, form, tokens, validationOptions],
   )
 
   const update = <K extends keyof CreateCollectionForm>(key: K, value: CreateCollectionForm[K]) => {
@@ -314,7 +326,7 @@ export function CreatePage() {
       if (key === 'tokenStandard' && value === 'erc1155') {
         next.randomPublicMint = false
       }
-      return sanitizeFormForMode(next, tokens)
+      return sanitizeFormForMode(next, tokens, validationOptions)
     })
     setStepError(null)
     setFieldErrors({})
@@ -329,6 +341,7 @@ export function CreatePage() {
           maxSupply: mintMode === 'batch' ? Math.max(prev.maxSupply, completeCount || 1) : prev.maxSupply,
         },
         tokens,
+        validationOptions,
       ),
     )
     setStepError(null)
@@ -337,7 +350,7 @@ export function CreatePage() {
 
   const setTokensAndSync = (next: DraftToken[]) => {
     setTokens(next)
-    setForm((prev) => sanitizeFormForMode(prev, next))
+    setForm((prev) => sanitizeFormForMode(prev, next, validationOptions))
     setStepError(null)
     setFieldErrors({})
   }
@@ -354,7 +367,7 @@ export function CreatePage() {
   }
 
   const goNext = async () => {
-    const issues = validateCreateStep(step, form, tokens)
+    const issues = validateCreateStep(step, form, tokens, validationOptions)
     if (!applyStepValidation(issues)) return
 
     if (step === 3) {
@@ -378,31 +391,27 @@ export function CreatePage() {
     setStep((s) => s + 1)
   }
 
+  const handleUploadDetailProgress = (detail: UploadProgressDetail) => {
+    if (detail.phase === 'saving') {
+      setSaveLock(saveDraftProgress(detail.completed, detail.total, 'saving'))
+      return
+    }
+    setSaveLock(
+      saveDraftProgress(detail.completed, detail.total, 'uploading', { retrying: detail.retrying }),
+    )
+  }
+
   const saveDraft = async () => {
     if (!address) return
-    const issues = validateBeforeSave(form, tokens)
+    const issues = validateBeforeSave(form, tokens, validationOptions)
     if (!applyStepValidation(issues)) {
       toast.error(firstIssueMessage(issues))
       return
     }
 
     setLoading(true)
-    const { step: validateStep, progress: validateProgress } = saveDraftProgress(0, 0, 'validating')
-    setSaveLock({ active: true, step: validateStep, progress: validateProgress })
 
     try {
-      for (let i = 0; i < tokens.length; i++) {
-        const file = tokens[i].file
-        if (!file) continue
-        const imageError = await validateImageFileAsync(file)
-        if (imageError) {
-          toast.error(`Token #${getRowTokenId(tokens[i], i)}: ${imageError}`)
-          setLoading(false)
-          setSaveLock({ active: false, step: '', progress: null })
-          return
-        }
-      }
-
       if (isEditingDraft && collectionId) {
         const activeCount = tokens.filter((token) => !isTokenRowEmpty(token)).length
         setSaveLock(saveDraftProgress(0, activeCount, 'uploading'))
@@ -416,6 +425,10 @@ export function CreatePage() {
           (completed, total) => {
             setSaveLock(saveDraftProgress(completed, total, 'uploading'))
           },
+          {
+            importSessionId,
+            onDetailProgress: handleUploadDetailProgress,
+          },
         )
         setSaveLock(saveDraftProgress(0, 0, 'finishing'))
         toast.success('Draft updated')
@@ -423,16 +436,16 @@ export function CreatePage() {
         const { step: createStep, progress: createProgress } = saveDraftProgress(0, 0, 'creating')
         setSaveLock({ active: true, step: createStep, progress: createProgress })
 
-        const sanitized = sanitizeFormForMode(form, tokens)
+        const sanitized = sanitizeFormForMode(form, tokens, validationOptions)
         const collection = await createCollection(address, {
           name: sanitized.name.trim(),
           symbol: sanitized.symbol.trim().toUpperCase(),
           description: sanitized.description,
           mintMode: sanitized.mintMode,
           maxSupply: sanitized.maxSupply,
-          mintBurnBps: percentToBps(Number(sanitized.mintBurnPercent)),
+          mintBurnBps: mintBurnBpsFromPercent(sanitized.mintBurnPercent, minMintBurnPercent),
           burnOnMint: sanitized.burnOnMint,
-          royaltyBurnBps: royaltyBurnBpsFromPercent(sanitized.royaltyBurnPercent),
+          royaltyBurnBps: royaltyBurnBpsFromPercent(sanitized.royaltyBurnPercent, minRoyaltyBurnPercent),
           royaltyBps: percentToBps(Number(sanitized.royaltyPercent)),
           mintPriceEtn: sanitized.enablePublicMint ? Number(sanitized.mintPriceEtn) : 0,
           maxMintPerWallet: Number(sanitized.maxMintPerWallet) || 0,
@@ -455,7 +468,12 @@ export function CreatePage() {
           (completed, total) => {
             setSaveLock(saveDraftProgress(completed, total, 'uploading'))
           },
+          {
+            importSessionId,
+            onDetailProgress: handleUploadDetailProgress,
+          },
         )
+        setImportSessionId(null)
         setSaveLock(saveDraftProgress(0, 0, 'finishing'))
         toast.success('Draft saved')
       }
@@ -489,9 +507,11 @@ export function CreatePage() {
     setTokensAndSync([...tokens, ...extra])
   }
 
-  const handleBulkImport = (imported: DraftToken[]) => {
+  const handleBulkImport = (imported: DraftToken[], sessionId?: string) => {
     const nextMaxSupply = resolveBulkImportMaxSupply(imported)
     if (nextMaxSupply === 0) return
+
+    if (sessionId) setImportSessionId(sessionId)
 
     const rows = buildEditableTokenRows(imported, nextMaxSupply)
     const existingById = new Map(
@@ -511,7 +531,7 @@ export function CreatePage() {
       toast.message(`Max supply adjusted to ${nextMaxSupply} to match your bulk upload.`)
     }
 
-    const nextForm = sanitizeFormForMode({ ...form, maxSupply: nextMaxSupply }, merged)
+    const nextForm = sanitizeFormForMode({ ...form, maxSupply: nextMaxSupply }, merged, validationOptions)
     setForm(nextForm)
     setTokensAndSync(merged)
   }
@@ -625,11 +645,12 @@ export function CreatePage() {
             <FieldError message={fieldErrors.description} />
           </div>
           {canUseLaunchpadV2 && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
-              <p className="text-sm font-medium text-amber-200">Admin preview: Launchpad V2</p>
+            <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-4">
+              <p className="text-sm font-medium text-blue-100">ERC-721 V2 &amp; ERC-1155</p>
               <FieldHint>
-                ERC-721 V2 (full ERC-4906) and ERC-1155 editions are only available to admin wallets while
-                preview is enabled. Everyone else still deploys legacy ERC-721 via the original factory.
+                Choose ERC-721 V2 for unique tokens with random mint support, or ERC-1155 for editioned copies per
+                artwork. Metadata is fixed after publish for collectors; admin wallets can still edit and sync
+                metadata. ERC-1155 owner mint and edition caps stay available from your dashboard.
               </FieldHint>
             </div>
           )}
@@ -811,6 +832,11 @@ export function CreatePage() {
 
           <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4 text-sm leading-relaxed text-slate-300">
             <p className="font-medium text-white">Quick guide</p>
+            {hasDualHolderDiscount && (
+              <p className="mt-2 text-emerald-300">
+                ElectroGem + Club Watch holders can disable CLUB burns or set them to 0%.
+              </p>
+            )}
             <ul className="mt-2 list-inside list-disc space-y-1 text-slate-400">
               <li>
                 <span className="text-slate-300">Resale royalty</span> — your cut when the NFT is sold again (0–100%).
@@ -822,8 +848,11 @@ export function CreatePage() {
               </li>
               {!isBatch && (
                 <li>
-                  <span className="text-slate-300">Burn on new mints</span> — required ({MIN_MINT_BURN_PERCENT}%
-                  minimum) when collectors pay to mint via IMintable.
+                  <span className="text-slate-300">Burn on new mints</span> —{' '}
+                  {hasDualHolderDiscount
+                    ? 'optional for dual holders; otherwise required'
+                    : `required (${MIN_MINT_BURN_PERCENT}% minimum)`}{' '}
+                  when collectors pay to mint via IMintable.
                 </li>
               )}
             </ul>
@@ -864,39 +893,56 @@ export function CreatePage() {
             <Label>Burn from resales (%)</Label>
             <Input
               type="number"
-              min={MIN_ROYALTY_BURN_PERCENT}
+              min={minRoyaltyBurnPercent}
               max={100}
               step="0.01"
               value={form.royaltyBurnPercent}
               onChange={(e) => update('royaltyBurnPercent', sanitizePercentInput(e.target.value))}
-              onBlur={() => update('royaltyBurnPercent', clampRoyaltyBurnPercent(form.royaltyBurnPercent))}
+              onBlur={() => update('royaltyBurnPercent', clampRoyaltyBurnPercent(form.royaltyBurnPercent, minRoyaltyBurnPercent))}
             />
             <FieldHint>
               Of the ETN your contract receives from resales, this share is swapped to CLUB and burned (
-              {MIN_ROYALTY_BURN_PERCENT}–100% required). Want everything burned? Set this to 100% — e.g. 96% leaves 4%
+              {minRoyaltyBurnPercent > 0
+                ? `${MIN_ROYALTY_BURN_PERCENT}–100% required`
+                : '0–100% for dual holders'}
+              ). Want everything burned? Set this to 100% — e.g. 96% leaves 4%
               for you to withdraw.
             </FieldHint>
             <FieldError message={fieldErrors.royaltyBurnPercent} />
           </div>
 
           {!isBatch && (
-            <div>
-              <Label>Burn from each mint (% of mint price)</Label>
-              <Input
-                type="number"
-                min={MIN_MINT_BURN_PERCENT}
-                max={100}
-                step="0.01"
-                value={form.mintBurnPercent}
-                onChange={(e) => update('mintBurnPercent', sanitizePercentInput(e.target.value))}
-                onBlur={() => update('mintBurnPercent', clampMintBurnPercent(form.mintBurnPercent))}
-              />
-              <FieldHint>
-                Required for public minting collections ({MIN_MINT_BURN_PERCENT}–100%). A share of each paid mint is
-                swapped to CLUB and burned — separate from resale royalties above.
-              </FieldHint>
-              <FieldError message={fieldErrors.mintBurnPercent} />
-            </div>
+            <>
+              {hasDualHolderDiscount && form.mintMode === 'lazy' && (
+                <ToggleRow
+                  checked={form.burnOnMint}
+                  onChange={(checked) => update('burnOnMint', checked)}
+                  label="Burn CLUB on each paid mint"
+                  description="Optional for ElectroGem + Club Watch holders. Turn off to skip mint CLUB burns entirely."
+                />
+              )}
+              {(!hasDualHolderDiscount || form.burnOnMint) && (
+                <div>
+                  <Label>Burn from each mint (% of mint price)</Label>
+                  <Input
+                    type="number"
+                    min={minMintBurnPercent}
+                    max={100}
+                    step="0.01"
+                    value={form.mintBurnPercent}
+                    onChange={(e) => update('mintBurnPercent', sanitizePercentInput(e.target.value))}
+                    onBlur={() => update('mintBurnPercent', clampMintBurnPercent(form.mintBurnPercent, minMintBurnPercent))}
+                  />
+                  <FieldHint>
+                    {minMintBurnPercent > 0
+                      ? `Required for public minting collections (${MIN_MINT_BURN_PERCENT}–100%).`
+                      : 'Optional for dual holders (0–100%).'}{' '}
+                    A share of each paid mint is swapped to CLUB and burned — separate from resale royalties above.
+                  </FieldHint>
+                  <FieldError message={fieldErrors.mintBurnPercent} />
+                </div>
+              )}
+            </>
           )}
 
           <FieldError message={fieldErrors.burnOnMint || stepError} />
@@ -1102,9 +1148,10 @@ export function CreatePage() {
               : 'Save your collection, then publish from the dashboard. We deploy the contract, upload metadata, and configure paid public sale (IMintable) when enabled.'}
           </CardDescription>
           <p className="mt-3 text-sm leading-relaxed text-amber-200/90">
-            Saving uploads every image and metadata file. Large collections can take several minutes — keep this tab
-            open until the progress bar finishes. On mobile, stay in the browser while MetaMask asks you to sign;
-            switching apps can disconnect your wallet mid-save.
+            Saving uploads every image and generates metadata. Large collections (hundreds or thousands of images) can
+            take a long time — keep this tab open until the progress bar finishes. Failed uploads retry automatically;
+            if save stops partway, run save again to resume remaining artwork. On mobile, stay in the browser while
+            MetaMask asks you to sign; switching apps can disconnect your wallet mid-save.
           </p>
           <Button className="mt-4" onClick={saveDraft} disabled={loading || validatingImages || isSaving}>
             {isSaving || loading ? 'Saving…' : validatingImages ? 'Validating images…' : isEditingDraft ? 'Save changes' : 'Save draft'}

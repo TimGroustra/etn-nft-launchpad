@@ -31,6 +31,10 @@ export type CollectionPayload = {
   randomPublicMint?: boolean
 }
 
+export type CollectionValidationOptions = {
+  dualHolderBurnExempt?: boolean
+}
+
 export type TokenPayload = {
   collectionId?: string
   tokenId?: number
@@ -40,7 +44,13 @@ export type TokenPayload = {
   attributes?: NftAttribute[]
 }
 
-export function validateCollectionPayload(body: CollectionPayload): string | null {
+export function validateCollectionPayload(
+  body: CollectionPayload,
+  options?: CollectionValidationOptions,
+): string | null {
+  const dualHolderBurnExempt = Boolean(options?.dualHolderBurnExempt)
+  const minRoyaltyBurnBps = dualHolderBurnExempt ? 0 : MIN_ROYALTY_BURN_BPS
+  const minMintBurnBps = dualHolderBurnExempt ? 0 : MIN_MINT_BURN_BPS
   const name = String(body.name ?? '').trim()
   if (!name) return 'Collection name is required.'
   if (name.length < 2) return 'Collection name must be at least 2 characters.'
@@ -68,8 +78,10 @@ export function validateCollectionPayload(body: CollectionPayload): string | nul
   const royaltyBurnBps = Number(body.royaltyBurnBps ?? 0)
   const maxMintPerWallet = Number(body.maxMintPerWallet ?? 0)
 
-  if (royaltyBurnBps < MIN_ROYALTY_BURN_BPS) {
-    return `Royalties burn must be at least ${MIN_ROYALTY_BURN_BPS / 100}%.`
+  if (royaltyBurnBps < minRoyaltyBurnBps) {
+    return minRoyaltyBurnBps > 0
+      ? `Royalties burn must be at least ${MIN_ROYALTY_BURN_BPS / 100}%.`
+      : 'Royalties burn cannot be negative.'
   }
 
   if (royaltyBurnBps > 10_000) {
@@ -95,8 +107,8 @@ export function validateCollectionPayload(body: CollectionPayload): string | nul
     return 'Mint CLUB burn requires a public mint price.'
   }
 
-  if (mintMode === 'lazy') {
-    if (!burnOnMint || mintBurnBps < MIN_MINT_BURN_BPS) {
+  if (mintMode === 'lazy' && !dualHolderBurnExempt) {
+    if (!burnOnMint || mintBurnBps < minMintBurnBps) {
       return `Public minting collections require at least ${MIN_MINT_BURN_BPS / 100}% of mint price burned as CLUB.`
     }
   } else if (burnOnMint && mintBurnBps <= 0) {

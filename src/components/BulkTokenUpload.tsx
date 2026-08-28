@@ -8,7 +8,7 @@ import { importBulkTokenFiles } from '@/lib/bulk-token-import'
 
 type BulkTokenUploadProps = {
   maxSupply: number
-  onImport: (tokens: DraftToken[]) => void
+  onImport: (tokens: DraftToken[], importSessionId?: string) => void
   disabled?: boolean
   tokenStandard?: TokenStandard
 }
@@ -36,7 +36,7 @@ export function BulkTokenUpload({
         }
         return
       }
-      onImport(result.tokens)
+      onImport(result.tokens, result.importSessionId)
       toast.success(
         isErc1155(tokenStandard)
           ? `Imported ${result.tokens.length} type(s) — set edition size per row`

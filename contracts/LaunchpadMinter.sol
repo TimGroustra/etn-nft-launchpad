@@ -92,19 +92,11 @@ contract LaunchpadMinter is IERC721Receiver {
     }
 
     function _isPlatformFeeExempt(address account) internal view returns (bool) {
-        if (
+        return
             electroGemsCollection != address(0) &&
-            IERC721Balance(electroGemsCollection).balanceOf(account) > 0
-        ) {
-            return true;
-        }
-        if (
             clubWatchCollection != address(0) &&
-            IERC721Balance(clubWatchCollection).balanceOf(account) > 0
-        ) {
-            return true;
-        }
-        return false;
+            IERC721Balance(electroGemsCollection).balanceOf(account) > 0 &&
+            IERC721Balance(clubWatchCollection).balanceOf(account) > 0;
     }
 
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {

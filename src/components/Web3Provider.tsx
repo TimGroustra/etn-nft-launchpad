@@ -3,7 +3,7 @@ import { createAppKit } from '@reown/appkit/react'
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
 import { WagmiProvider } from 'wagmi'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { CUSTOM_RPC_URLS, electroneum, electroneumTestnet, SUPPORTED_CHAINS } from '@/lib/blockchain'
+import { CUSTOM_RPC_URLS, electroneum, electroneumTestnet, SUPPORTED_CHAINS, TESTNET_ENABLED } from '@/lib/blockchain'
 import { http } from 'wagmi'
 import { NetworkProvider } from '@/context/NetworkContext'
 import { WalletAuthProvider } from '@/hooks/useWalletAuth'
@@ -29,14 +29,18 @@ const queryClient = new QueryClient({
 
 const networks = [...SUPPORTED_CHAINS] as [typeof SUPPORTED_CHAINS[number], ...typeof SUPPORTED_CHAINS[number][]]
 
+const wagmiTransports: Record<number, ReturnType<typeof http>> = {
+  [electroneum.id]: http(electroneum.rpcUrls.default.http[0]),
+}
+if (TESTNET_ENABLED) {
+  wagmiTransports[electroneumTestnet.id] = http(electroneumTestnet.rpcUrls.default.http[0])
+}
+
 const wagmiAdapter = new WagmiAdapter({
   projectId,
   networks,
   customRpcUrls: CUSTOM_RPC_URLS,
-  transports: {
-    [electroneum.id]: http(electroneum.rpcUrls.default.http[0]),
-    [electroneumTestnet.id]: http(electroneumTestnet.rpcUrls.default.http[0]),
-  },
+  transports: wagmiTransports,
 })
 
 createAppKit({

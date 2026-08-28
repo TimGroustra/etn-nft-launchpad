@@ -19,12 +19,19 @@ async function main() {
 
   const electroGems = '0xcff0d88Ed5311bAB09178b6ec19A464100880984'
   const clubWatch = '0x9b852BD6965F050e9AB8eEd4c900742b1d01fdD1'
-  const treasury = process.env.VITE_TREASURY_ADDRESS ?? '0x126aa663BdeDd6Ae477fd28a7d0b624b8109D15d'
+  const deploymentsPath = path.join(__dirname, '..', 'deployments.json')
+  const deployments = JSON.parse(fs.readFileSync(deploymentsPath, 'utf8'))
+  const key = chainId === 52014 ? 'electroneum' : 'electroneumTestnet'
+  const platformTreasury =
+    deployments[key]?.PublishFeeDistributor
+    ?? process.env.VITE_PUBLISH_FEE_DISTRIBUTOR_ADDRESS_MAINNET
+    ?? process.env.VITE_TREASURY_ADDRESS
+    ?? '0x126aa663BdeDd6Ae477fd28a7d0b624b8109D15d'
 
   console.log('Deploying LaunchpadMinter with:', deployer.address, 'on chain', chainId)
 
   const LaunchpadMinter = await ethers.getContractFactory('LaunchpadMinter')
-  const minter = await LaunchpadMinter.deploy(300, treasury, electroGems, clubWatch)
+  const minter = await LaunchpadMinter.deploy(300, platformTreasury, electroGems, clubWatch)
   const deployTx = minter.deploymentTransaction()
   if (!deployTx) throw new Error('LaunchpadMinter deployment transaction missing')
   console.log('LaunchpadMinter deploy tx:', deployTx.hash)
@@ -32,9 +39,6 @@ async function main() {
 
   const address = await minter.getAddress()
   console.log('LaunchpadMinter deployed to:', address)
-  const deploymentsPath = path.join(__dirname, '..', 'deployments.json')
-  const deployments = JSON.parse(fs.readFileSync(deploymentsPath, 'utf8'))
-  const key = chainId === 52014 ? 'electroneum' : 'electroneumTestnet'
   deployments[key].LaunchpadMinter = address
   deployments[key].launchpadMinterDeployedAt = new Date().toISOString()
   fs.writeFileSync(deploymentsPath, JSON.stringify(deployments, null, 2))

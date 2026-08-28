@@ -2,6 +2,7 @@ import { parseEther } from 'viem'
 import type { WriteContractParameters } from 'wagmi/actions'
 import type { Collection } from '@/types/database'
 import { getCollectionContractAbi, NFT_ABI } from '@/lib/blockchain'
+import { getCollectionTokenStandard } from '@/lib/collection-contract'
 import { getCollectionMetadataBaseUri, getOnChainTokenUriSuffix, listCollectionTokens } from '@/lib/collection-metadata'
 import { analyzeCollectionTokenCoverage } from '@/lib/collection-token-readiness'
 import { syncTokenUri, updateToken } from '@/lib/api'
@@ -21,6 +22,15 @@ export async function prepareCollectionMetadata(
   collectionId: string,
   maxSupply: number,
   onProgress?: (completed: number, total: number) => void,
+  options?: {
+    applyOnChainForMinted?: {
+      writeContractAsync: WriteContract
+      contractAddress: `0x${string}`
+      chainId: number
+      mintMode: Collection['mint_mode']
+      collection: Pick<Collection, 'token_standard' | 'contract_version'>
+    }
+  },
 ) {
   const tokens = await listCollectionTokens(collectionId)
   const analysis = analyzeCollectionTokenCoverage(maxSupply, tokens)
@@ -30,9 +40,57 @@ export async function prepareCollectionMetadata(
     )
   }
 
+  const mintedByTokenId = new Map(
+    (await listCollectionTokenRecords(collectionId))
+      .filter((token) => token.token_id != null)
+      .map((token) => [token.token_id!, token]),
+  )
+
+  const onChain = options?.applyOnChainForMinted
+  const isErc1155 = onChain ? getCollectionTokenStandard(onChain.collection) === 'erc1155' : false
+  const contractAbi = onChain ? getCollectionContractAbi(onChain.collection) : NFT_ABI
+  const erc1155OnChainUpdates: { tokenId: bigint; uri: string }[] = []
+
   for (let tokenId = 1; tokenId <= maxSupply; tokenId++) {
-    await syncTokenUri(walletAddress, collectionId, tokenId)
+    const syncResult = await syncTokenUri(walletAddress, collectionId, tokenId)
+    const dbToken = mintedByTokenId.get(tokenId)
+    const shouldApplyOnChain =
+      onChain &&
+      syncResult.functionName === 'setTokenURI' &&
+      syncResult.args &&
+      (isErc1155 || onChain.mintMode === 'batch' || dbToken?.minted)
+
+    if (shouldApplyOnChain && onChain && syncResult.args) {
+      if (isErc1155) {
+        erc1155OnChainUpdates.push({
+          tokenId: BigInt(tokenId),
+          uri: syncResult.args[1] as string,
+        })
+      } else {
+        await onChain.writeContractAsync({
+          address: onChain.contractAddress,
+          abi: contractAbi,
+          functionName: 'setTokenURI',
+          args: syncResult.args as [bigint, string],
+          chainId: onChain.chainId,
+        })
+      }
+    }
+
     onProgress?.(tokenId, maxSupply)
+  }
+
+  if (isErc1155 && erc1155OnChainUpdates.length > 0 && onChain) {
+    for (let i = 0; i < erc1155OnChainUpdates.length; i += BATCH_MINT_CHUNK_SIZE) {
+      const chunk = erc1155OnChainUpdates.slice(i, i + BATCH_MINT_CHUNK_SIZE)
+      await onChain.writeContractAsync({
+        address: onChain.contractAddress,
+        abi: contractAbi,
+        functionName: 'batchSetTokenURI',
+        args: [chunk.map((entry) => entry.tokenId), chunk.map((entry) => entry.uri)],
+        chainId: onChain.chainId,
+      })
+    }
   }
 }
 

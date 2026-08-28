@@ -8,6 +8,8 @@ coverage
 coverage.json
 cache
 supabase/.temp
-
+.cursor
+/gem-shards/
+bulk-upload
 .vercel
-.env*
+.env.vercel.pull
