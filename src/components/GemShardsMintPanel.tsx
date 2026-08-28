@@ -6,7 +6,6 @@ import { useAppKit } from '@reown/appkit/react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
-import { Input, Label } from '@/components/ui/input'
 import { EtnUsdHint } from '@/components/EtnUsdHint'
 import { CollectionMintedGallery } from '@/components/CollectionMintedGallery'
 import { MintSuccessModal, type MintedTokenInfo } from '@/components/MintSuccessModal'
@@ -76,7 +75,6 @@ export function GemShardsMintPanel({
   const { writeContractAsync, isPending } = useWriteContract()
   const [mintingFree, setMintingFree] = useState(false)
   const [mintingPaid, setMintingPaid] = useState(false)
-  const [quantity, setQuantity] = useState(1)
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
   const [mintSuccessOpen, setMintSuccessOpen] = useState(false)
   const [mintedTokens, setMintedTokens] = useState<MintedTokenInfo[]>([])
@@ -123,10 +121,7 @@ export function GemShardsMintPanel({
   const mintedCount = Number(totalMinted ?? 0n)
   const maxSupply = collection?.max_supply ?? 495
   const maxMintable = Math.max(0, Number(remainingSupply ?? BigInt(maxSupply - mintedCount)))
-  const safeQuantity = Math.min(quantity, Math.max(1, maxMintable || 1))
-  const totalPaidWei = paidPrice * BigInt(safeQuantity)
   const priceEtn = Number(formatEther(paidPrice))
-  const totalEtn = Number(formatEther(totalPaidWei))
   const weekOneActive = publicSaleOpensAt != null && BigInt(now) < publicSaleOpensAt
   const paidMintAllowed = !weekOneActive || ownsElectroGem
 
@@ -181,37 +176,22 @@ export function GemShardsMintPanel({
   }
 
   async function mintPaid() {
-    if (!address || !publicClient || safeQuantity < 1) return
+    if (!address || !publicClient) return
     setMintingPaid(true)
-    let minted = 0
-    const mintedTokenIds: number[] = []
     try {
-      for (let index = 0; index < safeQuantity; index += 1) {
-        const hash = await writeContractAsync({
-          address: contractAddress,
-          abi: GEM_SHARDS_ABI,
-          functionName: 'mintPaid',
-          value: paidPrice,
-          chainId: chain.id,
-        })
-        const receipt = await publicClient.waitForTransactionReceipt({ hash })
-        mintedTokenIds.push(...parseGemShardsMintReceipt(receipt, contractAddress))
-        minted += 1
-      }
-      showMintSuccess(mintedTokenIds)
-      toast.success(`Minted ${minted} Gem Shard${minted === 1 ? '' : 's'}`)
-      setQuantity(1)
+      const hash = await writeContractAsync({
+        address: contractAddress,
+        abi: GEM_SHARDS_ABI,
+        functionName: 'mintPaid',
+        value: paidPrice,
+        chainId: chain.id,
+      })
+      const receipt = await publicClient.waitForTransactionReceipt({ hash })
+      const tokenIds = parseGemShardsMintReceipt(receipt, contractAddress)
+      showMintSuccess(tokenIds)
+      toast.success('Minted your Gem Shard')
     } catch (error) {
-      if (minted > 0) {
-        showMintSuccess(mintedTokenIds)
-        toast.error(
-          error instanceof Error
-            ? `Minted ${minted} of ${safeQuantity} before failing: ${error.message}`
-            : `Minted ${minted} of ${safeQuantity} before failing.`,
-        )
-      } else {
-        toast.error(error instanceof Error ? error.message : 'Paid mint failed')
-      }
+      toast.error(error instanceof Error ? error.message : 'Paid mint failed')
     } finally {
       setMintingPaid(false)
     }
@@ -231,8 +211,8 @@ export function GemShardsMintPanel({
   }
 
   const paidMintLabel = mintingPaid
-    ? `Minting${safeQuantity > 1 ? ` ${safeQuantity}…` : '…'}`
-    : `Mint ${safeQuantity} for ${totalEtn.toLocaleString()} ETN`
+    ? 'Minting…'
+    : `Mint 1 for ${priceEtn.toLocaleString()} ETN`
   const showFreeMintInfo = isConnected && ownsElectroGem
   const saleActive = maxMintable > 0
 
@@ -301,23 +281,9 @@ export function GemShardsMintPanel({
               <p className="text-sm text-slate-400">This collection is sold out.</p>
             ) : (
               <>
-                <div>
-                  <Label htmlFor={`gem-shards-mint-qty-${collection?.id ?? 'panel'}`}>Quantity</Label>
-                  <Input
-                    id={`gem-shards-mint-qty-${collection?.id ?? 'panel'}`}
-                    type="number"
-                    min={1}
-                    max={maxMintable}
-                    value={safeQuantity}
-                    disabled={mintingPaid || mintingFree}
-                    onChange={(event) =>
-                      setQuantity(Math.max(1, Math.min(maxMintable, Number(event.target.value) || 1)))
-                    }
-                  />
-                  <p className="mt-1 text-xs text-slate-500">
-                    One shard per transaction · up to {maxMintable} remaining
-                  </p>
-                </div>
+                <p className="text-xs text-slate-500">
+                  One shard per wallet confirmation. Mint again to get another.
+                </p>
                 <Button
                   className={mintPanelPrimaryButtonClass('violet')}
                   disabled={!paidMintAllowed || isPending || mintingPaid || mintingFree}
@@ -325,7 +291,7 @@ export function GemShardsMintPanel({
                 >
                   {paidMintLabel}
                 </Button>
-                <EtnUsdHint etn={totalEtn} align="right" className="-mt-1" />
+                <EtnUsdHint etn={priceEtn} align="right" className="-mt-1" />
               </>
             )}
             {weekOneActive && !ownsElectroGem && saleActive && (
