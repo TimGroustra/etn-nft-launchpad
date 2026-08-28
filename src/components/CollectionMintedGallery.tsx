@@ -104,6 +104,14 @@ export function CollectionMintedGallery({ collection }: CollectionMintedGalleryP
 
   if (!contractAddress) return null
 
+  if (
+    isInView
+    && displayedItems.length === 0
+    && (galleryLoading || (totalCount === 0 && (onChainMintedCount ?? 0) > 0))
+  ) {
+    return null
+  }
+
   return (
     <section ref={ref} className="space-y-4">
       <div className="flex items-baseline justify-between gap-3">
@@ -117,10 +125,6 @@ export function CollectionMintedGallery({ collection }: CollectionMintedGalleryP
 
       {!isInView ? (
         <p className="text-sm text-slate-500">Scroll down to load minted NFTs.</p>
-      ) : galleryLoading && displayedItems.length === 0 ? (
-        <p className="text-slate-400">Loading minted NFTs from the blockchain…</p>
-      ) : totalCount === 0 && (onChainMintedCount ?? 0) > 0 ? (
-        <p className="text-slate-400">Loading minted NFTs from the blockchain…</p>
       ) : totalCount === 0 ? (
         <p className="text-slate-500">No NFTs have been minted from this collection yet.</p>
       ) : (

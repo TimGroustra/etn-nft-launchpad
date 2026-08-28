@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
 import { EtnUsdHint } from '@/components/EtnUsdHint'
-import { CollectionMintedGallery } from '@/components/CollectionMintedGallery'
+import { ElectroSwapCollectionLink } from '@/components/ElectroSwapCollectionLink'
 import { MintSuccessModal, type MintedTokenInfo } from '@/components/MintSuccessModal'
 import {
   MintPanelBadge,
@@ -375,7 +375,11 @@ export function GemShardsMintPanel({
         </div>
       </div>
       <Card className="border-slate-800 bg-slate-900/60 p-6">{mintActions}</Card>
-      {variant === 'page' && collection && <CollectionMintedGallery collection={collection} />}
+      {variant === 'page' && collection?.contract_address && (
+        <p>
+          <ElectroSwapCollectionLink contractAddress={collection.contract_address} showIcon />
+        </p>
+      )}
       </div>
     </>
   )

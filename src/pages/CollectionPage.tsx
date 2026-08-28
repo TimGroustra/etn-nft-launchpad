@@ -103,7 +103,9 @@ function CollectionPageContent({
           )}
         </div>
       )}
-      {collection.contract_address && <CollectionMintedGallery collection={collection} />}
+      {collection.contract_address && isFullyMinted && (
+        <CollectionMintedGallery collection={collection} />
+      )}
     </div>
   )
 }
