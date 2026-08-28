@@ -17,6 +17,7 @@ import {
   MintPanelCardHeader,
   MintPanelCardHero,
   MintPanelHighlight,
+  MintPanelMintSection,
   MintPanelStat,
   MintPanelStats,
   mintPanelCardClass,
@@ -210,10 +211,6 @@ export function GemShardsMintPanel({
 
   const mintActions = isDraft ? (
     <CardDescription>Minting is disabled until you publish from the Dashboard.</CardDescription>
-  ) : !isConnected ? (
-    <Button className={mintPanelPrimaryButtonClass('violet')} onClick={() => open()}>
-      Connect wallet to mint
-    </Button>
   ) : (
     <div className="space-y-3">
       <MintPanelStats>
@@ -232,76 +229,84 @@ export function GemShardsMintPanel({
         <MintPanelStat label="Remaining">{maxMintable}</MintPanelStat>
       </MintPanelStats>
 
-      {showFreeMintInfo && (
-        <MintPanelHighlight tone="violet">
-          {freeMintLoading ? (
-            <p className="text-sm text-violet-100/80">Checking free mints…</p>
-          ) : freeMintsRemaining > 0 ? (
-            <>
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-medium leading-none text-violet-100">
-                  {freeMintsRemaining} free {freeMintsRemaining === 1 ? 'mint' : 'mints'} remaining
-                </p>
-                <MintPanelBadge tone="violet">ElectroGem</MintPanelBadge>
-              </div>
-              <Button
-                className="mt-3 w-full border-violet-400/30 bg-violet-500/10 text-violet-100 hover:bg-violet-500/20"
-                variant="outline"
-                disabled={isPending || mintingFree || mintingPaid}
-                onClick={mintFree}
-              >
-                {mintingFree ? 'Minting…' : 'Mint free shard'}
-              </Button>
-            </>
-          ) : (
-            <p className="text-sm text-slate-400">No free mints remaining</p>
+      {!isConnected ? (
+        <Button className={mintPanelPrimaryButtonClass('violet')} onClick={() => open()}>
+          Connect wallet to mint
+        </Button>
+      ) : (
+        <>
+          {showFreeMintInfo && (
+            <MintPanelHighlight tone="violet">
+              {freeMintLoading ? (
+                <p className="text-sm text-violet-100/80">Checking free mints…</p>
+              ) : freeMintsRemaining > 0 ? (
+                <>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium leading-none text-violet-100">
+                      {freeMintsRemaining} free {freeMintsRemaining === 1 ? 'mint' : 'mints'} remaining
+                    </p>
+                    <MintPanelBadge tone="violet">ElectroGem</MintPanelBadge>
+                  </div>
+                  <Button
+                    className="mt-3 w-full border-violet-400/30 bg-violet-500/10 text-violet-100 hover:bg-violet-500/20"
+                    variant="outline"
+                    disabled={isPending || mintingFree || mintingPaid}
+                    onClick={mintFree}
+                  >
+                    {mintingFree ? 'Minting…' : 'Mint free shard'}
+                  </Button>
+                </>
+              ) : (
+                <p className="text-sm text-slate-400">No free mints remaining</p>
+              )}
+            </MintPanelHighlight>
           )}
-        </MintPanelHighlight>
-      )}
 
-      <div className="space-y-3 rounded-xl border border-slate-800/80 bg-slate-950/50 p-4">
-        {weekOneActive && (
-          <p className="text-xs leading-relaxed text-slate-500">
-            {ownsElectroGem
-              ? `ElectroGem holders only · public opens in ${countdownLabel ?? 'soon'}`
-              : `Opens to everyone in ${countdownLabel ?? 'soon'}`}
-          </p>
-        )}
-        {!saleActive ? (
-          <p className="text-sm text-slate-400">This collection is sold out.</p>
-        ) : (
-          <>
-            <div>
-              <Label htmlFor={`gem-shards-mint-qty-${collection?.id ?? 'panel'}`}>Quantity</Label>
-              <Input
-                id={`gem-shards-mint-qty-${collection?.id ?? 'panel'}`}
-                type="number"
-                min={1}
-                max={maxMintable}
-                value={safeQuantity}
-                disabled={mintingPaid || mintingFree}
-                onChange={(event) =>
-                  setQuantity(Math.max(1, Math.min(maxMintable, Number(event.target.value) || 1)))
-                }
-              />
-              <p className="mt-1 text-xs text-slate-500">
-                One shard per transaction · up to {maxMintable} remaining
+          <MintPanelMintSection>
+            {weekOneActive && (
+              <p className="text-xs leading-relaxed text-slate-500">
+                {ownsElectroGem
+                  ? `ElectroGem holders only · public opens in ${countdownLabel ?? 'soon'}`
+                  : `Opens to everyone in ${countdownLabel ?? 'soon'}`}
               </p>
-            </div>
-            <Button
-              className={mintPanelPrimaryButtonClass('violet')}
-              disabled={!paidMintAllowed || isPending || mintingPaid || mintingFree}
-              onClick={mintPaid}
-            >
-              {paidMintLabel}
-            </Button>
-            <EtnUsdHint etn={totalEtn} align="right" className="-mt-1" />
-          </>
-        )}
-        {weekOneActive && !ownsElectroGem && saleActive && (
-          <p className="text-xs text-amber-300/90">Hold an ElectroGem to mint during week one.</p>
-        )}
-      </div>
+            )}
+            {!saleActive ? (
+              <p className="text-sm text-slate-400">This collection is sold out.</p>
+            ) : (
+              <>
+                <div>
+                  <Label htmlFor={`gem-shards-mint-qty-${collection?.id ?? 'panel'}`}>Quantity</Label>
+                  <Input
+                    id={`gem-shards-mint-qty-${collection?.id ?? 'panel'}`}
+                    type="number"
+                    min={1}
+                    max={maxMintable}
+                    value={safeQuantity}
+                    disabled={mintingPaid || mintingFree}
+                    onChange={(event) =>
+                      setQuantity(Math.max(1, Math.min(maxMintable, Number(event.target.value) || 1)))
+                    }
+                  />
+                  <p className="mt-1 text-xs text-slate-500">
+                    One shard per transaction · up to {maxMintable} remaining
+                  </p>
+                </div>
+                <Button
+                  className={mintPanelPrimaryButtonClass('violet')}
+                  disabled={!paidMintAllowed || isPending || mintingPaid || mintingFree}
+                  onClick={mintPaid}
+                >
+                  {paidMintLabel}
+                </Button>
+                <EtnUsdHint etn={totalEtn} align="right" className="-mt-1" />
+              </>
+            )}
+            {weekOneActive && !ownsElectroGem && saleActive && (
+              <p className="text-xs text-amber-300/90">Hold an ElectroGem to mint during week one.</p>
+            )}
+          </MintPanelMintSection>
+        </>
+      )}
     </div>
   )
 

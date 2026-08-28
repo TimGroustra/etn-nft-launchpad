@@ -154,6 +154,10 @@ export function MintPanelCardActions({ children, className }: { children: ReactN
   return <div className={cn('mt-auto flex flex-col gap-3', className)}>{children}</div>
 }
 
+export function MintPanelMintSection({ children }: { children: ReactNode }) {
+  return <div className="space-y-3 rounded-xl border border-slate-800/80 bg-slate-950/50 p-4">{children}</div>
+}
+
 export function MintPanelCardFooter({ children }: { children: ReactNode }) {
   return <div className="border-t border-slate-800/70 pt-4">{children}</div>
 }

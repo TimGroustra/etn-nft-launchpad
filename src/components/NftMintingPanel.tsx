@@ -61,6 +61,8 @@ import {
   MintPanelCardHero,
   MintPanelEmptyState,
   MintPanelSectionHeader,
+  MintPanelHighlight,
+  MintPanelMintSection,
   MintPanelStat,
   MintPanelStats,
   mintPanelCardClass,
@@ -378,14 +380,7 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
   })
   const showPlatformMintFee = chargesLaunchpadMintFee && platformMintFeeWei > 0n
   const mintPricingReady = Boolean(mintPriceWei) && !platformMintFeeLoading
-
-  const isOwner = Boolean(
-
-    address && collection.creator_wallet && address.toLowerCase() === collection.creator_wallet.toLowerCase(),
-
-  )
-
-  const canViewCollection = isAdmin || isOwner
+  const totalEtn = Number(formatEther(totalMintWei))
 
 
 
@@ -505,6 +500,8 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
             badge={
               collection.mint_panel_admin_only && isAdmin ? (
                 <MintPanelBadge tone="amber">Admin preview</MintPanelBadge>
+              ) : saleActive ? (
+                <MintPanelBadge>Live</MintPanelBadge>
               ) : undefined
             }
           />
@@ -515,131 +512,93 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
 
         </div>
 
-
-
-        <MintPanelStats>
-
-          <MintPanelStat label="Price">
-            <div>{priceEtn} ETN each</div>
-            <EtnUsdHint etn={priceEtn} align="right" className="mt-0.5" />
-          </MintPanelStat>
-          {showPlatformMintFee && (
-            <MintPanelStat label={`Platform fee (${formatPlatformMintFeePercent()})`}>
-              <div>{Number(formatEther(platformMintFeeWei)).toLocaleString()} ETN</div>
-              <EtnUsdHint etn={Number(formatEther(platformMintFeeWei))} align="right" className="mt-0.5" />
-            </MintPanelStat>
-          )}
-          {showPlatformMintFee && (
-            <MintPanelStat label="Total" highlight>
-              <div>{Number(formatEther(totalMintWei)).toLocaleString()} ETN</div>
-              <EtnUsdHint etn={Number(formatEther(totalMintWei))} align="right" className="mt-0.5" />
-            </MintPanelStat>
-          )}
-
-          <MintPanelStat label="Minted">
-            {mintedCount} / {collection.max_supply}
-          </MintPanelStat>
-
-          {Number(collection.max_mint_per_wallet) > 0 && (
-            <MintPanelStat label="Wallet limit">{collection.max_mint_per_wallet}</MintPanelStat>
-          )}
-
-        </MintPanelStats>
-
-
-
-        {collection.burn_on_mint && Number(collection.mint_burn_bps ?? 0) > 0 && (
-
-          <p className="text-xs text-amber-300/90">
-
-            {formatPercentFromBps(collection.mint_burn_bps)} of each mint is swapped to CLUB and burned.
-
-          </p>
-
-        )}
-
-
-
         <MintPanelCardActions>
-
-        {!isConnected ? (
-
-          <Button className={mintPanelPrimaryButtonClass()} onClick={() => open({ view: 'Connect' })}>
-
-            Connect wallet to mint
-
-          </Button>
-
-        ) : wrongNetwork ? (
-
-          <p className="text-center text-sm text-amber-300 sm:text-left">
-
-            Switch to {targetChainId === 5201420 ? 'Electroneum Testnet' : 'Electroneum Mainnet'} to mint.
-
-          </p>
-
-        ) : !saleActive ? (
-
-          <p className="text-center text-sm text-slate-400 sm:text-left">Public mint is not active for this collection right now.</p>
-
-        ) : (
-
           <div className="space-y-3">
+            <MintPanelStats>
+              <MintPanelStat label="Price">
+                <div>{priceEtn} ETN each</div>
+                <EtnUsdHint etn={priceEtn} align="right" className="mt-0.5" />
+              </MintPanelStat>
+              {showPlatformMintFee && (
+                <MintPanelStat label={`Platform fee (${formatPlatformMintFeePercent()})`}>
+                  <div>{Number(formatEther(platformMintFeeWei)).toLocaleString()} ETN</div>
+                  <EtnUsdHint etn={Number(formatEther(platformMintFeeWei))} align="right" className="mt-0.5" />
+                </MintPanelStat>
+              )}
+              <MintPanelStat label="Minted">
+                {mintedCount} / {collection.max_supply}
+              </MintPanelStat>
+              <MintPanelStat label="Remaining">{remaining}</MintPanelStat>
+              {Number(collection.max_mint_per_wallet) > 0 && (
+                <MintPanelStat label="Wallet limit">{collection.max_mint_per_wallet}</MintPanelStat>
+              )}
+              {showPlatformMintFee && (
+                <MintPanelStat label="Total" highlight>
+                  <div>{totalEtn.toLocaleString()} ETN</div>
+                  <EtnUsdHint etn={totalEtn} align="right" className="mt-0.5" />
+                </MintPanelStat>
+              )}
+            </MintPanelStats>
 
-            <div>
+            {collection.burn_on_mint && Number(collection.mint_burn_bps ?? 0) > 0 && (
+              <MintPanelHighlight tone="amber">
+                <p className="text-sm text-amber-100/90">
+                  {formatPercentFromBps(collection.mint_burn_bps)} of each mint is swapped to CLUB and burned.
+                </p>
+              </MintPanelHighlight>
+            )}
 
-              <Label htmlFor={`mint-qty-${collection.id}`}>Quantity</Label>
-
-              <Input
-
-                id={`mint-qty-${collection.id}`}
-
-                type="number"
-
-                min={1}
-
-                max={maxMintable}
-
-                value={safeQuantity}
-
-                onChange={(e) => setQuantity(Math.max(1, Math.min(maxMintable, Number(e.target.value) || 1)))}
-
-              />
-
-              <p className="mt-1 text-xs text-slate-500">You can mint up to {maxMintable} more.</p>
-
-            </div>
-
-            <Button className={mintPanelPrimaryButtonClass()} disabled={minting || !mintPricingReady} onClick={mint}>
-
-              {minting
-
-                ? 'Minting…'
-
-                : `Mint ${safeQuantity} for ${Number(formatEther(totalMintWei)).toLocaleString()} ETN`}
-
-            </Button>
-
+            {!isConnected ? (
+              <Button className={mintPanelPrimaryButtonClass()} onClick={() => open({ view: 'Connect' })}>
+                Connect wallet to mint
+              </Button>
+            ) : (
+              <MintPanelMintSection>
+                {wrongNetwork ? (
+                  <p className="text-sm text-amber-300">
+                    Switch to {targetChainId === 5201420 ? 'Electroneum Testnet' : 'Electroneum Mainnet'} to mint.
+                  </p>
+                ) : !saleActive ? (
+                  <p className="text-sm text-slate-400">Public mint is not active for this collection right now.</p>
+                ) : (
+                  <>
+                    <div>
+                      <Label htmlFor={`mint-qty-${collection.id}`}>Quantity</Label>
+                      <Input
+                        id={`mint-qty-${collection.id}`}
+                        type="number"
+                        min={1}
+                        max={maxMintable}
+                        value={safeQuantity}
+                        onChange={(e) =>
+                          setQuantity(Math.max(1, Math.min(maxMintable, Number(e.target.value) || 1)))
+                        }
+                      />
+                      <p className="mt-1 text-xs text-slate-500">You can mint up to {maxMintable} more.</p>
+                    </div>
+                    <Button
+                      className={mintPanelPrimaryButtonClass()}
+                      disabled={minting || !mintPricingReady}
+                      onClick={mint}
+                    >
+                      {minting
+                        ? 'Minting…'
+                        : `Mint ${safeQuantity} for ${totalEtn.toLocaleString()} ETN`}
+                    </Button>
+                    {!showPlatformMintFee && <EtnUsdHint etn={totalEtn} align="right" className="-mt-1" />}
+                  </>
+                )}
+              </MintPanelMintSection>
+            )}
           </div>
-
-        )}
-
         </MintPanelCardActions>
 
-
-
-        {canViewCollection && (
-
+        {collection.contract_address && (
           <MintPanelCardFooter>
-
             <Button variant="outline" size="sm" className={mintPanelSecondaryButtonClass()} asChild>
-
               <Link to={`/collection/${collection.contract_address}`}>View collection</Link>
-
             </Button>
-
           </MintPanelCardFooter>
-
         )}
 
       </MintPanelCardBody>

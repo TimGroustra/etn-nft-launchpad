@@ -165,7 +165,6 @@ export function Erc1155PublicMintCard({ collection }: Erc1155PublicMintCardProps
   const isOwner = Boolean(
     address && collection.creator_wallet && address.toLowerCase() === collection.creator_wallet.toLowerCase(),
   )
-  const canViewCollection = isAdmin || isOwner
 
   const getQuantity = (tokenId: number) => Math.max(1, quantities[tokenId] ?? 1)
 
@@ -470,7 +469,7 @@ export function Erc1155PublicMintCard({ collection }: Erc1155PublicMintCardProps
             </div>
           )}
 
-          {canViewCollection && (
+          {collection.contract_address && (
             <div className="mt-auto">
               <MintPanelCardFooter>
                 <Button variant="outline" size="sm" className={mintPanelSecondaryButtonClass()} asChild>
