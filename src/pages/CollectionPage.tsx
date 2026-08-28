@@ -9,6 +9,7 @@ import { getElectroSwapCollectionUrl } from '@/lib/marketplace'
 import { shortenAddress } from '@/lib/utils'
 import { usePlatformConfig } from '@/hooks/usePlatformConfig'
 import { isGemShardsContract } from '@/lib/gem-shards'
+import { CollectionMintedGallery } from '@/components/CollectionMintedGallery'
 import { GemShardsMintPanel } from '@/components/GemShardsMintPanel'
 import type { Collection } from '@/types/database'
 
@@ -43,9 +44,11 @@ function CollectionPageContent({
   }
 
   const isErc721 = getCollectionTokenStandard(collection) === 'erc721'
+  const isDraft = collection.status === 'draft'
   const electroSwapUrl = collection.contract_address
     ? getElectroSwapCollectionUrl(collection.contract_address)
     : null
+  const showMintPanelHint = !isDraft && !isFullyMinted
 
   return (
     <div className="space-y-6">
@@ -101,9 +104,10 @@ function CollectionPageContent({
         </p>
       ) : isFullyMinted ? (
         <p className="text-slate-400">This collection is fully minted.</p>
-      ) : (
+      ) : showMintPanelHint ? (
         <p className="text-slate-400">Mint this collection from the home NFT Minting Panel.</p>
-      )}
+      ) : null}
+      {collection.contract_address && <CollectionMintedGallery collection={collection} />}
     </div>
   )
 }
