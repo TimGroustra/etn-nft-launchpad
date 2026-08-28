@@ -282,7 +282,7 @@ export function GemShardsMintPanel({
             ) : (
               <>
                 <p className="text-xs text-slate-500">
-                  One shard per wallet confirmation. Mint again to get another.
+                  One shard per transaction. Mint again to get another.
                 </p>
                 <Button
                   className={mintPanelPrimaryButtonClass('violet')}
