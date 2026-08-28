@@ -8,6 +8,7 @@ import { CreatePage } from '@/pages/CreatePage'
 import { EditPage } from '@/pages/EditPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { CollectionPage } from '@/pages/CollectionPage'
+import { GemShardRewardsPage } from '@/pages/GemShardRewardsPage'
 
 const router = createBrowserRouter([
   {
@@ -35,6 +36,7 @@ const router = createBrowserRouter([
         element: <EditPage />,
       },
       { path: 'dashboard', element: <DashboardPage /> },
+      { path: 'rewards', element: <GemShardRewardsPage /> },
       { path: 'collection/:address', element: <CollectionPage /> },
     ],
   },

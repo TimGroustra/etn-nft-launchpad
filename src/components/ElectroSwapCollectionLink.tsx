@@ -1,5 +1,5 @@
 import { ExternalLink } from 'lucide-react'
-import { getElectroSwapCollectionUrl } from '@/lib/marketplace'
+import { ELECTROSWAP_EXTERNAL_LINK_PROPS, getElectroSwapCollectionUrl } from '@/lib/marketplace'
 
 type ElectroSwapCollectionLinkProps = {
   contractAddress: string
@@ -15,8 +15,8 @@ export function ElectroSwapCollectionLink({
   return (
     <a
       href={getElectroSwapCollectionUrl(contractAddress)}
-      target="_blank"
-      rel="noopener noreferrer"
+      {...ELECTROSWAP_EXTERNAL_LINK_PROPS}
+      onClick={(event) => event.stopPropagation()}
       className={className ?? 'inline-flex items-center gap-1 text-blue-400 hover:underline'}
     >
       View on ElectroSwap

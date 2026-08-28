@@ -2,6 +2,7 @@ import { ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
 import { CREATOR_ACCESS_COLLECTIONS } from '@/lib/creator-access'
+import { ELECTROSWAP_EXTERNAL_LINK_PROPS } from '@/lib/marketplace'
 
 export function HolderPerksCard() {
   return (
@@ -30,7 +31,7 @@ export function HolderPerksCard() {
               <p className="mt-1 text-sm text-slate-400">Hold both collections to unlock all perks.</p>
             </div>
             <Button variant="outline" asChild className="w-full sm:w-auto">
-              <a href={collection.marketUrl} target="_blank" rel="noopener noreferrer">
+              <a href={collection.marketUrl} {...ELECTROSWAP_EXTERNAL_LINK_PROPS}>
                 Buy {collection.label}
                 <ExternalLink className="ml-2 h-4 w-4" />
               </a>
