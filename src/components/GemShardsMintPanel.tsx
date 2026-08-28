@@ -327,6 +327,11 @@ export function GemShardsMintPanel({
               badge={<MintPanelBadge tone="violet">Live</MintPanelBadge>}
             />
             <MintPanelCardDescription>{description}</MintPanelCardDescription>
+            {collection?.contract_address && (
+              <p className="text-sm text-slate-500">
+                <ElectroSwapCollectionLink contractAddress={collection.contract_address} />
+              </p>
+            )}
           </div>
           <MintPanelCardActions>{mintActions}</MintPanelCardActions>
           {collection?.contract_address && (

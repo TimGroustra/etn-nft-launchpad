@@ -545,6 +545,11 @@ export function PublicMintCard({ collection }: PublicMintCardProps) {
           <MintPanelCardDescription>
             {collection.description || collection.symbol}
           </MintPanelCardDescription>
+          {collection.contract_address && (
+            <p className="text-sm text-slate-500">
+              <ElectroSwapCollectionLink contractAddress={collection.contract_address} />
+            </p>
+          )}
 
         </div>
 
