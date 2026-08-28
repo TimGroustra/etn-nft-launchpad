@@ -12,6 +12,7 @@ function formatClaimBalance(wei: bigint): string {
   return `${etn.toLocaleString(undefined, { maximumFractionDigits: 4 })} ETN`
 }
 
+/** Compact header claim action — only when there is ETN ready to claim. */
 export function GemShardClaimButton() {
   const { chain } = useNetwork()
   const { writeContractAsync, isPending } = useWriteContract()
@@ -26,7 +27,7 @@ export function GemShardClaimButton() {
   } = useGemShardRewards()
   const { isPublished } = useGemShardsLaunch()
 
-  if (!configured || !isConnected || !isPublished || !ownsShards) {
+  if (!configured || !isConnected || !isPublished || !ownsShards || loading || totalPendingWei <= 0n) {
     return null
   }
 
@@ -46,29 +47,23 @@ export function GemShardClaimButton() {
     }
   }
 
-  const balanceLabel = loading ? '…' : formatClaimBalance(totalPendingWei)
-
-  if (totalPendingWei <= 0n) {
-    return (
-      <span
-        className="hidden text-xs tabular-nums text-emerald-300/80 sm:inline"
-        title="Gem Shard holder rewards available to claim"
-      >
-        {balanceLabel}
-      </span>
-    )
-  }
+  const balanceLabel = formatClaimBalance(totalPendingWei)
 
   return (
     <Button
       variant="outline"
       size="sm"
       onClick={handleClaim}
-      disabled={loading || isPending || claimableTokenIds.length === 0}
-      className="hidden border-emerald-800/60 text-emerald-300 hover:bg-emerald-950/40 sm:inline-flex"
+      disabled={isPending || claimableTokenIds.length === 0}
+      className="h-7 shrink-0 border-emerald-800/60 px-2 text-xs text-emerald-300 hover:bg-emerald-950/40 sm:h-8 sm:px-3 sm:text-sm"
       title="Claim Gem Shard holder rewards"
     >
-      {loading || isPending ? 'Claiming…' : `Claim ${balanceLabel}`}
+      {isPending ? 'Claiming…' : (
+        <>
+          <span className="sm:hidden">Claim</span>
+          <span className="hidden sm:inline">Claim {balanceLabel}</span>
+        </>
+      )}
     </Button>
   )
 }

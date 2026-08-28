@@ -68,22 +68,46 @@ export async function fetchGemShardMintedTokenIds(
   return uniqueSortedTokenIds(events.map((event) => Number(event.args.tokenId)))
 }
 
-/** Token IDs currently owned by a wallet — derived from Transfer logs only. */
+/** Token IDs currently owned by a wallet — scoped Transfer / ShardMinted logs only. */
 export async function fetchGemShardOwnedTokenIds(
   client: PublicClient,
   contractAddress: `0x${string}`,
   owner: `0x${string}`,
 ): Promise<number[]> {
-  const normalizedOwner = owner.toLowerCase()
-  const transferLogs = await getContractLogsChunked(client, {
-    address: contractAddress,
-    event: TRANSFER_EVENT,
-  })
+  const normalizedOwner = owner.toLowerCase() as `0x${string}`
 
-  const events = parseEventLogs({ abi: GEM_SHARDS_ABI, logs: transferLogs, eventName: 'Transfer' })
+  const [incomingLogs, outgoingLogs, mintLogs] = await Promise.all([
+    getContractLogsChunked(client, {
+      address: contractAddress,
+      event: TRANSFER_EVENT,
+      args: { to: normalizedOwner },
+    }),
+    getContractLogsChunked(client, {
+      address: contractAddress,
+      event: TRANSFER_EVENT,
+      args: { from: normalizedOwner },
+    }),
+    getContractLogsChunked(client, {
+      address: contractAddress,
+      event: SHARD_MINTED_EVENT,
+      args: { to: normalizedOwner },
+    }),
+  ])
+
   const ownership = new Map<number, string>()
 
-  for (const event of events) {
+  const mintEvents = parseEventLogs({ abi: GEM_SHARDS_ABI, logs: mintLogs, eventName: 'ShardMinted' })
+  for (const event of mintEvents) {
+    ownership.set(Number(event.args.tokenId), normalizedOwner)
+  }
+
+  const transferEvents = parseEventLogs({
+    abi: GEM_SHARDS_ABI,
+    logs: [...incomingLogs, ...outgoingLogs],
+    eventName: 'Transfer',
+  })
+
+  for (const event of transferEvents) {
     const tokenId = Number(event.args.tokenId)
     const to = event.args.to?.toLowerCase()
     const from = event.args.from?.toLowerCase()
