@@ -51,28 +51,18 @@ export function mintPanelSecondaryButtonClass() {
 type MintPanelSectionHeaderProps = {
   title: string
   description?: string
-  accent?: MintPanelAccent
+  headingLevel?: 'h1' | 'h2'
 }
 
 export function MintPanelSectionHeader({
   title,
   description,
-  accent = 'blue',
+  headingLevel: Heading = 'h1',
 }: MintPanelSectionHeaderProps) {
-  const accentBar =
-    accent === 'violet'
-      ? 'from-violet-500 via-fuchsia-400 to-violet-600'
-      : accent === 'slate'
-        ? 'from-slate-600 via-slate-400 to-slate-600'
-        : 'from-blue-500 via-cyan-400 to-blue-600'
-
   return (
-    <div className="space-y-3 border-b border-slate-800/60 pb-5">
-      <div className={cn('h-1 w-12 rounded-full bg-gradient-to-r', accentBar)} />
-      <div className="space-y-1.5">
-        <h2 className="text-xl font-semibold tracking-tight text-white sm:text-2xl">{title}</h2>
-        {description ? <p className="max-w-2xl text-sm leading-relaxed text-slate-400 sm:text-base">{description}</p> : null}
-      </div>
+    <div>
+      <Heading className="text-3xl font-bold">{title}</Heading>
+      {description ? <p className="text-sm text-slate-400">{description}</p> : null}
     </div>
   )
 }

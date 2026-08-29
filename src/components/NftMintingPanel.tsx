@@ -759,7 +759,7 @@ export function NftMintingPanel() {
         <MintPanelSectionHeader
           title="Minted out"
           description="These collections are fully minted. You can still view them on their collection pages."
-          accent="slate"
+          headingLevel="h2"
         />
         <div className={mintPanelGridClass}>
           {mintedOutCollections.map((collection) => (
