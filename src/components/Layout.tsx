@@ -13,7 +13,7 @@ export function Layout() {
 
   return (
     <div className="min-h-screen overflow-x-clip bg-slate-950 text-white">
-      <header className="relative z-50 border-b border-slate-800 bg-slate-950/80 backdrop-blur">
+      <header className="relative z-50 border-b border-slate-700/60 bg-slate-900/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-x-2 gap-y-2 px-3 py-2.5 sm:gap-x-4 sm:px-4 sm:py-4">
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
             <Link

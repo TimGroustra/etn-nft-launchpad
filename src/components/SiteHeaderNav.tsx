@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { Menu, X } from 'lucide-react'
-import { useAccount } from 'wagmi'
 import { Button } from '@/components/ui/button'
 
 const NAV_LINK_BASE =
@@ -24,7 +23,6 @@ type NavItem = {
 }
 
 export function SiteHeaderNav() {
-  const { isConnected } = useAccount()
   const location = useLocation()
   const containerRef = useRef<HTMLDivElement>(null)
   const measureRef = useRef<HTMLDivElement>(null)
@@ -34,15 +32,11 @@ export function SiteHeaderNav() {
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
 
   const items = useMemo((): NavItem[] => {
-    const links: NavItem[] = [
+    return [
       { to: '/', label: 'Mint', end: true },
       { to: '/dashboard', label: 'Dashboard' },
     ]
-    if (isConnected) {
-      links.push({ to: '/create', label: 'Create' })
-    }
-    return links
-  }, [isConnected])
+  }, [])
 
   const checkFit = useCallback(() => {
     const container = containerRef.current
