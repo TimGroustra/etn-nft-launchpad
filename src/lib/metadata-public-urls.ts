@@ -16,6 +16,13 @@ export function getPublicMetadataUrl(collectionId: string, tokenId: number): str
   return `${getMetadataPublicOrigin()}/m/${collectionId}/${tokenId}.json`
 }
 
+/** Proxy URL for a file in the gallery-cache bucket (`{contract}/{tokenId}.ext`). */
+export function getGalleryCachePublicUrl(storagePath: string): string {
+  if (!storagePath) return ''
+  const normalized = storagePath.replace(/^\/+/, '')
+  return `${getMetadataPublicOrigin()}/g/${normalized}`
+}
+
 /** Proxy URL for a file in the collection-images bucket (`{collectionId}/{tokenId}.png`). */
 export function getPublicImageUrlFromPath(imageStoragePath: string, cacheBust?: string | number): string {
   if (!imageStoragePath) return ''

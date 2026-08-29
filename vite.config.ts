@@ -17,6 +17,20 @@ export default defineConfig(({ mode }) => {
         '@': path.resolve(__dirname, './src'),
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/three') || id.includes('node_modules/three-stdlib')) {
+              return 'gallery-3d'
+            }
+            if (id.includes('node_modules/gifuct-js')) {
+              return 'gallery-3d'
+            }
+          },
+        },
+      },
+    },
     server: {
       proxy: {
         '/m': {
@@ -36,6 +50,17 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (requestPath) =>
             requestPath.replace(/^\/gem-shards\//, '/storage/v1/object/public/gem-shards/'),
+        },
+        '/ipfs': {
+          target: 'https://cloudflare-ipfs.com',
+          changeOrigin: true,
+          rewrite: (requestPath) => requestPath.replace(/^\/ipfs/, '/ipfs'),
+        },
+        '/g': {
+          target: supabaseUrl,
+          changeOrigin: true,
+          rewrite: (requestPath) =>
+            requestPath.replace(/^\/g\//, '/storage/v1/object/public/gallery-cache/'),
         },
       },
     },

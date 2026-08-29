@@ -79,6 +79,72 @@ export interface Database {
         Insert: { key: string; value?: string }
         Update: Partial<Database['public']['Tables']['platform_config']['Row']>
       }
+      gallery_config: {
+        Row: {
+          panel_key: string
+          collection_name: string | null
+          contract_address: string | null
+          default_token_id: number | null
+          show_collection: boolean | null
+          wall_color: string | null
+          text_color: string | null
+          updated_at: string | null
+          updated_by_address: string | null
+        }
+        Insert: Partial<Database['public']['Tables']['gallery_config']['Row']> & { panel_key: string }
+        Update: Partial<Database['public']['Tables']['gallery_config']['Row']>
+      }
+      panel_locks: {
+        Row: {
+          panel_id: string
+          contract_address: string | null
+          token_id: string | null
+          locked_by_address: string
+          locked_until: string
+          locking_gem_token_id: string | null
+        }
+        Insert: Partial<Database['public']['Tables']['panel_locks']['Row']> & {
+          panel_id: string
+          locked_by_address: string
+          locked_until: string
+        }
+        Update: Partial<Database['public']['Tables']['panel_locks']['Row']>
+      }
+      gallery_media_cache: {
+        Row: {
+          contract_address: string
+          token_id: number
+          title: string | null
+          content_type: string
+          storage_path: string
+          source_url: string | null
+          cached_at: string
+        }
+        Insert: Partial<Database['public']['Tables']['gallery_media_cache']['Row']> & {
+          contract_address: string
+          token_id: number
+          content_type: string
+          storage_path: string
+        }
+        Update: Partial<Database['public']['Tables']['gallery_media_cache']['Row']>
+      }
+      gallery_cache_queue: {
+        Row: {
+          id: number
+          contract_address: string
+          token_id: number
+          status: 'pending' | 'processing' | 'done' | 'failed'
+          attempts: number
+          last_error: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Partial<Database['public']['Tables']['gallery_cache_queue']['Row']> & {
+          contract_address: string
+          token_id: number
+        }
+        Update: Partial<Database['public']['Tables']['gallery_cache_queue']['Row']>
+      }
     }
   }
 }

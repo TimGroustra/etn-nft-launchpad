@@ -28,6 +28,15 @@
       ]
     },
     {
+      "source": "/g/:path*",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, s-maxage=31536000, stale-while-revalidate=604800"
+        }
+      ]
+    },
+    {
       "source": "/m/:collectionId/:file",
       "headers": [
         {
@@ -49,6 +58,14 @@
     {
       "source": "/gem-shards/:path*",
       "destination": "https://sktexilttapijefdusni.supabase.co/storage/v1/object/public/gem-shards/:path*"
+    },
+    {
+      "source": "/ipfs/:path*",
+      "destination": "https://cloudflare-ipfs.com/ipfs/:path*"
+    },
+    {
+      "source": "/g/:path*",
+      "destination": "https://sktexilttapijefdusni.supabase.co/storage/v1/object/public/gallery-cache/:path*"
     },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
