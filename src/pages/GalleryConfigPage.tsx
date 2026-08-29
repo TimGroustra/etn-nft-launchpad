@@ -9,8 +9,7 @@ import { toast } from 'sonner'
 import NftPreviewPane from '@/components/gallery/NftPreviewPane'
 import { Loader2, Gem, ArrowLeft, Map as MapIcon, Settings, Eye } from 'lucide-react'
 import { useAvailableGems } from '@/hooks/use-available-gems'
-import { useAdmin } from '@/hooks/useAdmin'
-import { canEditGallery, GALLERY_TREASURY_PREVIEW } from '@/lib/gallery-access'
+import { canEditGallery } from '@/lib/gallery-access'
 import FloorPlan from '@/components/gallery-config/FloorPlan'
 import PanelPickerList from '@/components/gallery-config/PanelPickerList'
 import SettingsPanel from '@/components/gallery-config/SettingsPanel'
@@ -53,7 +52,6 @@ const DEFAULT_TEXT_COLOR = '#40E0D0'
 export default function GalleryConfigPage() {
   const navigate = useNavigate()
   const { address: walletAddress, isConnected } = useAccount()
-  const { isAdmin } = useAdmin()
 
   const {
     availableTokens,
@@ -70,7 +68,7 @@ export default function GalleryConfigPage() {
   const [outerFloor, setOuterFloor] = useState<OuterFloor>('ground')
   const [activeTab, setActiveTab] = useState<string>('map')
 
-  const canEdit = canEditGallery(walletAddress, isAdmin, ownedTokens.length)
+  const canEdit = canEditGallery(ownedTokens.length)
 
   useEffect(() => {
     if (!isConnected || !walletAddress) {
@@ -78,11 +76,7 @@ export default function GalleryConfigPage() {
       return
     }
     if (!isGemsLoading && !canEdit) {
-      toast.error(
-        GALLERY_TREASURY_PREVIEW
-          ? 'Treasury access required during gallery preview.'
-          : `Insufficient ElectroGems (${ownedTokens.length}/${REQUIRED_GEM_BALANCE})`,
-      )
+      toast.error(`Insufficient ElectroGems (${ownedTokens.length}/${REQUIRED_GEM_BALANCE})`)
       navigate('/gallery')
     }
   }, [isConnected, walletAddress, isGemsLoading, canEdit, ownedTokens.length, navigate])

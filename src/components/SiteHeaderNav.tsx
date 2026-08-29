@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { useAccount } from 'wagmi'
 import { Menu, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useAdmin } from '@/hooks/useAdmin'
-import { canViewGallery } from '@/lib/gallery-access'
 
 const NAV_LINK_BASE =
   'rounded-md px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap'
@@ -27,9 +24,6 @@ type NavItem = {
 
 export function SiteHeaderNav() {
   const location = useLocation()
-  const { address } = useAccount()
-  const { isAdmin } = useAdmin()
-  const showGalleryNav = canViewGallery(address, isAdmin)
   const containerRef = useRef<HTMLDivElement>(null)
   const measureRef = useRef<HTMLDivElement>(null)
   const menuButtonRef = useRef<HTMLDivElement>(null)
@@ -38,13 +32,12 @@ export function SiteHeaderNav() {
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
 
   const items = useMemo((): NavItem[] => {
-    const base: NavItem[] = [
+    return [
       { to: '/', label: 'Mint', end: true },
       { to: '/dashboard', label: 'Dashboard' },
+      { to: '/gallery', label: '3D Gallery' },
     ]
-    if (showGalleryNav) base.push({ to: '/gallery', label: '3D Gallery' })
-    return base
-  }, [showGalleryNav])
+  }, [])
 
   const checkFit = useCallback(() => {
     const container = containerRef.current

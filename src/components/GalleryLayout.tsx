@@ -8,16 +8,14 @@ import { WalletDisconnectButton } from './WalletDisconnectButton'
 import { GemShardClaimButton } from './GemShardClaimButton'
 import { SiteHeaderNav } from './SiteHeaderNav'
 import { Button } from '@/components/ui/button'
-import { useAdmin } from '@/hooks/useAdmin'
 import { useAvailableGems } from '@/hooks/use-available-gems'
-import { canEditGallery, GALLERY_TREASURY_PREVIEW } from '@/lib/gallery-access'
+import { canEditGallery } from '@/lib/gallery-access'
 
 export function GalleryLayout() {
   const { isConnected, address } = useAccount()
-  const { isAdmin } = useAdmin()
   const { ownedTokens } = useAvailableGems(address)
   const location = useLocation()
-  const showEdit = canEditGallery(address, isAdmin, ownedTokens.length)
+  const showEdit = isConnected && canEditGallery(ownedTokens.length)
   const onConfigPage = location.pathname.startsWith('/gallery/config')
 
   return (
@@ -33,11 +31,6 @@ export function GalleryLayout() {
               <Rocket className="h-5 w-5 text-blue-400" />
             </Link>
             <SiteHeaderNav />
-            {GALLERY_TREASURY_PREVIEW && (
-              <span className="hidden rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300 sm:inline">
-                Admin preview
-              </span>
-            )}
           </div>
 
           <div className="flex shrink-0 items-center justify-end gap-x-1 gap-y-2 sm:gap-x-3">

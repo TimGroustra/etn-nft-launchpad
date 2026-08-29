@@ -2,7 +2,6 @@ import { serve } from 'https://deno.land/std@0.190.0/http/server.ts'
 import { JsonRpcProvider, Contract } from 'https://esm.sh/ethers@6.15.0'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 import { corsHeaders, normalizeWallet } from '../_shared/utils.ts'
-import { isAdminWallet } from '../_shared/admin.ts'
 import {
   enqueueGalleryTokens,
   tokenIdsForPanel,
@@ -12,7 +11,6 @@ import {
 const ELECTRO_GEMS_ADDRESS =
   Deno.env.get('ELECTROGEMS_NFT_ADDRESS') ?? '0xcff0d88Ed5311bAB09178b6ec19A464100880984'
 const RPC_URL = Deno.env.get('ETN_RPC_URL') ?? 'https://rpc.ankr.com/electroneum'
-const TREASURY_PREVIEW = (Deno.env.get('GALLERY_TREASURY_PREVIEW') ?? 'true') !== 'false'
 
 const GEM_ABI = [
   'function balanceOf(address owner) view returns (uint256)',
@@ -56,13 +54,8 @@ serve(async (req) => {
     if (!panelKey) throw new Error('Missing panelKey')
     if (!body.contract_address?.trim()) throw new Error('Contract address is required')
 
-    const isAdmin = isAdminWallet(wallet)
-    if (TREASURY_PREVIEW) {
-      if (!isAdmin) throw new Error('Treasury access required during gallery preview')
-    } else {
-      const owned = await getOwnedGemTokens(wallet)
-      if (owned.length < 1) throw new Error('ElectroGem required to edit gallery panels')
-    }
+    const owned = await getOwnedGemTokens(wallet)
+    if (owned.length < 1) throw new Error('ElectroGem required to edit gallery panels')
 
     const { data: existingLock } = await supabase
       .from('panel_locks')
@@ -109,8 +102,7 @@ serve(async (req) => {
 
     if (lockDurationDays === 0) {
       await supabase.from('panel_locks').delete().eq('panel_id', panelKey)
-    } else if (!TREASURY_PREVIEW) {
-      const owned = await getOwnedGemTokens(wallet)
+    } else {
       const gemToUse =
         lockingGemTokenId && owned.includes(lockingGemTokenId)
           ? lockingGemTokenId
