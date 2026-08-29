@@ -4,7 +4,7 @@ import { useWaitForTransactionReceipt, useReadContract } from 'wagmi'
 import { useChainWriteContract } from '@/hooks/useChainWriteContract'
 import { createPublicClient, http, type TransactionReceipt } from 'viem'
 import { toast } from 'sonner'
-import { useState, useEffect, type ReactNode } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { useCollections, useArchivedCollections, useOtherCollections } from '@/hooks/useCollections'
 import { WalletAuthButton, useWalletAuth } from '@/hooks/useWalletAuth'
@@ -32,6 +32,7 @@ import { OperationLockOverlay, type WalletApprovalStep } from '@/components/Oper
 import { useNavigationGuard } from '@/hooks/useNavigationGuard'
 import { activateWalletStep, buildPublishWalletSteps, completeWalletSteps } from '@/lib/operation-progress'
 import { cn } from '@/lib/utils'
+import { dismissHolderPerks, isHolderPerksDismissed, clearHolderPerksDismissed } from '@/lib/holder-perks-dismiss'
 import type { Collection } from '@/types/database'
 
 function shortWallet(wallet: string) {
@@ -104,7 +105,7 @@ export function DashboardPage() {
     isTreasuryAdmin,
   )
   const [view, setView] = useState<'active' | 'archive'>('active')
-  const [holderPerksDismissed, setHolderPerksDismissed] = useState(false)
+  const [holderPerksDismissed, setHolderPerksDismissed] = useState(() => isHolderPerksDismissed(address))
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [expandedOtherId, setExpandedOtherId] = useState<string | null>(null)
   const [publishingId, setPublishingId] = useState<string | null>(null)
@@ -140,11 +141,20 @@ export function DashboardPage() {
   const publishFeeReady = Boolean(factoryAddress && factoryAddress !== zeroAddress)
   const displayedCollections = view === 'archive' ? archivedCollections : collections
   const showHolderPerks = !hasDualHolderDiscount && view === 'active' && !holderPerksDismissed
+  const wasConnectedRef = useRef(false)
+  const addressRef = useRef(address)
+  addressRef.current = address
 
   useEffect(() => {
-    if (!isConnected) {
-      setHolderPerksDismissed(false)
+    setHolderPerksDismissed(isHolderPerksDismissed(address))
+  }, [address])
+
+  useEffect(() => {
+    if (wasConnectedRef.current && !isConnected) {
+      const wallet = addressRef.current
+      if (wallet) clearHolderPerksDismissed(wallet)
     }
+    wasConnectedRef.current = isConnected
   }, [isConnected])
 
   const refetchAll = () => {
@@ -540,7 +550,13 @@ export function DashboardPage() {
         walletSteps={publishLock.walletSteps}
       />
       {showHolderPerks && (
-        <HolderPerksCard onDismiss={() => setHolderPerksDismissed(true)} />
+        <HolderPerksCard
+          onDismiss={() => {
+            if (!address) return
+            dismissHolderPerks(address)
+            setHolderPerksDismissed(true)
+          }}
+        />
       )}
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

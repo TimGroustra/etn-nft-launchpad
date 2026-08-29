@@ -2,6 +2,7 @@ import { DoorOpen } from 'lucide-react'
 import { useAccount, useDisconnect } from 'wagmi'
 import { Button } from '@/components/ui/button'
 import { clearSession } from '@/lib/auth'
+import { clearHolderPerksDismissed } from '@/lib/holder-perks-dismiss'
 
 export function WalletDisconnectButton({ className }: { className?: string }) {
   const { address, isConnected } = useAccount()
@@ -10,6 +11,7 @@ export function WalletDisconnectButton({ className }: { className?: string }) {
   if (!isConnected || !address) return null
 
   const handleDisconnect = () => {
+    clearHolderPerksDismissed(address)
     clearSession()
     disconnect()
   }
