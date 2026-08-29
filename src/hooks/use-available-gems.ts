@@ -6,6 +6,12 @@ import {
   ERC721_ENUMERABLE_ABI,
 } from '@/lib/creator-access'
 import { supabase } from '@/lib/supabase'
+import type { Database } from '@/types/database'
+
+type PanelLockGemRow = Pick<
+  Database['public']['Tables']['panel_locks']['Row'],
+  'locking_gem_token_id'
+>
 
 interface AvailableGemsResult {
   availableTokens: string[]
@@ -81,7 +87,7 @@ export function useAvailableGems(walletAddress: string | null | undefined): Avai
 
       if (error) throw error
       const ids = new Set(
-        (data ?? [])
+        ((data ?? []) as PanelLockGemRow[])
           .map((row) => row.locking_gem_token_id)
           .filter((id): id is string => Boolean(id)),
       )

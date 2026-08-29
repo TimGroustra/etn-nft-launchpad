@@ -1,5 +1,5 @@
 import { JsonRpcProvider, Contract } from 'ethers'
-import { CLUB_WATCH_NFT_ADDRESS, ELECTROGEMS_NFT_ADDRESS } from '@/lib/creator-access'
+import { CLUB_WATCH_NFT_ADDRESS } from '@/lib/creator-access'
 import { fetchGemShardDisplayInfo } from '@/lib/gem-shards'
 import { getCachedGalleryMetadata } from '@/lib/gallery-cache'
 import { safeCall } from './ethersSafe'
