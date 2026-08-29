@@ -12,6 +12,7 @@ import { useAvailableGems } from '@/hooks/use-available-gems'
 import { useAdmin } from '@/hooks/useAdmin'
 import { canEditGallery, GALLERY_TREASURY_PREVIEW } from '@/lib/gallery-access'
 import FloorPlan from '@/components/gallery-config/FloorPlan'
+import PanelPickerList from '@/components/gallery-config/PanelPickerList'
 import SettingsPanel from '@/components/gallery-config/SettingsPanel'
 
 interface GalleryConfigRow {
@@ -141,14 +142,21 @@ export default function GalleryConfigPage() {
     setIsLoading(false)
   }, [])
 
+  const handlePanelSelect = useCallback(
+    (panelKey: string) => {
+      setSelectedPanelKey(panelKey)
+      if (window.matchMedia('(max-width: 1023px)').matches) {
+        setActiveTab('settings')
+      }
+    },
+    [],
+  )
+
   useEffect(() => {
     if (selectedPanelKey) {
       void fetchPanelConfig(selectedPanelKey)
-      if (window.innerWidth < 1024 && activeTab === 'map') {
-        setActiveTab('settings')
-      }
     }
-  }, [selectedPanelKey, fetchPanelConfig, activeTab])
+  }, [selectedPanelKey, fetchPanelConfig])
 
   const handleSave = async () => {
     if (isGemsLoading || !canEdit || !selectedPanelKey || !walletAddress) return
@@ -238,25 +246,25 @@ export default function GalleryConfigPage() {
   )
 
   return (
-    <div className="h-full overflow-y-auto bg-slate-950 p-3 text-white sm:p-6 lg:p-8">
-      <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
+    <div className="h-full overflow-y-auto overscroll-contain bg-slate-950 p-3 text-white sm:p-6 lg:p-8">
+      <div className="mx-auto flex max-w-7xl flex-col gap-5 pb-8">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <Button
               variant="ghost"
               size="sm"
               onClick={() => navigate('/gallery')}
-              className="px-0 text-sm hover:bg-transparent"
+              className="h-10 w-fit px-0 text-sm hover:bg-transparent"
             >
               <ArrowLeft className="mr-2 h-4 w-4" /> Back to Gallery
             </Button>
-            <div className="flex items-center gap-3 rounded-full bg-slate-900 px-3 py-1.5 text-xs">
-              <Gem className="h-4 w-4 text-cyan-400" />
+            <div className="flex w-fit items-center gap-2 rounded-full bg-slate-900 px-3 py-2 text-xs">
+              <Gem className="h-4 w-4 shrink-0 text-cyan-400" />
               <span>
                 Gems: <strong>{ownedTokens.length}</strong>
               </span>
-              <span className="text-slate-500">|</span>
-              <span className="opacity-60">{formatWalletAddress(walletAddress)}</span>
+              <span className="hidden text-slate-500 sm:inline">|</span>
+              <span className="truncate opacity-60">{formatWalletAddress(walletAddress)}</span>
             </div>
           </div>
           <div>
@@ -269,26 +277,26 @@ export default function GalleryConfigPage() {
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.3fr_0.7fr]">
           <Card className="flex h-fit flex-col">
-            <CardContent className="p-6">
+            <CardContent className="p-4 sm:p-6">
               <div className="lg:hidden">
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                  <TabsList className="mb-6 grid w-full grid-cols-3">
-                    <TabsTrigger value="map">
-                      <MapIcon className="mr-1 h-4 w-4" /> Selector
+                  <TabsList className="sticky top-0 z-20 mb-4 grid w-full grid-cols-3 bg-slate-900/95 backdrop-blur">
+                    <TabsTrigger value="map" className="min-h-11">
+                      <MapIcon className="mr-1 h-4 w-4" /> Panels
                     </TabsTrigger>
-                    <TabsTrigger value="settings">
+                    <TabsTrigger value="settings" className="min-h-11">
                       <Settings className="mr-1 h-4 w-4" /> Settings
                     </TabsTrigger>
-                    <TabsTrigger value="preview">
+                    <TabsTrigger value="preview" className="min-h-11">
                       <Eye className="mr-1 h-4 w-4" /> Preview
                     </TabsTrigger>
                   </TabsList>
                   <TabsContent value="map">
-                    <FloorPlan
+                    <PanelPickerList
                       outerFloor={outerFloor}
                       setOuterFloor={setOuterFloor}
                       selectedPanelKey={selectedPanelKey}
-                      setSelectedPanelKey={setSelectedPanelKey}
+                      onSelectPanel={handlePanelSelect}
                       getLockStatus={getLockStatus}
                       getFriendlyLabel={getFriendlyLabel}
                     />
@@ -322,7 +330,7 @@ export default function GalleryConfigPage() {
                   outerFloor={outerFloor}
                   setOuterFloor={setOuterFloor}
                   selectedPanelKey={selectedPanelKey}
-                  setSelectedPanelKey={setSelectedPanelKey}
+                  setSelectedPanelKey={handlePanelSelect}
                   getLockStatus={getLockStatus}
                   getFriendlyLabel={getFriendlyLabel}
                 />

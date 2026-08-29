@@ -24,17 +24,18 @@ const WallButton: React.FC<WallButtonProps> = ({
 }) => {
   return (
     <button 
+      type="button"
       onClick={() => onClick(panelKey)} 
       title={label}
       className={cn(
-        "relative flex items-center justify-center transition-all group p-1",
-        orientation === "horizontal" ? "flex-col" : "flex-row",
+        "relative flex items-center justify-center transition-all group touch-manipulation",
+        orientation === "horizontal" ? "flex-col min-h-11" : "flex-row min-w-11",
         className
       )}
     >
       <div className={cn(
         "rounded-full transition-all",
-        orientation === "horizontal" ? "w-full h-[3px]" : "h-full w-[3px]",
+        orientation === "horizontal" ? "w-full h-1.5 min-h-[6px]" : "h-full w-1.5 min-w-[6px]",
         isSelected ? "bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)] scale-y-125" : 
         (isLocked && !isLockedByMe) ? "bg-red-500/60" : "bg-slate-700 group-hover:bg-slate-500"
       )} />

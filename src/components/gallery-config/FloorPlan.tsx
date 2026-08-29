@@ -40,8 +40,8 @@ const FloorPlan: React.FC<FloorPlanProps> = ({
         </div>
       </div>
 
-      <div className="relative w-full border border-white/5 rounded-lg bg-slate-900 flex justify-center overflow-hidden">
-        <div className="w-full max-w-[480px] aspect-square relative p-12">
+      <div className="relative w-full overflow-x-auto border border-white/5 rounded-lg bg-slate-900 flex justify-center touch-manipulation">
+        <div className="w-full min-w-[280px] max-w-[480px] aspect-square relative p-8 sm:p-12">
           {/* Main Floor Container */}
           <div className="relative w-full h-full border border-dashed border-white/10 rounded-lg">
             

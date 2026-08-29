@@ -44,9 +44,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       <div className="flex flex-col items-center justify-center py-12 text-center space-y-3 opacity-60 border-2 border-dashed rounded-xl">
         <MapIcon className="h-10 w-10 text-muted-foreground" />
         <p className="text-sm">Please select a wall panel on the floor plan first.</p>
-        {onOpenMap && (
-          <Button variant="outline" size="sm" onClick={onOpenMap}>Open Floor Plan</Button>
-        )}
+          {onOpenMap && (
+            <Button variant="outline" size="sm" className="min-h-10" onClick={onOpenMap}>
+              Choose panel
+            </Button>
+          )}
       </div>
     );
   }
@@ -60,7 +62,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <span className="text-sm font-bold">{friendlyLabel}</span>
           </div>
           {onOpenMap && (
-            <Button variant="ghost" size="sm" onClick={onOpenMap}>Change Selection</Button>
+            <Button variant="ghost" size="sm" className="min-h-10 shrink-0" onClick={onOpenMap}>
+              Change
+            </Button>
           )}
         </div>
 
@@ -68,19 +72,23 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <div className="space-y-1.5">
             <Label className="text-xs">Contract Address</Label>
             <Input 
-              className="h-9 text-sm font-mono" 
+              className="h-11 text-base font-mono sm:h-9 sm:text-sm" 
               value={currentConfig.contract_address || ''} 
               onChange={e => setCurrentConfig(p => ({...p, contract_address: e.target.value}))} 
               placeholder="0x..." 
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label className="text-xs">Default Token ID</Label>
               <Input 
-                className="h-9 text-sm" 
+                className="h-11 text-base sm:h-9 sm:text-sm" 
                 type="number" 
+                inputMode="numeric"
                 value={currentConfig.default_token_id || 1} 
                 onChange={e => setCurrentConfig(p => ({...p, default_token_id: parseInt(e.target.value) || 1}))} 
               />
@@ -98,8 +106,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 </TooltipProvider>
               </div>
               <Input 
-                className="h-9 text-sm" 
+                className="h-11 text-base sm:h-9 sm:text-sm" 
                 type="number" 
+                inputMode="numeric"
                 min={0} 
                 max={30} 
                 value={lockDurationDays} 
