@@ -4,7 +4,7 @@ import { useWaitForTransactionReceipt, useReadContract } from 'wagmi'
 import { useChainWriteContract } from '@/hooks/useChainWriteContract'
 import { createPublicClient, http, type TransactionReceipt } from 'viem'
 import { toast } from 'sonner'
-import { useState, type ReactNode } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { useCollections, useArchivedCollections, useOtherCollections } from '@/hooks/useCollections'
 import { WalletAuthButton, useWalletAuth } from '@/hooks/useWalletAuth'
@@ -104,6 +104,7 @@ export function DashboardPage() {
     isTreasuryAdmin,
   )
   const [view, setView] = useState<'active' | 'archive'>('active')
+  const [holderPerksDismissed, setHolderPerksDismissed] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [expandedOtherId, setExpandedOtherId] = useState<string | null>(null)
   const [publishingId, setPublishingId] = useState<string | null>(null)
@@ -138,6 +139,13 @@ export function DashboardPage() {
   const publishFeePerTen = onChainPublishFee ?? getPublishFeeWei(network)
   const publishFeeReady = Boolean(factoryAddress && factoryAddress !== zeroAddress)
   const displayedCollections = view === 'archive' ? archivedCollections : collections
+  const showHolderPerks = !hasDualHolderDiscount && view === 'active' && !holderPerksDismissed
+
+  useEffect(() => {
+    if (!isConnected) {
+      setHolderPerksDismissed(false)
+    }
+  }, [isConnected])
 
   const refetchAll = () => {
     void refetchActive()
@@ -531,6 +539,10 @@ export function DashboardPage() {
         warning="Please keep this tab open and approve each wallet transaction when prompted. Do not click away or close the page until publishing finishes."
         walletSteps={publishLock.walletSteps}
       />
+      {showHolderPerks && (
+        <HolderPerksCard onDismiss={() => setHolderPerksDismissed(true)} />
+      )}
+
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold">{view === 'archive' ? 'Archived Collections' : 'My Collections'}</h1>
@@ -574,8 +586,6 @@ export function DashboardPage() {
       </div>
 
       <GemShardsAdminCard />
-
-      {!hasDualHolderDiscount && view === 'active' && <HolderPerksCard />}
 
       {hasDualHolderDiscount && view === 'active' && (
         <Card className="border-emerald-500/30 bg-emerald-500/10 p-4">

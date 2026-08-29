@@ -1,12 +1,26 @@
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
 import { CREATOR_ACCESS_COLLECTIONS } from '@/lib/creator-access'
 import { ELECTROSWAP_EXTERNAL_LINK_PROPS } from '@/lib/marketplace'
 
-export function HolderPerksCard() {
+type HolderPerksCardProps = {
+  onDismiss?: () => void
+}
+
+export function HolderPerksCard({ onDismiss }: HolderPerksCardProps) {
   return (
-    <Card className="border-blue-500/30 bg-gradient-to-br from-slate-900 to-slate-950 p-6">
+    <Card className="relative border-blue-500/30 bg-gradient-to-br from-slate-900 to-slate-950 p-6">
+      {onDismiss && (
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="absolute right-3 top-3 rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-300"
+          aria-label="Dismiss holder perks"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      )}
       <CardTitle className="text-xl">Holder perks</CardTitle>
       <CardDescription className="mt-2 max-w-2xl text-slate-300">
         Anyone can create collections on the ETN NFT Launchpad. If you hold both an{' '}
