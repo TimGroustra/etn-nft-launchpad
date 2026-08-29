@@ -2,10 +2,14 @@ function storageKey(walletAddress: string) {
   return `holder-perks-dismissed:${walletAddress.toLowerCase()}`
 }
 
+function readDismissed(walletAddress: string): boolean {
+  return localStorage.getItem(storageKey(walletAddress)) === '1'
+}
+
 export function isHolderPerksDismissed(walletAddress: string | undefined): boolean {
   if (!walletAddress) return false
   try {
-    return sessionStorage.getItem(storageKey(walletAddress)) === '1'
+    return readDismissed(walletAddress)
   } catch {
     return false
   }
@@ -13,7 +17,7 @@ export function isHolderPerksDismissed(walletAddress: string | undefined): boole
 
 export function dismissHolderPerks(walletAddress: string) {
   try {
-    sessionStorage.setItem(storageKey(walletAddress), '1')
+    localStorage.setItem(storageKey(walletAddress), '1')
   } catch {
     // ignore storage errors
   }
@@ -21,7 +25,7 @@ export function dismissHolderPerks(walletAddress: string) {
 
 export function clearHolderPerksDismissed(walletAddress: string) {
   try {
-    sessionStorage.removeItem(storageKey(walletAddress))
+    localStorage.removeItem(storageKey(walletAddress))
   } catch {
     // ignore storage errors
   }
