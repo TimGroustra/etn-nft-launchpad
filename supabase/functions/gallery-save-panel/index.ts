@@ -88,7 +88,14 @@ serve(async (req) => {
     const contractAddress = String(body.contract_address).trim().toLowerCase()
     const defaultTokenId = Number(body.default_token_id ?? 1)
     const showCollection = Boolean(body.show_collection)
-    const tokenIds = await tokenIdsForPanel(contractAddress, defaultTokenId, showCollection)
+    const tokenIds = await tokenIdsForPanel(
+      contractAddress,
+      defaultTokenId,
+      showCollection,
+      40,
+      panelKey,
+      supabase,
+    )
     await enqueueGalleryTokens(supabase, contractAddress, tokenIds)
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!

@@ -436,21 +436,56 @@ async function fetchMintedTokenIds(contractAddress: string): Promise<number[]> {
   return Array.from({ length: totalMinted }, (_, index) => index + 1)
 }
 
+async function listGemShardPanelKeys(
+  supabase: SupabaseClient,
+  contractAddress: string,
+): Promise<string[]> {
+  const { data } = await supabase
+    .from('gallery_config')
+    .select('panel_key, contract_address')
+    .not('contract_address', 'is', null)
+
+  return (data ?? [])
+    .filter((row) => sameAddress(String(row.contract_address), contractAddress))
+    .map((row) => String(row.panel_key))
+    .sort()
+}
+
+function resolveGemShardPanelTokenIds(
+  mintedTokenIds: number[],
+  panelIndex: number,
+  showCollection: boolean,
+): number[] {
+  const minted = [...new Set(mintedTokenIds.filter((id) => Number.isInteger(id) && id > 0))].sort(
+    (a, b) => a - b,
+  )
+  if (minted.length === 0) return []
+  if (showCollection) return minted
+  if (panelIndex < 0 || panelIndex >= minted.length) return []
+  return [minted[panelIndex]]
+}
+
 export async function tokenIdsForPanel(
   contractAddress: string,
   defaultTokenId: number,
   showCollection: boolean,
   maxCollectionTokens = 40,
+  panelKey?: string,
+  supabase?: SupabaseClient,
 ): Promise<number[]> {
-  const pinnedId = Math.max(1, defaultTokenId)
-
-  if (sameAddress(contractAddress, GEM_SHARDS_MAINNET) && !showCollection) {
-    return [pinnedId]
-  }
-
   const mintedTokenIds = (await fetchMintedTokenIds(contractAddress)).slice(0, maxCollectionTokens)
   if (mintedTokenIds.length === 0) return []
 
+  if (sameAddress(contractAddress, GEM_SHARDS_MAINNET)) {
+    if (showCollection) return mintedTokenIds
+    if (!panelKey || !supabase) return []
+
+    const panelKeys = await listGemShardPanelKeys(supabase, contractAddress)
+    const panelIndex = panelKeys.indexOf(panelKey)
+    return resolveGemShardPanelTokenIds(mintedTokenIds, panelIndex, false)
+  }
+
+  const pinnedId = Math.max(1, defaultTokenId)
   if (!showCollection) {
     return mintedTokenIds.includes(pinnedId) ? [pinnedId] : []
   }

@@ -1,11 +1,16 @@
-import { fetchGalleryMintedTokenIds, resolveGalleryPanelTokenIds } from '@/lib/gallery-minted-token-ids'
+import {
+  buildGemShardPanelAssignments,
+  fetchGalleryMintedTokenIds,
+  isGemShardsGalleryContract,
+  resolveGalleryPanelTokenIds,
+} from '@/lib/gallery-minted-token-ids'
 import { supabase } from '@/lib/supabase'
 
 export interface NftCollection {
   name: string
   contractAddress: string
   tokenIds: number[]
-  /** On-chain minted IDs for marketplace validation (Gem Shards pinned previews). */
+  /** On-chain minted IDs for marketplace validation. */
   mintedTokenIds: number[]
   currentIndex: number
   show_collection: boolean
@@ -112,6 +117,21 @@ export async function initializeGalleryConfig() {
     }
   }
 
+  const gemShardPanelKeys = Object.keys(galleryConfig)
+    .filter((panelKey) => {
+      const row = dbConfigMap.get(panelKey)
+      return row?.contract_address && isGemShardsGalleryContract(row.contract_address)
+    })
+    .sort()
+
+  const gemShardContract = uniqueContracts.find((address) => isGemShardsGalleryContract(address))
+  const gemShardMintedIds = gemShardContract ? (tokenMap[gemShardContract] ?? []) : []
+  const gemShardAssignments = buildGemShardPanelAssignments(
+    gemShardPanelKeys,
+    gemShardMintedIds,
+    (panelKey) => dbConfigMap.get(panelKey)?.show_collection ?? true,
+  )
+
   for (const panelKey in galleryConfig) {
     const configFromDb = dbConfigMap.get(panelKey)
 
@@ -120,13 +140,16 @@ export async function initializeGalleryConfig() {
       const defaultTokenId = configFromDb.default_token_id || 1
       const showCollection = configFromDb.show_collection ?? true
       const mintedTokenIds = tokenMap[contractAddress] ?? []
-      const { tokenIds: tokensToUse, mintedTokenIds: panelMintedIds } = resolveGalleryPanelTokenIds(
-        contractAddress,
-        mintedTokenIds,
-        defaultTokenId,
-        showCollection,
-      )
-      const startIndex = Math.max(0, tokensToUse.indexOf(defaultTokenId))
+
+      const assigned = isGemShardsGalleryContract(contractAddress)
+        ? gemShardAssignments.get(panelKey)
+        : resolveGalleryPanelTokenIds(mintedTokenIds, defaultTokenId, showCollection)
+
+      const tokensToUse = assigned?.tokenIds ?? []
+      const panelMintedIds = assigned?.mintedTokenIds ?? []
+      const startIndex = isGemShardsGalleryContract(contractAddress)
+        ? 0
+        : Math.max(0, tokensToUse.indexOf(defaultTokenId))
 
       galleryConfig[panelKey] = {
         name: configFromDb.collection_name || 'Unnamed Collection',

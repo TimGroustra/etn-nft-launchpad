@@ -14,6 +14,12 @@ export function isGemShardsGalleryContract(contractAddress: string): boolean {
   return contractAddress.toLowerCase() === GEM_SHARDS_GALLERY_ADDRESS
 }
 
+function sortMintedTokenIds(mintedTokenIds: number[]): number[] {
+  return [...new Set(mintedTokenIds.filter((id) => Number.isInteger(id) && id > 0))].sort(
+    (a, b) => a - b,
+  )
+}
+
 /** On-chain minted token IDs for gallery panels and marketplace links. */
 export async function fetchGalleryMintedTokenIds(contractAddress: string): Promise<number[]> {
   if (isGemShardsGalleryContract(contractAddress)) {
@@ -35,24 +41,61 @@ export type GalleryPanelTokenResolution = {
   mintedTokenIds: number[]
 }
 
+/** Assign one minted shard per pinned Gem Shards panel, in stable panel-key order. */
+export function resolveGemShardPanelTokenIds(
+  mintedTokenIds: number[],
+  panelIndex: number,
+  showCollection: boolean,
+): GalleryPanelTokenResolution {
+  const minted = sortMintedTokenIds(mintedTokenIds)
+  if (minted.length === 0) {
+    return { tokenIds: [], mintedTokenIds: [] }
+  }
+
+  if (showCollection) {
+    return { tokenIds: minted, mintedTokenIds: minted }
+  }
+
+  if (panelIndex < 0 || panelIndex >= minted.length) {
+    return { tokenIds: [], mintedTokenIds: minted }
+  }
+
+  const tokenId = minted[panelIndex]
+  return { tokenIds: [tokenId], mintedTokenIds: minted }
+}
+
+export function buildGemShardPanelAssignments(
+  panelKeys: string[],
+  mintedTokenIds: number[],
+  getShowCollection: (panelKey: string) => boolean,
+): Map<string, GalleryPanelTokenResolution> {
+  const assignments = new Map<string, GalleryPanelTokenResolution>()
+  let singlePanelSlot = 0
+
+  for (const panelKey of panelKeys) {
+    const showCollection = getShowCollection(panelKey)
+    if (showCollection) {
+      assignments.set(panelKey, resolveGemShardPanelTokenIds(mintedTokenIds, 0, true))
+      continue
+    }
+
+    assignments.set(
+      panelKey,
+      resolveGemShardPanelTokenIds(mintedTokenIds, singlePanelSlot, false),
+    )
+    singlePanelSlot += 1
+  }
+
+  return assignments
+}
+
 export function resolveGalleryPanelTokenIds(
-  contractAddress: string,
   mintedTokenIds: number[],
   defaultTokenId: number,
   showCollection: boolean,
 ): GalleryPanelTokenResolution {
-  const minted = [...new Set(mintedTokenIds.filter((id) => Number.isInteger(id) && id > 0))].sort(
-    (a, b) => a - b,
-  )
+  const minted = sortMintedTokenIds(mintedTokenIds)
   const pinnedId = Math.max(1, defaultTokenId)
-
-  if (isGemShardsGalleryContract(contractAddress)) {
-    if (showCollection) {
-      return { tokenIds: minted, mintedTokenIds: minted }
-    }
-    // Gem Shards preview art exists for every ID 1-495; only marketplace links require minted IDs.
-    return { tokenIds: [pinnedId], mintedTokenIds: minted }
-  }
 
   if (minted.length === 0) {
     return { tokenIds: [], mintedTokenIds: [] }
