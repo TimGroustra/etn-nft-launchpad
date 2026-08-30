@@ -202,6 +202,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
     collection?: string;
     tokenId?: string | number;
   }>({ open: false });
+  const [webglError, setWebglError] = useState<string | null>(null);
 
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -345,6 +346,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
   useEffect(() => {
     if (!mountRef.current) return;
     loadingCompleteCalledRef.current = false;
+    setWebglError(null);
 
     // Full detail on desktop; lighter settings on mobile for performance.
     const highQuality = !window.matchMedia('(max-width: 768px)').matches;
@@ -363,10 +365,27 @@ const NftGallery: React.FC<NftGalleryProps> = ({
     cameraRef.current = camera;
     camera.position.set(0, 1.6, 20);
     camera.rotation.order = 'YXZ';
-    const renderer = new THREE.WebGLRenderer({
-      antialias: highQuality,
-      powerPreference: 'high-performance',
-    });
+
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        antialias: highQuality,
+        powerPreference: 'high-performance',
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'WebGL is unavailable in this browser.';
+      setWebglError(message);
+      onLoadingCompleteRef.current?.();
+      return;
+    }
+
+    if (!renderer.getContext()) {
+      setWebglError('WebGL is unavailable in this browser.');
+      renderer.dispose();
+      onLoadingCompleteRef.current?.();
+      return;
+    }
+
     rendererRef.current = renderer;
     renderer.setSize(initialWidth, initialHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, highQuality ? 1.5 : 1));
@@ -908,6 +927,12 @@ const NftGallery: React.FC<NftGalleryProps> = ({
         if (panel.gifStopFunction) panel.gifStopFunction();
       });
       renderer.dispose();
+      const gl = renderer.getContext();
+      const loseContext = gl?.getExtension('WEBGL_lose_context');
+      loseContext?.loseContext();
+      if (mountEl.contains(canvas)) {
+        mountEl.removeChild(canvas);
+      }
       container.removeEventListener('pointerdown', handlePointerDown);
       container.removeEventListener('pointermove', handlePointerMove);
       container.removeEventListener('pointerup', handlePointerUp);
@@ -916,13 +941,31 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       window.removeEventListener('keyup', handleKeyUp);
       resizeObserver.disconnect();
       window.removeEventListener('resize', onResize);
-      mountEl.removeChild(canvas);
+      rendererRef.current = null;
+      sceneRef.current = null;
+      cameraRef.current = null;
     };
   }, [updatePanelContent, checkCollision]);
 
   return (
     <div className="absolute inset-0 bg-black touch-none">
-      <div ref={mountRef} className="absolute inset-0 touch-none [&_canvas]:!max-w-none [&_canvas]:!h-full [&_canvas]:!w-full" />
+      {webglError ? (
+        <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
+          <h2 className="text-xl font-semibold text-white">3D gallery unavailable</h2>
+          <p className="max-w-md text-sm text-slate-400">
+            {webglError} Close other tabs using 3D graphics, then refresh this page.
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="rounded-full bg-cyan-500 px-6 py-2 font-semibold text-black"
+          >
+            Refresh page
+          </button>
+        </div>
+      ) : (
+        <div ref={mountRef} className="absolute inset-0 touch-none [&_canvas]:!max-w-none [&_canvas]:!h-full [&_canvas]:!w-full" />
+      )}
       {marketBrowserState.open && (
         <MarketBrowserRefined 
           collection={marketBrowserState.collection || ''} 
