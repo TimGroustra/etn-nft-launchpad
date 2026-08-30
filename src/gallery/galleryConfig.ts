@@ -1,4 +1,4 @@
-import { fetchTotalSupply } from '@/lib/gallery-fetcher/nftFetcher'
+import { fetchGalleryMintedTokenIds, resolveGalleryPanelTokenIds } from '@/lib/gallery-minted-token-ids'
 import { supabase } from '@/lib/supabase'
 
 export interface NftCollection {
@@ -101,15 +101,11 @@ export async function initializeGalleryConfig() {
       tokenMap[address] = [1]
       continue
     }
-    const SAFE_DEFAULT_SUPPLY = 5
-    let total = SAFE_DEFAULT_SUPPLY
     try {
-      total = (await fetchTotalSupply(address)) ?? SAFE_DEFAULT_SUPPLY
+      tokenMap[address] = await fetchGalleryMintedTokenIds(address)
     } catch {
-      // use fallback
+      tokenMap[address] = []
     }
-    total = Math.max(1, total)
-    tokenMap[address] = Array.from({ length: total }, (_, i) => i + 1)
   }
 
   for (const panelKey in galleryConfig) {
@@ -119,20 +115,15 @@ export async function initializeGalleryConfig() {
       const contractAddress = configFromDb.contract_address
       const defaultTokenId = configFromDb.default_token_id || 1
       const showCollection = configFromDb.show_collection ?? true
-      const tokens = showCollection ? tokenMap[contractAddress] || [defaultTokenId] : [defaultTokenId]
-      const maxToken = tokenMap[contractAddress] ? Math.max(...tokenMap[contractAddress]) : defaultTokenId
-      const validTokens = tokens.filter((tokenId) => tokenId >= 1 && tokenId <= maxToken)
-      if (validTokens.length === 0 && defaultTokenId >= 1 && defaultTokenId <= maxToken) {
-        validTokens.push(defaultTokenId)
-      }
-      const tokensToUse = validTokens.length > 0 ? validTokens : [defaultTokenId]
+      const mintedTokenIds = tokenMap[contractAddress] ?? []
+      const tokensToUse = resolveGalleryPanelTokenIds(mintedTokenIds, defaultTokenId, showCollection)
       const startIndex = Math.max(0, tokensToUse.indexOf(defaultTokenId))
 
       galleryConfig[panelKey] = {
         name: configFromDb.collection_name || 'Unnamed Collection',
         contractAddress,
         tokenIds: tokensToUse,
-        currentIndex: startIndex,
+        currentIndex: tokensToUse.length > 0 ? startIndex : 0,
         show_collection: showCollection,
         wall_color: configFromDb.wall_color || DEFAULT_WALL_COLOR,
         text_color: configFromDb.text_color || DEFAULT_TEXT_COLOR,

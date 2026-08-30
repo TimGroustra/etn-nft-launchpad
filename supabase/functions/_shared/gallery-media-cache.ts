@@ -26,6 +26,12 @@ const IPFS_GATEWAYS = [
 const ERC721 = ['function tokenURI(uint256) view returns (string)']
 const ERC1155 = ['function uri(uint256) view returns (string)', 'function supportsInterface(bytes4) view returns (bool)']
 const TS_ABI = ['function totalSupply() view returns (uint256)']
+const GEM_SHARDS_EVENTS_ABI = [
+  'event ShardMinted(uint256 indexed tokenId, address indexed to, bool freeMint)',
+  'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)',
+]
+const GEM_SHARDS_DEPLOY_BLOCK = 15_563_659
+const LOG_CHUNK_SIZE = 500
 
 export type ResolvedGalleryMedia = {
   title: string
@@ -374,10 +380,60 @@ export async function fetchTotalSupply(contractAddress: string): Promise<number>
     const provider = new JsonRpcProvider(RPC_URL)
     const contract = new Contract(contractAddress, TS_ABI, provider)
     const value = await contract.totalSupply()
-    return Math.max(1, Number(value))
+    return Math.max(0, Number(value))
   } catch {
-    return 5
+    return 0
   }
+}
+
+async function fetchGemShardMintedTokenIds(contractAddress: string): Promise<number[]> {
+  const provider = new JsonRpcProvider(RPC_URL)
+  const contract = new Contract(contractAddress, GEM_SHARDS_EVENTS_ABI, provider)
+  const latest = await provider.getBlockNumber()
+  const tokenIds = new Set<number>()
+
+  for (let start = GEM_SHARDS_DEPLOY_BLOCK; start <= latest; start += LOG_CHUNK_SIZE) {
+    const end = Math.min(start + LOG_CHUNK_SIZE - 1, latest)
+    try {
+      const events = await contract.queryFilter(contract.filters.ShardMinted(), start, end)
+      for (const event of events) {
+        const tokenId = Number(event.args?.tokenId)
+        if (Number.isInteger(tokenId) && tokenId > 0) tokenIds.add(tokenId)
+      }
+    } catch {
+      // Skip failed chunks instead of failing the whole request.
+    }
+  }
+
+  if (tokenIds.size > 0) {
+    return [...tokenIds].sort((a, b) => a - b)
+  }
+
+  const zeroAddress = '0x0000000000000000000000000000000000000000'
+  for (let start = GEM_SHARDS_DEPLOY_BLOCK; start <= latest; start += LOG_CHUNK_SIZE) {
+    const end = Math.min(start + LOG_CHUNK_SIZE - 1, latest)
+    try {
+      const events = await contract.queryFilter(contract.filters.Transfer(zeroAddress, null, null), start, end)
+      for (const event of events) {
+        const tokenId = Number(event.args?.tokenId)
+        if (Number.isInteger(tokenId) && tokenId > 0) tokenIds.add(tokenId)
+      }
+    } catch {
+      // Skip failed chunks instead of failing the whole request.
+    }
+  }
+
+  return [...tokenIds].sort((a, b) => a - b)
+}
+
+async function fetchMintedTokenIds(contractAddress: string): Promise<number[]> {
+  if (sameAddress(contractAddress, GEM_SHARDS_MAINNET)) {
+    return fetchGemShardMintedTokenIds(contractAddress)
+  }
+
+  const totalMinted = await fetchTotalSupply(contractAddress)
+  if (totalMinted <= 0) return []
+  return Array.from({ length: totalMinted }, (_, index) => index + 1)
 }
 
 export async function tokenIdsForPanel(
@@ -386,15 +442,15 @@ export async function tokenIdsForPanel(
   showCollection: boolean,
   maxCollectionTokens = 40,
 ): Promise<number[]> {
-  const ids = new Set<number>()
-  ids.add(Math.max(1, defaultTokenId))
+  const mintedTokenIds = (await fetchMintedTokenIds(contractAddress)).slice(0, maxCollectionTokens)
+  if (mintedTokenIds.length === 0) return []
 
-  if (showCollection) {
-    const total = Math.min(await fetchTotalSupply(contractAddress), maxCollectionTokens)
-    for (let i = 1; i <= total; i++) ids.add(i)
+  if (!showCollection) {
+    const pinnedId = Math.max(1, defaultTokenId)
+    return mintedTokenIds.includes(pinnedId) ? [pinnedId] : []
   }
 
-  return [...ids].sort((a, b) => a - b)
+  return mintedTokenIds
 }
 
 export const GALLERY_CACHE_BATCH_SIZE = 2

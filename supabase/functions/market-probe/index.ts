@@ -18,18 +18,22 @@ async function fetchTimeout(url: string, opts: RequestInit = {}, timeoutMs = 150
   }
 }
 
-type ProbeResult = { status: 'available' | 'unavailable' | 'error'; reason?: string; probe?: string }
+type ProbeResult = { status: 'available' | 'unavailable' | 'unverified'; reason?: string; probe?: string }
 
 async function probeHtmlPage(pageUrl: string, tokenId: string): Promise<ProbeResult> {
   try {
     const r = await fetchTimeout(pageUrl, { method: 'GET' }, 15000)
-    if (!r) return { status: 'error', reason: 'no-response' }
+    if (!r) return { status: 'unverified', reason: 'no-response' }
     if (r.status === 404 || r.status === 410) return { status: 'unavailable', reason: '404/410' }
 
     const text = await r.text()
     const lowerText = text.toLowerCase()
 
-    if (/(not found|page not found|no item|invalid token|no results|not available|doesn't exist)/i.test(lowerText)) {
+    if (
+      /(not found|page not found|no item|invalid token|no results|not available|doesn't exist|something went wrong|uh-oh)/i.test(
+        lowerText,
+      )
+    ) {
       return { status: 'unavailable', probe: 'html-heuristic-negative' }
     }
 
@@ -73,7 +77,7 @@ async function probeHtmlPage(pageUrl: string, tokenId: string): Promise<ProbeRes
 
     return { status: 'unavailable', probe: 'fallback-unavailable' }
   } catch (e) {
-    return { status: 'error', reason: String(e) }
+    return { status: 'unverified', reason: String(e) }
   }
 }
 
@@ -97,12 +101,12 @@ serve(async (req) => {
     } else if (marketplace === 'electroswap') {
       result = await probeHtmlPage(`https://app.electroswap.io/nfts/asset/${collection}/${tok}`, tok)
     } else {
-      result = { status: 'error', reason: 'Unknown marketplace' }
+      result = { status: 'unverified', reason: 'Unknown marketplace' }
     }
 
     return new Response(JSON.stringify(result), { status: 200, headers: corsHeaders })
   } catch (e) {
-    return new Response(JSON.stringify({ status: 'error', reason: String(e) }), {
+    return new Response(JSON.stringify({ status: 'unverified', reason: String(e) }), {
       status: 500,
       headers: corsHeaders,
     })
