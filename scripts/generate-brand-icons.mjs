@@ -84,15 +84,21 @@ async function main() {
     await writeSizedPng(rainbow, size, outputPath)
   }
 
-  await writeSizedPng(blue, 64, path.join(BRAND, 'logo-blue-64.png'))
-  await writeSizedPng(blue, 128, path.join(BRAND, 'logo-blue-128.png'))
+  const favicon32Path = path.join(PUBLIC, 'favicon-32.png')
+  const favicon32 = await readFile(favicon32Path)
+  await writeFile(path.join(PUBLIC, 'favicon.ico'), favicon32)
+  await writeFile(path.join(PUBLIC, 'favicon.png'), favicon32)
 
+  const favicon512 = await readFile(path.join(PUBLIC, 'favicon-512.png'))
   const faviconSvg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <image href="/favicon-512.png" width="512" height="512" />
+  <image href="data:image/png;base64,${favicon512.toString('base64')}" width="512" height="512" />
 </svg>
 `
   await writeFile(path.join(PUBLIC, 'favicon.svg'), faviconSvg, 'utf8')
+
+  await writeSizedPng(blue, 64, path.join(BRAND, 'logo-blue-64.png'))
+  await writeSizedPng(blue, 128, path.join(BRAND, 'logo-blue-128.png'))
 
   console.log('Generated transparent brand icons.')
 }

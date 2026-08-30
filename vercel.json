@@ -85,6 +85,7 @@
       "source": "/g/:path*",
       "destination": "https://sktexilttapijefdusni.supabase.co/storage/v1/object/public/gallery-cache/:path*"
     },
+    { "handle": "filesystem" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
