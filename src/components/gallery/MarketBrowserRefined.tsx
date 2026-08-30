@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import { toast } from 'sonner';
 import {
   getElectroSwapAssetUrl,
-  getExplorerTokenInstanceUrl,
   getRaribleItemUrl,
 } from '@/lib/marketplace';
 
@@ -16,11 +15,6 @@ const MARKETPLACES = [
     id: "rarible",
     name: "Rarible",
     buildUrl: getRaribleItemUrl,
-  },
-  {
-    id: "explorer",
-    name: "Block Explorer",
-    buildUrl: getExplorerTokenInstanceUrl,
   },
 ] as const;
 
