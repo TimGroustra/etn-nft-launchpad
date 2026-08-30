@@ -1,12 +1,13 @@
 import { Link, Outlet, useLocation } from 'react-router-dom'
 import { useAccount } from 'wagmi'
-import { Rocket, Settings } from 'lucide-react'
+import { Settings } from 'lucide-react'
 import { NetworkToggle } from './NetworkToggle'
 import { WalletAddress } from './WalletAddress'
 import { WalletConnectButton } from './WalletConnectButton'
 import { WalletDisconnectButton } from './WalletDisconnectButton'
 import { GemShardClaimButton } from './GemShardClaimButton'
 import { SiteHeaderNav } from './SiteHeaderNav'
+import { SiteLogo } from './SiteLogo'
 import { Button } from '@/components/ui/button'
 import { useAvailableGems } from '@/hooks/use-available-gems'
 import { canEditGallery } from '@/lib/gallery-access'
@@ -23,13 +24,7 @@ export function GalleryLayout() {
       <header className="relative z-50 shrink-0 border-b border-slate-700/60 bg-slate-900/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-x-2 gap-y-2 px-3 py-2.5 sm:gap-x-4 sm:px-4 sm:py-4">
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
-            <Link
-              to="/"
-              className="flex shrink-0 items-center rounded-md p-1.5 font-semibold transition-colors hover:bg-slate-900"
-              aria-label="ETN NFT Launchpad home"
-            >
-              <Rocket className="h-5 w-5 text-blue-400" />
-            </Link>
+            <SiteLogo />
             <SiteHeaderNav />
           </div>
 

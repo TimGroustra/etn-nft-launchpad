@@ -31,7 +31,8 @@
     "wire:gem-shards-fees:mainnet": "node scripts/wire-gem-shards-fees.cjs mainnet",
     "register:gem-shards:testnet": "node scripts/register-gem-shards-collection.cjs testnet",
     "register:gem-shards:mainnet": "node scripts/register-gem-shards-collection.cjs mainnet",
-    "bundle:edge-functions": "node scripts/rebundle-edge-functions.mjs"
+    "bundle:edge-functions": "node scripts/rebundle-edge-functions.mjs",
+    "brand:icons": "node scripts/generate-brand-icons.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
