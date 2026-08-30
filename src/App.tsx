@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react'
+import { Suspense } from 'react'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { Web3Provider } from '@/components/Web3Provider'
@@ -6,15 +6,17 @@ import { CreatorRoute } from '@/components/CreatorRoute'
 import { GalleryRoute } from '@/components/GalleryRoute'
 import { Layout } from '@/components/Layout'
 import { GalleryLayout } from '@/components/GalleryLayout'
+import { RouteError } from '@/components/RouteError'
 import { IndexPage } from '@/pages/IndexPage'
 import { CreatePage } from '@/pages/CreatePage'
 import { EditPage } from '@/pages/EditPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { CollectionPage } from '@/pages/CollectionPage'
 import { GemShardRewardsPage } from '@/pages/GemShardRewardsPage'
+import { lazyWithRetry } from '@/lib/lazy-with-retry'
 
-const GalleryPage = lazy(() => import('@/pages/GalleryPage'))
-const GalleryConfigPage = lazy(() => import('@/pages/GalleryConfigPage'))
+const GalleryPage = lazyWithRetry(() => import('@/pages/GalleryPage'))
+const GalleryConfigPage = lazyWithRetry(() => import('@/pages/GalleryConfigPage'))
 
 function GalleryFallback() {
   return <div className="flex h-full items-center justify-center text-slate-400">Loading 3D Gallery…</div>
@@ -23,6 +25,7 @@ function GalleryFallback() {
 const router = createBrowserRouter([
   {
     element: <Layout />,
+    errorElement: <RouteError />,
     children: [
       { index: true, element: <IndexPage /> },
       {
@@ -52,6 +55,7 @@ const router = createBrowserRouter([
   },
   {
     element: <GalleryLayout />,
+    errorElement: <RouteError />,
     children: [
       {
         path: 'gallery',
