@@ -15,6 +15,8 @@ import { getGatewayCandidates } from '@/lib/gallery-fetcher/urlUtils';
 import type { NftSource } from '@/lib/gallery-fetcher/nftFetcher';
 import { createGifTexture } from '@/lib/gallery-fetcher/gifTexture';
 import { MarketBrowserRefined } from '@/components/gallery/MarketBrowserRefined';
+import { isGalleryTokenMinted } from '@/lib/gallery-minted-token-ids';
+import { toast } from 'sonner';
 
 RectAreaLightUniformsLib.init();
 
@@ -764,7 +766,12 @@ const NftGallery: React.FC<NftGalleryProps> = ({
                 }
               } else if (p.metadataUrl) {
                 const cfg = GALLERY_PANEL_CONFIG[p.wallName];
-                setMarketBrowserState({ open: true, collection: cfg.contractAddress, tokenId: cfg.tokenIds[cfg.currentIndex] });
+                const tokenId = cfg.tokenIds[cfg.currentIndex];
+                if (!isGalleryTokenMinted(cfg.mintedTokenIds, tokenId)) {
+                  toast.message(`Token #${tokenId} has not been minted yet. Marketplace links open once it exists on-chain.`);
+                  return;
+                }
+                setMarketBrowserState({ open: true, collection: cfg.contractAddress, tokenId });
               }
             }
           }

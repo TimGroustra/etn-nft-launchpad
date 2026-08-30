@@ -5,6 +5,8 @@ export interface NftCollection {
   name: string
   contractAddress: string
   tokenIds: number[]
+  /** On-chain minted IDs for marketplace validation (Gem Shards pinned previews). */
+  mintedTokenIds: number[]
   currentIndex: number
   show_collection: boolean
   wall_color: string | null
@@ -28,6 +30,7 @@ const createBlankPanel = (): NftCollection => ({
   name: 'Loading...',
   contractAddress: '',
   tokenIds: [],
+  mintedTokenIds: [],
   currentIndex: 0,
   show_collection: true,
   wall_color: DEFAULT_WALL_COLOR,
@@ -75,6 +78,7 @@ export async function initializeGalleryConfig() {
         name: 'Curated by Gem holders',
         contractAddress: '',
         tokenIds: [],
+        mintedTokenIds: [],
         currentIndex: 0,
         show_collection: true,
         wall_color: DEFAULT_WALL_COLOR,
@@ -116,13 +120,19 @@ export async function initializeGalleryConfig() {
       const defaultTokenId = configFromDb.default_token_id || 1
       const showCollection = configFromDb.show_collection ?? true
       const mintedTokenIds = tokenMap[contractAddress] ?? []
-      const tokensToUse = resolveGalleryPanelTokenIds(mintedTokenIds, defaultTokenId, showCollection)
+      const { tokenIds: tokensToUse, mintedTokenIds: panelMintedIds } = resolveGalleryPanelTokenIds(
+        contractAddress,
+        mintedTokenIds,
+        defaultTokenId,
+        showCollection,
+      )
       const startIndex = Math.max(0, tokensToUse.indexOf(defaultTokenId))
 
       galleryConfig[panelKey] = {
         name: configFromDb.collection_name || 'Unnamed Collection',
         contractAddress,
         tokenIds: tokensToUse,
+        mintedTokenIds: panelMintedIds,
         currentIndex: tokensToUse.length > 0 ? startIndex : 0,
         show_collection: showCollection,
         wall_color: configFromDb.wall_color || DEFAULT_WALL_COLOR,
@@ -133,6 +143,7 @@ export async function initializeGalleryConfig() {
         name: 'Blank Panel',
         contractAddress: '',
         tokenIds: [],
+        mintedTokenIds: [],
         currentIndex: 0,
         show_collection: true,
         wall_color: DEFAULT_WALL_COLOR,

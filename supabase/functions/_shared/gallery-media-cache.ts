@@ -442,11 +442,16 @@ export async function tokenIdsForPanel(
   showCollection: boolean,
   maxCollectionTokens = 40,
 ): Promise<number[]> {
+  const pinnedId = Math.max(1, defaultTokenId)
+
+  if (sameAddress(contractAddress, GEM_SHARDS_MAINNET) && !showCollection) {
+    return [pinnedId]
+  }
+
   const mintedTokenIds = (await fetchMintedTokenIds(contractAddress)).slice(0, maxCollectionTokens)
   if (mintedTokenIds.length === 0) return []
 
   if (!showCollection) {
-    const pinnedId = Math.max(1, defaultTokenId)
     return mintedTokenIds.includes(pinnedId) ? [pinnedId] : []
   }
 
