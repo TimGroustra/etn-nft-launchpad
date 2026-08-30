@@ -3,6 +3,8 @@ import { Footprints, Info } from 'lucide-react'
 import NftGallery from '@/gallery/NftGallery'
 import LoadingSplash from '@/components/gallery/LoadingSplash'
 import { nudgeGalleryCacheWorker } from '@/lib/gallery-cache'
+import { ELECTROGEMS_NFT_ADDRESS } from '@/lib/creator-access'
+import { ELECTROSWAP_EXTERNAL_LINK_PROPS, getElectroSwapCollectionUrl } from '@/lib/marketplace'
 
 export default function GalleryPage() {
   const [isLoading, setIsLoading] = useState(true)
@@ -49,6 +51,18 @@ export default function GalleryPage() {
                 <span>WASD / Arrow Keys or the Walk button to move</span>
               </p>
               <p className="text-xs text-white/60">Tap gallery panels to open marketplace listings.</p>
+              <p className="text-xs text-white/60">
+                Own an{' '}
+                <a
+                  href={getElectroSwapCollectionUrl(ELECTROGEMS_NFT_ADDRESS)}
+                  {...ELECTROSWAP_EXTERNAL_LINK_PROPS}
+                  className="font-medium text-cyan-400 underline decoration-cyan-500/50 hover:decoration-cyan-300"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  ElectroGem
+                </a>{' '}
+                to configure displays.
+              </p>
             </div>
             <button
               type="button"
