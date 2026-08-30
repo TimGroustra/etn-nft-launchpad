@@ -48,7 +48,6 @@ interface NftGalleryProps {
   onLoadingComplete?: () => void;
   isWalking: boolean;
   setIsWalking: (walking: boolean) => void;
-  highQuality?: boolean;
 }
 
 const rainbowVertexShader = `
@@ -189,7 +188,6 @@ const NftGallery: React.FC<NftGalleryProps> = ({
   onLoadingComplete,
   isWalking,
   setIsWalking: _setIsWalking,
-  highQuality = true,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const panelsRef = useRef<Panel[]>([]);
@@ -346,6 +344,9 @@ const NftGallery: React.FC<NftGalleryProps> = ({
     if (!mountRef.current) return;
     loadingCompleteCalledRef.current = false;
 
+    // Full detail on desktop; lighter settings on mobile for performance.
+    const highQuality = !window.matchMedia('(max-width: 768px)').matches;
+
     const mountEl = mountRef.current;
     const getViewportSize = () => ({
       width: Math.max(1, mountEl.clientWidth),
@@ -470,7 +471,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
 
     // Helper to load 3D decorative accessories on the upper level
     const loadDecorativeItems = () => {
-      if (!highQuality || window.matchMedia('(max-width: 768px)').matches) return;
+      if (!highQuality) return;
       // 1. Create tables and rugs (procedural/textures)
       const tablePositions = [{ x: 0, z: 9.8 }, { x: 0, z: -9.8 }, { x: 9.8, z: 0 }, { x: -9.8, z: 0 }];
       tablePositions.forEach(pos => {
@@ -910,7 +911,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       window.removeEventListener('resize', onResize);
       mountEl.removeChild(canvas);
     };
-  }, [updatePanelContent, checkCollision, highQuality]);
+  }, [updatePanelContent, checkCollision]);
 
   return (
     <div className="absolute inset-0 bg-black touch-none">

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Footprints, Info, Sparkles } from 'lucide-react'
+import { Footprints, Info } from 'lucide-react'
 import NftGallery from '@/gallery/NftGallery'
 import LoadingSplash from '@/components/gallery/LoadingSplash'
 import { nudgeGalleryCacheWorker } from '@/lib/gallery-cache'
@@ -9,9 +9,6 @@ export default function GalleryPage() {
   const [loadingProgress, setLoadingProgress] = useState(0)
   const [isWalking, setIsWalking] = useState(false)
   const [isStarted, setIsStarted] = useState(false)
-  const [highQuality, setHighQuality] = useState(
-    () => !window.matchMedia('(max-width: 768px)').matches,
-  )
 
   const handleLoadingComplete = useCallback(() => {
     setIsLoading(false)
@@ -32,7 +29,6 @@ export default function GalleryPage() {
         onLoadingComplete={handleLoadingComplete}
         isWalking={isWalking}
         setIsWalking={setIsWalking}
-        highQuality={highQuality}
       />
 
       {!isLoading && !isStarted && (
@@ -69,15 +65,7 @@ export default function GalleryPage() {
           <div className="pointer-events-none fixed bottom-4 left-4 right-4 z-20 mx-auto max-w-xs rounded border border-white/5 bg-black/40 p-2 text-center text-[10px] text-white backdrop-blur-sm sm:text-xs">
             Drag to look around • Click panels to view in marketplaces
           </div>
-          <div className="fixed bottom-16 right-6 z-30 flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={() => setHighQuality((v) => !v)}
-              className="rounded-full border border-white/10 bg-black/50 p-3 text-white shadow-lg backdrop-blur-md hover:bg-black/70"
-              title={highQuality ? 'Switch to performance mode' : 'Switch to full detail'}
-            >
-              <Sparkles className={`h-5 w-5 ${highQuality ? 'text-cyan-400' : ''}`} />
-            </button>
+          <div className="fixed bottom-16 right-6 z-30">
             <button
               type="button"
               onClick={() => setIsWalking(!isWalking)}
