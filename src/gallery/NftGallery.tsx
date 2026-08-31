@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import * as THREE from 'three';
 import { RectAreaLightUniformsLib, GLTFLoader } from 'three-stdlib';
 import {
-  initializeGalleryConfig,
+  prefetchGalleryConfig,
   GALLERY_PANEL_CONFIG,
   getCurrentNftSource,
   updatePanelIndex,
@@ -32,6 +32,7 @@ const INNER_LOWER_PANEL_Y = 4.0;
 const UPPER_PANEL_Y = 12.0;
 const WALL_THICKNESS = 0.5;
 const BOUNDARY = ROOM_SIZE / 2 - 1.0;
+const PANEL_LOAD_CONCURRENCY = 8;
 
 interface Panel {
   mesh: THREE.Mesh;
@@ -482,12 +483,6 @@ const NftGallery: React.FC<NftGalleryProps> = ({
     scene.add(uBtn);
     teleportButtonsRef.current = [gBtn, uBtn];
 
-    // Core structure is rendered — dismiss the loading splash once.
-    if (!loadingCompleteCalledRef.current) {
-      loadingCompleteCalledRef.current = true;
-      onLoadingCompleteRef.current?.();
-    }
-
     const gltfLoader = new GLTFLoader();
 
     // Helper to load 3D decorative accessories on the upper level
@@ -605,7 +600,6 @@ const NftGallery: React.FC<NftGalleryProps> = ({
 
     let stopLoad = false;
     const createPanels = async () => {
-      await initializeGalleryConfig();
       const pGeo = new THREE.PlaneGeometry(PANEL_WIDTH, PANEL_HEIGHT);
       const aShape = new THREE.Shape();
       aShape.moveTo(0, 0.15); aShape.lineTo(0.3, 0); aShape.lineTo(0, -0.15);
@@ -689,6 +683,14 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       // Populate reference panels array for interaction raycaster
       panelsRef.current = [...groundPanels, ...innerPanels, ...firstPanels];
 
+      if (!loadingCompleteCalledRef.current) {
+        loadingCompleteCalledRef.current = true;
+        onLoadingProgressRef.current?.(100);
+        onLoadingCompleteRef.current?.();
+      }
+
+      await prefetchGalleryConfig();
+
       // Progressive stream loading order: Ground outer -> Inner walls -> Upper level outer
       const sortByProximity = (list: Panel[]) =>
         [...list].sort((a, b) => {
@@ -703,23 +705,20 @@ const NftGallery: React.FC<NftGalleryProps> = ({
         { name: 'upper outer', list: sortByProximity(firstPanels) },
       ]
 
-      let loadedCount = 0;
-      const totalCount = groundPanels.length + innerPanels.length + firstPanels.length;
+      const loadPanelBatch = async (items: Panel[]) => {
+        for (let i = 0; i < items.length; i += PANEL_LOAD_CONCURRENCY) {
+          if (stopLoad) break;
+          const batch = items.slice(i, i + PANEL_LOAD_CONCURRENCY);
+          await Promise.all(
+            batch.map((panel) =>
+              updatePanelContent(panel, getCurrentNftSource(panel.wallName)),
+            ),
+          );
+        }
+      };
 
       for (const group of streamGroups) {
-        for (let i = 0; i < group.list.length; i++) {
-          if (stopLoad) break;
-          const panel = group.list[i];
-          await updatePanelContent(panel, getCurrentNftSource(panel.wallName));
-          loadedCount++;
-          
-          onLoadingProgressRef.current?.((loadedCount / totalCount) * 100);
-          
-          // Yield occasionally to prevent rendering hiccups
-          if (i % 2 === 0) {
-            await new Promise(r => setTimeout(r, 20));
-          }
-        }
+        await loadPanelBatch(group.list);
         if (stopLoad) break;
       }
 

@@ -20,13 +20,45 @@ function sortMintedTokenIds(mintedTokenIds: number[]): number[] {
   )
 }
 
+const GEM_SHARDS_IDS_CACHE_KEY = 'gallery-gem-shards-minted-ids'
+const GEM_SHARDS_IDS_CACHE_TTL_MS = 3 * 60 * 1000
+
+function readGemShardsMintedIdsCache(): number[] | null {
+  try {
+    const raw = sessionStorage.getItem(GEM_SHARDS_IDS_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { ids?: number[]; at?: number }
+    if (!parsed.ids?.length || !parsed.at) return null
+    if (Date.now() - parsed.at > GEM_SHARDS_IDS_CACHE_TTL_MS) return null
+    return parsed.ids
+  } catch {
+    return null
+  }
+}
+
+function writeGemShardsMintedIdsCache(ids: number[]) {
+  try {
+    sessionStorage.setItem(
+      GEM_SHARDS_IDS_CACHE_KEY,
+      JSON.stringify({ ids, at: Date.now() }),
+    )
+  } catch {
+    // Ignore quota / private mode errors.
+  }
+}
+
 /** On-chain minted token IDs for gallery panels and marketplace links. */
 export async function fetchGalleryMintedTokenIds(contractAddress: string): Promise<number[]> {
   if (isGemShardsGalleryContract(contractAddress)) {
-    return fetchGemShardMintedTokenIds(
+    const cached = readGemShardsMintedIdsCache()
+    if (cached) return cached
+
+    const ids = await fetchGemShardMintedTokenIds(
       galleryPublicClient,
       contractAddress as `0x${string}`,
     )
+    if (ids.length > 0) writeGemShardsMintedIdsCache(ids)
+    return ids
   }
 
   const totalMinted = await fetchTotalSupply(contractAddress)

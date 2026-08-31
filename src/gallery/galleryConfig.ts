@@ -176,6 +176,19 @@ export async function initializeGalleryConfig() {
   }
 }
 
+let galleryConfigPromise: Promise<void> | null = null
+
+/** Start loading gallery config early (safe to call multiple times). */
+export function prefetchGalleryConfig(): Promise<void> {
+  if (!galleryConfigPromise) {
+    galleryConfigPromise = initializeGalleryConfig().catch((error) => {
+      galleryConfigPromise = null
+      throw error
+    })
+  }
+  return galleryConfigPromise
+}
+
 export const GALLERY_PANEL_CONFIG = galleryConfig
 
 export const getCurrentNftSource = (wallName: keyof PanelConfig) => {
