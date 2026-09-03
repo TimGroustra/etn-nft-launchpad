@@ -6,12 +6,14 @@ import { RectAreaLightUniformsLib, GLTFLoader } from 'three-stdlib';
 import {
   prefetchGalleryConfig,
   GALLERY_PANEL_CONFIG,
+  getGalleryPanelConfig,
   getCurrentNftSource,
   getAllPanelTokenSources,
   onGalleryConfigReady,
   updatePanelIndex,
-  type PanelConfig,
 } from '@/gallery/galleryConfig';
+import { PERSONAL_LAYOUT, getPersonalPanelPlacements } from '@/gallery/layouts/galleryLayouts';
+import { personalPanelKey } from '@/lib/personal-gallery';
 import {
   prefetchGalleryPanelCache,
   getCachedGalleryMetadata,
@@ -57,6 +59,9 @@ interface Panel {
 }
 
 interface NftGalleryProps {
+  layout?: 'main' | 'personal';
+  roomId?: string;
+  roomDisplayName?: string;
   onLoadingProgress?: (progress: number) => void;
   onLoadingMessage?: (message: string) => void;
   onLoadingComplete?: () => void;
@@ -199,6 +204,9 @@ function createDiamondTeleporter() {
 }
 
 const NftGallery: React.FC<NftGalleryProps> = ({
+  layout = 'main',
+  roomId,
+  roomDisplayName: _roomDisplayName,
   onLoadingProgress,
   onLoadingMessage,
   onLoadingComplete,
@@ -361,7 +369,17 @@ const NftGallery: React.FC<NftGalleryProps> = ({
     }, FADE_DURATION * 1000);
   };
 
+  const isPersonal = layout === 'personal' && !!roomId;
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
+
   const checkCollision = useCallback((pos: THREE.Vector3) => {
+    if (layoutRef.current === 'personal') {
+      if (Math.abs(pos.x) > PERSONAL_LAYOUT.boundaryX || Math.abs(pos.z) > PERSONAL_LAYOUT.boundaryZ) {
+        return true;
+      }
+      return false;
+    }
     if (Math.abs(pos.x) > BOUNDARY || Math.abs(pos.z) > BOUNDARY) return true;
     if (pos.y < 5) {
       const padding = 0.8;
@@ -383,11 +401,15 @@ const NftGallery: React.FC<NftGalleryProps> = ({
 
   useEffect(() => {
     if (!mountRef.current) return;
+    if (layout === 'personal' && !roomId) return;
     loadingCompleteCalledRef.current = false;
     setWebglError(null);
 
-    const panelCachePromise = prefetchGalleryPanelCache();
-    const configPromise = prefetchGalleryConfig();
+    const galleryInit = { layout, roomId: roomId ?? null } as const;
+    const panelCachePromise = prefetchGalleryPanelCache(
+      layout === 'personal' && roomId ? { roomId } : {},
+    );
+    const configPromise = prefetchGalleryConfig(galleryInit);
 
     // Full detail on desktop; lighter settings on mobile for performance.
     const highQuality = !window.matchMedia('(max-width: 768px)').matches;
@@ -404,7 +426,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
     const { width: initialWidth, height: initialHeight } = getViewportSize();
     const camera = new THREE.PerspectiveCamera(75, initialWidth / initialHeight, 0.1, 1000);
     cameraRef.current = camera;
-    camera.position.set(0, 1.6, 20);
+    camera.position.set(0, 1.6, isPersonal ? 14 : 20);
     camera.rotation.order = 'YXZ';
 
     let renderer: THREE.WebGLRenderer;
@@ -442,6 +464,86 @@ const NftGallery: React.FC<NftGalleryProps> = ({
     scene.add(hemiLight);
 
     const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.8, metalness: 0.1 });
+
+    const rainbowMaterial = new THREE.ShaderMaterial({
+      uniforms: { time: { value: 0 } },
+      vertexShader: rainbowVertexShader,
+      fragmentShader: rainbowFragmentShader,
+      side: THREE.DoubleSide
+    });
+
+    const textureLoader = new THREE.TextureLoader();
+    const gltfLoader = new GLTFLoader();
+
+    if (isPersonal) {
+      const { roomWidth, roomDepth, wallHeight, pitWidth, pitDepth, pitDepthY, wallThickness } = PERSONAL_LAYOUT;
+      const halfW = roomWidth / 2;
+      const halfD = roomDepth / 2;
+      const halfWall = wallHeight / 2;
+
+      hemiLight.position.set(0, wallHeight, 0);
+
+      const northSouthWallGeo = new THREE.BoxGeometry(roomWidth + wallThickness, wallHeight, wallThickness);
+      const eastWestWallGeo = new THREE.BoxGeometry(wallThickness, wallHeight, roomDepth + wallThickness);
+
+      const northWall = new THREE.Mesh(northSouthWallGeo, wallMaterial.clone());
+      northWall.position.set(0, halfWall, -halfD);
+      scene.add(northWall);
+
+      const southWall = new THREE.Mesh(northSouthWallGeo, wallMaterial.clone());
+      southWall.position.set(0, halfWall, halfD);
+      scene.add(southWall);
+
+      const eastWall = new THREE.Mesh(eastWestWallGeo, wallMaterial.clone());
+      eastWall.position.set(halfW, halfWall, 0);
+      scene.add(eastWall);
+
+      const westWall = new THREE.Mesh(eastWestWallGeo, wallMaterial.clone());
+      westWall.position.set(-halfW, halfWall, 0);
+      scene.add(westWall);
+
+      const floorMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.2, metalness: 0.1 });
+      const mainFloor = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomDepth), floorMat);
+      mainFloor.rotation.x = -Math.PI / 2;
+      scene.add(mainFloor);
+
+      const pitFloor = new THREE.Mesh(new THREE.PlaneGeometry(pitWidth, pitDepth), floorMat.clone());
+      pitFloor.rotation.x = -Math.PI / 2;
+      pitFloor.position.y = -pitDepthY;
+      scene.add(pitFloor);
+
+      const pitWallMat = wallMaterial.clone();
+      const pitWallH = pitDepthY;
+      const pitHalfW = pitWidth / 2;
+      const pitHalfD = pitDepth / 2;
+      const pitWallThickness = 0.3;
+      const pitWalls = [
+        { geo: new THREE.BoxGeometry(pitWidth, pitWallH, pitWallThickness), pos: [0, -pitDepthY / 2, -pitHalfD] as const },
+        { geo: new THREE.BoxGeometry(pitWidth, pitWallH, pitWallThickness), pos: [0, -pitDepthY / 2, pitHalfD] as const },
+        { geo: new THREE.BoxGeometry(pitWallThickness, pitWallH, pitDepth), pos: [-pitHalfW, -pitDepthY / 2, 0] as const },
+        { geo: new THREE.BoxGeometry(pitWallThickness, pitWallH, pitDepth), pos: [pitHalfW, -pitDepthY / 2, 0] as const },
+      ];
+      pitWalls.forEach(({ geo, pos }) => {
+        const w = new THREE.Mesh(geo, pitWallMat);
+        w.position.set(pos[0], pos[1], pos[2]);
+        scene.add(w);
+      });
+
+      const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomDepth), rainbowMaterial);
+      ceiling.rotation.x = Math.PI / 2;
+      ceiling.position.y = wallHeight;
+      scene.add(ceiling);
+
+      const logoTexture = textureLoader.load('/gallery/electroneum-logo-symbol.svg');
+      logoTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      const vinyl = new THREE.Mesh(
+        new THREE.PlaneGeometry(6, 6),
+        new THREE.MeshBasicMaterial({ map: logoTexture, transparent: true, opacity: 0.6, side: THREE.DoubleSide }),
+      );
+      vinyl.rotation.x = -Math.PI / 2;
+      vinyl.position.set(0, 0.01, 0);
+      scene.add(vinyl);
+    } else {
     const halfRoomSize = ROOM_SIZE / 2;
     const outerWallGeometry = new THREE.BoxGeometry(ROOM_SIZE + WALL_THICKNESS, WALL_HEIGHT, WALL_THICKNESS);
     const halfWallHeight = WALL_HEIGHT / 2;
@@ -474,12 +576,6 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       scene.add(w4);
     });
 
-    const rainbowMaterial = new THREE.ShaderMaterial({
-      uniforms: { time: { value: 0 } },
-      vertexShader: rainbowVertexShader,
-      fragmentShader: rainbowFragmentShader,
-      side: THREE.DoubleSide
-    });
     const floorGeo = new THREE.PlaneGeometry(ROOM_SIZE, ROOM_SIZE);
     const floorMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.2, metalness: 0.1 });
     const floor = new THREE.Mesh(floorGeo, floorMat);
@@ -501,7 +597,6 @@ const NftGallery: React.FC<NftGalleryProps> = ({
     underPlatform.position.y = LOWER_WALL_HEIGHT;
     scene.add(underPlatform);
 
-    const textureLoader = new THREE.TextureLoader();
     const logoTexture = textureLoader.load('/gallery/electroneum-logo-symbol.svg');
     logoTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
     const vinylGeo = new THREE.PlaneGeometry(10, 10);
@@ -522,12 +617,12 @@ const NftGallery: React.FC<NftGalleryProps> = ({
     uBtn.userData.targetY = 1.6;
     scene.add(uBtn);
     teleportButtonsRef.current = [gBtn, uBtn];
+    }
 
-    const gltfLoader = new GLTFLoader();
-
-    // Helper to load 3D decorative accessories on the upper level
+    // Helper to load 3D decorative accessories on the upper level (main gallery only)
     const loadDecorativeItems = () => {
-      if (!highQuality) return;
+      if (!highQuality || isPersonal) return;
+      const PLATFORM_Y = LOWER_WALL_HEIGHT + WALL_THICKNESS / 2 + 0.01;
       // 1. Create tables and rugs (procedural/textures)
       const tablePositions = [{ x: 0, z: 9.8 }, { x: 0, z: -9.8 }, { x: 9.8, z: 0 }, { x: -9.8, z: 0 }];
       tablePositions.forEach(pos => {
@@ -638,6 +733,76 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       });
     };
 
+    const loadPersonalDecor = () => {
+      if (!highQuality || !isPersonal) return;
+      const pitY = -PERSONAL_LAYOUT.pitDepthY;
+
+      const table = createProceduralTable();
+      table.position.set(0, pitY, 0);
+      scene.add(table);
+
+      const rugTexture = textureLoader.load('/gallery/textures/starry_night_sky_background_1409-2.jpg');
+      const rugMat = new THREE.MeshStandardMaterial({
+        map: rugTexture,
+        roughness: 1,
+        metalness: 0,
+        transparent: true,
+        opacity: 0.9,
+      });
+      const rug = new THREE.Mesh(new THREE.PlaneGeometry(5, 6), rugMat);
+      rug.rotation.x = -Math.PI / 2;
+      rug.position.set(0, pitY + 0.01, 1.2);
+      scene.add(rug);
+
+      gltfLoader.load('/gallery/models/sofa.glb', (gltf) => {
+        if (stopLoad) return;
+        let sofaMesh: THREE.Mesh | null = null;
+        gltf.scene.traverse((child) => {
+          if (child instanceof THREE.Mesh && !sofaMesh) {
+            const box = new THREE.Box3().setFromObject(child);
+            const size = new THREE.Vector3();
+            box.getSize(size);
+            if (size.x < 15 && size.z < 15) sofaMesh = child;
+          }
+        });
+        if (!sofaMesh) return;
+
+        const buildSofa = (targetWidth: number) => {
+          const mesh = (sofaMesh as THREE.Mesh).clone();
+          mesh.geometry = (sofaMesh as THREE.Mesh).geometry.clone();
+          mesh.geometry.computeBoundingBox();
+          const box = mesh.geometry.boundingBox!;
+          const size = new THREE.Vector3();
+          box.getSize(size);
+          const scale = targetWidth / size.x;
+          const group = new THREE.Group();
+          group.add(mesh);
+          mesh.scale.set(scale, scale * 2, scale);
+          mesh.position.set(
+            -(box.min.x + size.x / 2) * scale,
+            -box.min.y * (scale * 2),
+            -(box.min.z + size.z / 2) * scale,
+          );
+          return group;
+        };
+
+        const couch = buildSofa(3.8);
+        couch.position.set(0, pitY, 2.8);
+        couch.rotation.y = Math.PI;
+        scene.add(couch);
+
+        const armchairL = buildSofa(2.4);
+        armchairL.position.set(-2.2, pitY, 0);
+        armchairL.rotation.y = Math.PI / 2;
+        scene.add(armchairL);
+
+        const armchairR = buildSofa(2.4);
+        armchairR.position.set(2.2, pitY, 0);
+        armchairR.rotation.y = -Math.PI / 2;
+        scene.add(armchairR);
+      });
+    };
+
     let stopLoad = false;
     const createPanels = async () => {
       const pGeo = new THREE.PlaneGeometry(PANEL_WIDTH, PANEL_HEIGHT);
@@ -647,17 +812,57 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       const dOff = 0.15 + WALL_THICKNESS / 2;
       const aOff = 3.2;
 
+      let allPanels: Panel[] = [];
+
+      if (isPersonal && roomId) {
+        const panelY = PERSONAL_LAYOUT.panelY;
+        const personalPanels: Panel[] = [];
+        for (const placement of getPersonalPanelPlacements()) {
+          const key = personalPanelKey(roomId, placement.slot);
+          const mesh = new THREE.Mesh(pGeo, new THREE.MeshBasicMaterial({ color: 0x222222, side: THREE.DoubleSide }));
+          mesh.position.set(placement.x + placement.dx, panelY, placement.z + placement.dz);
+          mesh.rotation.y = placement.rotationY;
+          scene.add(mesh);
+
+          const rV = new THREE.Vector3(1, 0, 0).applyEuler(new THREE.Euler(0, placement.rotationY, 0));
+          const pA = new THREE.Mesh(aGeo, new THREE.MeshBasicMaterial({ color: 0xcccccc, side: THREE.DoubleSide }));
+          pA.rotation.y = placement.rotationY + Math.PI;
+          pA.position.copy(mesh.position).addScaledVector(rV, -aOff);
+          scene.add(pA);
+
+          const nA = new THREE.Mesh(aGeo, new THREE.MeshBasicMaterial({ color: 0xcccccc, side: THREE.DoubleSide }));
+          nA.rotation.y = placement.rotationY;
+          nA.position.copy(mesh.position).addScaledVector(rV, aOff);
+          scene.add(nA);
+
+          personalPanels.push({
+            mesh,
+            wallName: key,
+            metadataUrl: '',
+            isVideo: false,
+            isGif: false,
+            prevArrow: pA,
+            nextArrow: nA,
+            videoElement: null,
+            gifStopFunction: null,
+          });
+        }
+        panelsRef.current = personalPanels;
+        allPanels = personalPanels;
+      } else {
       const groundPanels: Panel[] = [];
       const firstPanels: Panel[] = [];
       const innerPanels: Panel[] = [];
       const wNames = ['north-wall', 'south-wall', 'east-wall', 'west-wall'] as const;
+      const halfRoomSize = ROOM_SIZE / 2;
+      const crossWallSegments = [-10, 10];
       
       // 1. Create Ground & First Floor Outer Panels
       for (let i = 0; i <= 4; i++) {
         for (const wBase of wNames) {
           const sC = (i - 2) * 10;
           for (const tier of [{ y: LOWER_PANEL_Y, s: '-ground' }, { y: UPPER_PANEL_Y, s: '-first' }]) {
-            const key = `${wBase}-${i}${tier.s}` as keyof PanelConfig;
+            const key = `${wBase}-${i}${tier.s}` as string;
             let x = 0, z = 0, rY = 0, dx = 0, dz = 0;
             if (wBase === 'north-wall') { x = sC; z = -halfRoomSize; rY = 0; dz = dOff; }
             if (wBase === 'south-wall') { x = sC; z = halfRoomSize; rY = Math.PI; dz = -dOff; }
@@ -722,6 +927,8 @@ const NftGallery: React.FC<NftGalleryProps> = ({
 
       // Populate reference panels array for interaction raycaster
       panelsRef.current = [...groundPanels, ...innerPanels, ...firstPanels];
+      allPanels = [...groundPanels, ...innerPanels, ...firstPanels];
+      }
 
       onLoadingProgressRef.current?.(30);
       onLoadingMessageRef.current?.('Resolving collections…');
@@ -773,8 +980,8 @@ const NftGallery: React.FC<NftGalleryProps> = ({
           return da - db;
         });
 
-      const allPanels = sortByProximity([...groundPanels, ...innerPanels, ...firstPanels]);
-      const totalPanels = allPanels.length;
+      const allPanelsSorted = sortByProximity(allPanels);
+      const totalPanels = allPanelsSorted.length;
       let loadedPanels = 0;
 
       const loadPanelFromIndex = async (panel: Panel) => {
@@ -802,7 +1009,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
         await Promise.all(runners);
       };
 
-      const indexedPanels = allPanels.filter((panel) => indexedByPanel.has(String(panel.wallName)));
+      const indexedPanels = allPanelsSorted.filter((panel) => indexedByPanel.has(String(panel.wallName)));
       void runConcurrent(sortByProximity(indexedPanels), loadPanelFromIndex);
 
       void (async () => {
@@ -835,7 +1042,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
           onLoadingProgressRef.current?.(40 + Math.round((60 * loadedPanels) / Math.max(totalPanels, 1)));
         };
 
-        const remainingPanels = allPanels.filter((panel) => !panel.metadataUrl);
+        const remainingPanels = allPanelsSorted.filter((panel) => !panel.metadataUrl);
         await runConcurrent(remainingPanels, loadPanelWithProgress);
 
         window.clearTimeout(splashFallbackTimer);
@@ -843,7 +1050,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
         unsubscribeConfig();
 
         if (!stopLoad) {
-          const scheduleDecor = () => loadDecorativeItems();
+          const scheduleDecor = () => (isPersonal ? loadPersonalDecor() : loadDecorativeItems());
           if ('requestIdleCallback' in window) {
             requestIdleCallback(scheduleDecor);
           } else {
@@ -908,7 +1115,9 @@ const NftGallery: React.FC<NftGalleryProps> = ({
                   updatePanelContent(p, getCurrentNftSource(p.wallName));
                 }
               } else if (p.metadataUrl) {
-                const cfg = GALLERY_PANEL_CONFIG[p.wallName];
+                const panelConfig = getGalleryPanelConfig();
+                const cfg = panelConfig[p.wallName];
+                if (!cfg) return;
                 const tokenId = cfg.tokenIds[cfg.currentIndex];
                 if (!isGalleryTokenMinted(cfg.mintedTokenIds, tokenId)) {
                   toast.message(`Token #${tokenId} has not been minted yet. Marketplace links open once it exists on-chain.`);
@@ -1069,7 +1278,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       sceneRef.current = null;
       cameraRef.current = null;
     };
-  }, [updatePanelContent, checkCollision]);
+  }, [updatePanelContent, checkCollision, layout, roomId]);
 
   return (
     <div className="absolute inset-0 bg-black touch-none">

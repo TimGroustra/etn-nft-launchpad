@@ -25,6 +25,7 @@ interface SettingsPanelProps {
   isLoading: boolean;
   selectedLock: { isLocked: boolean; isLockedByMe: boolean; lockedUntil: Date | null };
   onOpenMap?: () => void;
+  hideLocks?: boolean;
 }
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({
@@ -37,7 +38,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   handleSave,
   isLoading,
   selectedLock,
-  onOpenMap
+  onOpenMap,
+  hideLocks = false,
 }) => {
   if (!selectedPanelKey) {
     return (
@@ -82,7 +84,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className={`grid grid-cols-1 gap-4 ${hideLocks ? '' : 'sm:grid-cols-2'}`}>
             <div className="space-y-1.5">
               <Label className="text-xs">Default Token ID</Label>
               <Input 
@@ -93,6 +95,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 onChange={e => setCurrentConfig(p => ({...p, default_token_id: parseInt(e.target.value) || 1}))} 
               />
             </div>
+            {!hideLocks && (
             <div className="space-y-1.5">
               <div className="flex items-center gap-1.5">
                 <Label className="text-xs">Lock for (Days)</Label>
@@ -115,6 +118,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 onChange={e => setLockDurationDays(Number(e.target.value))} 
               />
             </div>
+            )}
           </div>
         </div>
         
@@ -132,12 +136,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <Button 
           className="w-full h-12 text-md font-bold" 
           onClick={handleSave} 
-          disabled={isLoading || (selectedLock?.isLocked && !selectedLock?.isLockedByMe)}
+          disabled={isLoading || (!hideLocks && selectedLock?.isLocked && !selectedLock?.isLockedByMe)}
         >
           {isLoading ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : 'Apply Configuration'}
         </Button>
         
-        {selectedLock?.isLocked && (
+        {!hideLocks && selectedLock?.isLocked && (
           <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-center">
             <p className="text-xs text-amber-500 font-medium">
               {selectedLock.isLockedByMe ? `Locked by you until ${selectedLock.lockedUntil?.toLocaleDateString()}` : "Locked by another curator."}

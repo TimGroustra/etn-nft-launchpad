@@ -82,6 +82,7 @@ export interface Database {
       gallery_config: {
         Row: {
           panel_key: string
+          room_id: string | null
           collection_name: string | null
           contract_address: string | null
           default_token_id: number | null
@@ -113,6 +114,7 @@ export interface Database {
       gallery_panel_tokens: {
         Row: {
           panel_key: string
+          room_id: string | null
           contract_address: string
           token_id: number
           updated_at: string
@@ -169,6 +171,24 @@ export interface Database {
           contract_address: string
         }
         Update: Partial<Database['public']['Tables']['gallery_contract_minted_ids']['Row']>
+      }
+      personal_gallery_rooms: {
+        Row: {
+          id: string
+          slug: string
+          display_name: string
+          owner_address: string
+          electrogem_token_id: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: Partial<Database['public']['Tables']['personal_gallery_rooms']['Row']> & {
+          slug: string
+          display_name: string
+          owner_address: string
+          electrogem_token_id: string
+        }
+        Update: Partial<Database['public']['Tables']['personal_gallery_rooms']['Row']>
       }
     }
   }

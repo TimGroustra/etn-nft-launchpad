@@ -5,12 +5,16 @@ import type { NftMetadata } from '@/lib/gallery-fetcher/nftFetcher'
 
 type GalleryConfigPanelRow = Pick<
   Database['public']['Tables']['gallery_config']['Row'],
-  'panel_key' | 'contract_address' | 'default_token_id'
+  'panel_key' | 'contract_address' | 'default_token_id' | 'room_id'
 >
 type GalleryPanelTokenRow = Pick<
   Database['public']['Tables']['gallery_panel_tokens']['Row'],
-  'panel_key' | 'contract_address' | 'token_id'
+  'panel_key' | 'contract_address' | 'token_id' | 'room_id'
 >
+
+export type GalleryCacheOptions = {
+  roomId?: string | null
+}
 
 type CacheRow = {
   contract_address: string
@@ -114,10 +118,17 @@ export async function getCachedGalleryMetadataBatch(
 }
 
 /** Fast path: panel_key → cached metadata (indexed table, then gallery_config fallback). */
-async function fetchConfiguredPanelGalleryMetadata(): Promise<Map<string, NftMetadata>> {
-  const { data: configRows, error } = await supabase
-    .from('gallery_config')
-    .select('panel_key, contract_address, default_token_id')
+async function fetchConfiguredPanelGalleryMetadata(
+  options: GalleryCacheOptions = {},
+): Promise<Map<string, NftMetadata>> {
+  let query = supabase.from('gallery_config').select('panel_key, contract_address, default_token_id, room_id')
+  if (options.roomId) {
+    query = query.eq('room_id', options.roomId)
+  } else {
+    query = query.is('room_id', null)
+  }
+
+  const { data: configRows, error } = await query
 
   const byPanel = new Map<string, NftMetadata>()
   const rows = (configRows ?? []) as GalleryConfigPanelRow[]
@@ -143,29 +154,45 @@ async function fetchConfiguredPanelGalleryMetadata(): Promise<Map<string, NftMet
   return byPanel
 }
 
-export async function fetchGalleryPanelCacheMetadata(): Promise<Map<string, NftMetadata>> {
-  const indexed = await fetchIndexedPanelGalleryMetadata()
+export async function fetchGalleryPanelCacheMetadata(
+  options: GalleryCacheOptions = {},
+): Promise<Map<string, NftMetadata>> {
+  const indexed = await fetchIndexedPanelGalleryMetadata(options)
   if (indexed.size > 0) return indexed
-  return fetchConfiguredPanelGalleryMetadata()
+  return fetchConfiguredPanelGalleryMetadata(options)
 }
 
-let panelCachePrefetch: Promise<Map<string, NftMetadata>> | null = null
+const panelCachePrefetches = new Map<string, Promise<Map<string, NftMetadata>>>()
+
+function cachePrefetchKey(options: GalleryCacheOptions): string {
+  return options.roomId ? `room:${options.roomId}` : 'main'
+}
 
 /** Start loading panel artwork metadata as early as possible (e.g. on GalleryPage mount). */
-export function prefetchGalleryPanelCache(): Promise<Map<string, NftMetadata>> {
-  if (!panelCachePrefetch) {
-    panelCachePrefetch = fetchGalleryPanelCacheMetadata().catch((error) => {
-      panelCachePrefetch = null
-      throw error
-    })
-  }
-  return panelCachePrefetch
+export function prefetchGalleryPanelCache(options: GalleryCacheOptions = {}): Promise<Map<string, NftMetadata>> {
+  const key = cachePrefetchKey(options)
+  const existing = panelCachePrefetches.get(key)
+  if (existing) return existing
+
+  const promise = fetchGalleryPanelCacheMetadata(options).catch((error) => {
+    panelCachePrefetches.delete(key)
+    throw error
+  })
+  panelCachePrefetches.set(key, promise)
+  return promise
 }
 
-export async function fetchIndexedPanelGalleryMetadata(): Promise<Map<string, NftMetadata>> {
-  const { data: panelRows, error } = await supabase
-    .from('gallery_panel_tokens')
-    .select('panel_key, contract_address, token_id')
+export async function fetchIndexedPanelGalleryMetadata(
+  options: GalleryCacheOptions = {},
+): Promise<Map<string, NftMetadata>> {
+  let query = supabase.from('gallery_panel_tokens').select('panel_key, contract_address, token_id, room_id')
+  if (options.roomId) {
+    query = query.eq('room_id', options.roomId)
+  } else {
+    query = query.is('room_id', null)
+  }
+
+  const { data: panelRows, error } = await query
 
   const byPanel = new Map<string, NftMetadata>()
   const rows = (panelRows ?? []) as GalleryPanelTokenRow[]

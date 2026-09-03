@@ -255,10 +255,10 @@ export default function GalleryConfigPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigate('/gallery')}
+              onClick={() => navigate('/gallery/config')}
               className="h-10 w-fit px-0 text-sm hover:bg-transparent"
             >
-              <ArrowLeft className="mr-2 h-4 w-4" /> Back to Gallery
+              <ArrowLeft className="mr-2 h-4 w-4" /> Configure Hub
             </Button>
             <div className="flex w-fit items-center gap-2 rounded-full bg-slate-900 px-3 py-2 text-xs">
               <Gem className="h-4 w-4 shrink-0 text-cyan-400" />
@@ -270,7 +270,7 @@ export default function GalleryConfigPage() {
             </div>
           </div>
           <div>
-            <h1 className="text-2xl font-bold">Gallery Configuration</h1>
+            <h1 className="text-2xl font-bold">Main Gallery Configuration</h1>
             <p className="text-sm text-slate-400">
               Customise wall panels with content from any Electroneum collection.
             </p>

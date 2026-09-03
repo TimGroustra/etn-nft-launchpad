@@ -422,13 +422,22 @@ export function resolvePanelDisplayTokenId(
   return tokenIds[0]
 }
 
-async function collectConfiguredGalleryTokenKeys(supabase: SupabaseClient): Promise<Set<string>> {
+async function collectConfiguredGalleryTokenKeys(
+  supabase: SupabaseClient,
+  scopeRoomId?: string | null,
+): Promise<Set<string>> {
   const keys = new Set<string>()
 
-  const { data: configRows } = await supabase
+  let configQuery = supabase
     .from('gallery_config')
-    .select('contract_address, default_token_id, show_collection')
+    .select('contract_address, default_token_id, show_collection, room_id')
     .not('contract_address', 'is', null)
+
+  if (scopeRoomId) {
+    configQuery = configQuery.eq('room_id', scopeRoomId)
+  }
+
+  const { data: configRows } = await configQuery
 
   const contracts = [
     ...new Set(
@@ -469,9 +478,12 @@ async function collectConfiguredGalleryTokenKeys(supabase: SupabaseClient): Prom
     keys.add(`${contract}:${defaultTokenId}`)
   }
 
-  const { data: panelRows } = await supabase
-    .from('gallery_panel_tokens')
-    .select('contract_address, token_id')
+  let panelQuery = supabase.from('gallery_panel_tokens').select('contract_address, token_id, room_id')
+  if (scopeRoomId) {
+    panelQuery = panelQuery.eq('room_id', scopeRoomId)
+  }
+
+  const { data: panelRows } = await panelQuery
 
   for (const row of panelRows ?? []) {
     keys.add(`${String(row.contract_address).toLowerCase()}:${Number(row.token_id)}`)
@@ -481,14 +493,26 @@ async function collectConfiguredGalleryTokenKeys(supabase: SupabaseClient): Prom
 }
 
 /** Resolve and persist display tokens from gallery_config (no on-chain lookups). */
-export async function syncGalleryPanelTokens(supabase: SupabaseClient) {
-  const { data: rows } = await supabase
+export async function syncGalleryPanelTokens(supabase: SupabaseClient, roomId?: string | null) {
+  let query = supabase
     .from('gallery_config')
-    .select('panel_key, contract_address, default_token_id')
+    .select('panel_key, contract_address, default_token_id, room_id')
     .not('contract_address', 'is', null)
 
+  if (roomId) {
+    query = query.eq('room_id', roomId)
+  } else {
+    query = query.is('room_id', null)
+  }
+
+  const { data: rows } = await query
+
   if (!rows?.length) {
-    await supabase.from('gallery_panel_tokens').delete().neq('panel_key', '')
+    if (roomId) {
+      await supabase.from('gallery_panel_tokens').delete().eq('room_id', roomId)
+    } else {
+      await supabase.from('gallery_panel_tokens').delete().is('room_id', null)
+    }
     return { synced: 0 }
   }
 
@@ -502,11 +526,16 @@ export async function syncGalleryPanelTokens(supabase: SupabaseClient) {
     return { synced: 0, skipped: true }
   }
 
-  await supabase.from('gallery_panel_tokens').delete().neq('panel_key', '')
+  if (roomId) {
+    await supabase.from('gallery_panel_tokens').delete().eq('room_id', roomId)
+  } else {
+    await supabase.from('gallery_panel_tokens').delete().is('room_id', null)
+  }
 
   const { error } = await supabase.from('gallery_panel_tokens').upsert(
     panelTokens.map((row) => ({
       panel_key: row.panel_key,
+      room_id: roomId ?? null,
       contract_address: row.contract_address,
       token_id: row.token_id,
       updated_at: new Date().toISOString(),
@@ -518,11 +547,12 @@ export async function syncGalleryPanelTokens(supabase: SupabaseClient) {
   return { synced: panelTokens.length }
 }
 
-/** Remove cached media that is no longer referenced by any gallery panel token.
- *  Only ever touches the `gallery-cache` bucket and `gallery_media_cache` table —
- *  launchpad buckets (`collection-images`, `collection-metadata`, `gem-shards`) are never affected. */
-export async function pruneOrphanedGalleryMedia(supabase: SupabaseClient) {
-  const activeKeys = await collectConfiguredGalleryTokenKeys(supabase)
+/** Remove cached media that is no longer referenced by any gallery panel token. */
+export async function pruneOrphanedGalleryMedia(
+  supabase: SupabaseClient,
+  scopeRoomId?: string | null,
+) {
+  const activeKeys = await collectConfiguredGalleryTokenKeys(supabase, scopeRoomId)
 
   // Panel index not ready yet — never wipe cache while gallery_config still has panels.
   if (activeKeys.size === 0) {

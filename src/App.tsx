@@ -16,7 +16,11 @@ import { GemShardRewardsPage } from '@/pages/GemShardRewardsPage'
 import { lazyWithRetry } from '@/lib/lazy-with-retry'
 
 const GalleryPage = lazyWithRetry(() => import('@/pages/GalleryPage'))
+const GalleryConfigHubPage = lazyWithRetry(() => import('@/pages/GalleryConfigHubPage'))
 const GalleryConfigPage = lazyWithRetry(() => import('@/pages/GalleryConfigPage'))
+const PersonalGalleryRoomsPage = lazyWithRetry(() => import('@/pages/PersonalGalleryRoomsPage'))
+const PersonalGalleryConfigPage = lazyWithRetry(() => import('@/pages/PersonalGalleryConfigPage'))
+const PersonalGalleryPage = lazyWithRetry(() => import('@/pages/PersonalGalleryPage'))
 
 function GalleryFallback() {
   return <div className="flex h-full items-center justify-center text-slate-400">Loading 3D Gallery…</div>
@@ -72,9 +76,47 @@ const router = createBrowserRouter([
         element: (
           <GalleryRoute mode="edit">
             <Suspense fallback={<GalleryFallback />}>
+              <GalleryConfigHubPage />
+            </Suspense>
+          </GalleryRoute>
+        ),
+      },
+      {
+        path: 'gallery/config/main',
+        element: (
+          <GalleryRoute mode="edit">
+            <Suspense fallback={<GalleryFallback />}>
               <GalleryConfigPage />
             </Suspense>
           </GalleryRoute>
+        ),
+      },
+      {
+        path: 'gallery/config/rooms',
+        element: (
+          <GalleryRoute mode="edit">
+            <Suspense fallback={<GalleryFallback />}>
+              <PersonalGalleryRoomsPage />
+            </Suspense>
+          </GalleryRoute>
+        ),
+      },
+      {
+        path: 'gallery/config/room/:roomId',
+        element: (
+          <GalleryRoute mode="edit">
+            <Suspense fallback={<GalleryFallback />}>
+              <PersonalGalleryConfigPage />
+            </Suspense>
+          </GalleryRoute>
+        ),
+      },
+      {
+        path: 'gallery/room/:slug',
+        element: (
+          <Suspense fallback={<GalleryFallback />}>
+            <PersonalGalleryPage />
+          </Suspense>
         ),
       },
     ],
