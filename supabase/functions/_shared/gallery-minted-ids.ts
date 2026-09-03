@@ -220,3 +220,21 @@ export async function refreshStaleGalleryContracts(
   const skipped = contracts.filter((c) => !refreshed.includes(c.toLowerCase()))
   return { refreshed, skipped }
 }
+
+/** Read minted IDs from Supabase cache; fall back to on-chain only when missing. */
+export async function getMintedTokenIdsForGallery(
+  supabase: SupabaseClient,
+  contractAddress: string,
+): Promise<number[]> {
+  const contract = contractAddress.toLowerCase()
+  const { data } = await supabase
+    .from('gallery_contract_minted_ids')
+    .select('minted_token_ids')
+    .eq('contract_address', contract)
+    .maybeSingle()
+
+  const cached = (data?.minted_token_ids ?? []) as number[]
+  if (cached.length > 0) return uniqueSortedTokenIds(cached)
+
+  return fetchMintedTokenIdsOnChain(contractAddress)
+}

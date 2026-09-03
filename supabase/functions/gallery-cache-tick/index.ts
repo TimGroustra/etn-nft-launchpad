@@ -3,8 +3,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 import { corsHeaders } from '../_shared/utils.ts'
 import {
   enqueueGalleryPanelsFromConfig,
+  enqueueGalleryTokens,
   processGalleryCacheBatch,
+  pruneOrphanedGalleryMedia,
   refreshStaleGalleryContracts,
+  syncGalleryPanelTokens,
   triggerGalleryCacheTick,
 } from '../_shared/gallery-media-cache.ts'
 
@@ -18,7 +21,12 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
 
   try {
-    let body: { enqueuePanels?: boolean } = {}
+    let body: {
+      enqueuePanels?: boolean
+      syncPanels?: boolean
+      warmOnly?: boolean
+      enqueueTokens?: Array<{ contractAddress: string; tokenIds: number[] }>
+    } = {}
     if (req.method === 'POST') {
       try {
         body = await req.json()
@@ -27,12 +35,39 @@ serve(async (req) => {
       }
     }
 
-    // Refresh stale minted-ID cache before warming media (best-effort, non-blocking).
     const waitUntil = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } })
       .EdgeRuntime?.waitUntil
     const mintRefresh = refreshStaleGalleryContracts(supabase)
     if (waitUntil) waitUntil(mintRefresh)
     else await mintRefresh
+
+    if (body.syncPanels) {
+      const synced = await syncGalleryPanelTokens(supabase)
+      const pruned = await pruneOrphanedGalleryMedia(supabase)
+      return new Response(JSON.stringify({ success: true, ...synced, ...pruned }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (body.enqueueTokens?.length) {
+      let enqueued = 0
+      for (const item of body.enqueueTokens) {
+        await enqueueGalleryTokens(supabase, item.contractAddress, item.tokenIds)
+        enqueued += item.tokenIds.length
+      }
+      const kick = triggerGalleryCacheTick(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+        0,
+      )
+      if (waitUntil) waitUntil(kick)
+      else await kick
+      return new Response(JSON.stringify({ success: true, enqueued }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     if (body.enqueuePanels) {
       const enqueueResult = await enqueueGalleryPanelsFromConfig(supabase)
@@ -42,9 +77,10 @@ serve(async (req) => {
       })
     }
 
-    const result = await processGalleryCacheBatch(supabase)
+    const result = await processGalleryCacheBatch(supabase, {
+      skipIndex: body.warmOnly === true,
+    })
 
-    // Chain another tick while work remains — slow and steady, one batch at a time.
     if (result.remaining > 0) {
       const supabaseUrl = Deno.env.get('SUPABASE_URL')!
       const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!

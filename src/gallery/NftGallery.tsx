@@ -12,10 +12,18 @@ import {
   updatePanelIndex,
   type PanelConfig,
 } from '@/gallery/galleryConfig';
-import { getCachedNftMetadata, prewarmMetadataCache } from '@/lib/gallery-fetcher/metadataCache';
-import { getCachedGalleryMetadataBatch, enqueueGalleryPanelTokens } from '@/lib/gallery-cache';
+import {
+  getCachedGalleryMetadata,
+  getCachedGalleryMetadataBatch,
+  getPrewarmedGalleryMetadata,
+  waitForGalleryCachedMetadata,
+  enqueueGalleryTokens,
+  enqueueGalleryPanelTokens,
+  prewarmGalleryMetadataCache,
+  syncGalleryPanelTokenIndex,
+} from '@/lib/gallery-cache';
 import { getGatewayCandidates } from '@/lib/gallery-fetcher/urlUtils';
-import type { NftSource } from '@/lib/gallery-fetcher/nftFetcher';
+import type { NftSource, NftMetadata } from '@/lib/gallery-fetcher/nftFetcher';
 import { createGifTexture } from '@/lib/gallery-fetcher/gifTexture';
 import { MarketBrowserRefined } from '@/components/gallery/MarketBrowserRefined';
 import { isGalleryTokenMinted } from '@/lib/gallery-minted-token-ids';
@@ -317,8 +325,16 @@ const NftGallery: React.FC<NftGalleryProps> = ({
     panel.mesh.material = new THREE.MeshBasicMaterial({ color: 0x222222 });
     panel.metadataUrl = '';
     if (!source || source.contractAddress === '') return;
-    const metadata = await getCachedNftMetadata(source.contractAddress, source.tokenId);
+
+    let metadata =
+      getPrewarmedGalleryMetadata(source.contractAddress, source.tokenId) ??
+      (await getCachedGalleryMetadata(source.contractAddress, source.tokenId));
+    if (!metadata) {
+      enqueueGalleryTokens(source.contractAddress, [source.tokenId]);
+      metadata = await waitForGalleryCachedMetadata(source.contractAddress, source.tokenId);
+    }
     if (!metadata) return;
+
     try {
       const texture = await loadTexture(metadata.contentUrl, panel, metadata.contentType || '');
       panel.mesh.material = new THREE.MeshBasicMaterial({ map: texture });
@@ -745,10 +761,26 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       onLoadingProgressRef.current?.(50);
       onLoadingMessageRef.current?.('Loading artwork…');
 
+      syncGalleryPanelTokenIndex();
+
       const tokenSources = getAllPanelTokenSources();
       const batchCache = await getCachedGalleryMetadataBatch(tokenSources);
-      prewarmMetadataCache(batchCache);
-      enqueueGalleryPanelTokens();
+      prewarmGalleryMetadataCache(batchCache);
+
+      const uncachedByContract = new Map<string, number[]>();
+      for (const source of tokenSources) {
+        const key = `${source.contractAddress.toLowerCase()}:${source.tokenId}`;
+        if (batchCache.has(key)) continue;
+        const contract = source.contractAddress.toLowerCase();
+        if (!uncachedByContract.has(contract)) uncachedByContract.set(contract, []);
+        uncachedByContract.get(contract)!.push(source.tokenId);
+      }
+      if (uncachedByContract.size > 0) {
+        for (const [contractAddress, tokenIds] of uncachedByContract) {
+          enqueueGalleryTokens(contractAddress, tokenIds);
+        }
+        enqueueGalleryPanelTokens();
+      }
 
       const sortByProximity = (list: Panel[]) =>
         [...list].sort((a, b) => {

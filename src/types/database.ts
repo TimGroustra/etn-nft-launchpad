@@ -110,6 +110,20 @@ export interface Database {
         }
         Update: Partial<Database['public']['Tables']['panel_locks']['Row']>
       }
+      gallery_panel_tokens: {
+        Row: {
+          panel_key: string
+          contract_address: string
+          token_id: number
+          updated_at: string
+        }
+        Insert: Partial<Database['public']['Tables']['gallery_panel_tokens']['Row']> & {
+          panel_key: string
+          contract_address: string
+          token_id: number
+        }
+        Update: Partial<Database['public']['Tables']['gallery_panel_tokens']['Row']>
+      }
       gallery_media_cache: {
         Row: {
           contract_address: string

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAccount } from 'wagmi'
+import { enqueueGalleryTokens, syncGalleryPanelTokenIndex } from '@/lib/gallery-cache'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -193,6 +194,13 @@ export default function GalleryConfigPage() {
       toast.error((data as { error?: string })?.error || error?.message || 'Save failed.')
       setIsLoading(false)
       return
+    }
+
+    const savedContract = currentConfig.contract_address?.trim().toLowerCase()
+    const savedTokenId = currentConfig.default_token_id || 1
+    if (savedContract) {
+      enqueueGalleryTokens(savedContract, [savedTokenId])
+      syncGalleryPanelTokenIndex()
     }
 
     if (lockDurationDays === 0 && lockStatus.isLockedByMe) {

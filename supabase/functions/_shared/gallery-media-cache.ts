@@ -3,6 +3,7 @@ import { Contract, JsonRpcProvider } from 'https://esm.sh/ethers@6.15.0'
 import { getMetadataPublicOrigin } from './metadata-public-urls.ts'
 import {
   fetchMintedTokenIdsOnChain,
+  getMintedTokenIdsForGallery,
   refreshStaleGalleryContracts,
 } from './gallery-minted-ids.ts'
 
@@ -371,7 +372,11 @@ export async function enqueueGalleryTokens(
   }
 }
 
-async function fetchMintedTokenIds(contractAddress: string): Promise<number[]> {
+async function fetchMintedTokenIds(
+  contractAddress: string,
+  supabase?: SupabaseClient,
+): Promise<number[]> {
+  if (supabase) return getMintedTokenIdsForGallery(supabase, contractAddress)
   return fetchMintedTokenIdsOnChain(contractAddress)
 }
 
@@ -412,7 +417,7 @@ export async function tokenIdsForPanel(
   panelKey?: string,
   supabase?: SupabaseClient,
 ): Promise<number[]> {
-  const mintedTokenIds = (await fetchMintedTokenIds(contractAddress)).slice(0, maxCollectionTokens)
+  const mintedTokenIds = (await fetchMintedTokenIds(contractAddress, supabase)).slice(0, maxCollectionTokens)
   if (mintedTokenIds.length === 0) return []
 
   if (sameAddress(contractAddress, GEM_SHARDS_MAINNET)) {
@@ -437,34 +442,175 @@ export const GALLERY_CACHE_ITEM_DELAY_MS = 600
 /** Pause between chained batches so warmup stays gentle on RPC/IPFS. */
 export const GALLERY_CACHE_BATCH_DELAY_MS = 3_000
 
-/** Enqueue all configured panel tokens for background media warming. */
-export async function enqueueGalleryPanelsFromConfig(supabase: SupabaseClient) {
+type PanelTokenRow = {
+  panel_key: string
+  contract_address: string
+  token_id: number
+}
+
+/** Token shown in the panel editor preview and as the panel's initial gallery display. */
+export function resolvePanelDisplayTokenId(
+  defaultTokenId: number,
+  showCollection: boolean,
+  tokenIds: number[],
+): number | null {
+  if (tokenIds.length === 0) return null
+  const pinnedId = Math.max(1, defaultTokenId)
+  if (showCollection) {
+    return tokenIds.includes(pinnedId) ? pinnedId : tokenIds[0]
+  }
+  return tokenIds[0]
+}
+
+async function collectConfiguredGalleryTokenKeys(supabase: SupabaseClient): Promise<Set<string>> {
+  const keys = new Set<string>()
   const { data: rows } = await supabase
     .from('gallery_config')
     .select('panel_key, contract_address, default_token_id, show_collection')
     .not('contract_address', 'is', null)
 
-  if (!rows?.length) return { enqueued: 0 }
-
-  const tokenIdsByContract = new Map<string, Set<number>>()
-
-  for (const row of rows) {
+  for (const row of rows ?? []) {
+    const panelKey = String(row.panel_key)
     const contract = String(row.contract_address).toLowerCase()
     const defaultTokenId = Math.max(1, Number(row.default_token_id) || 1)
     const showCollection = row.show_collection ?? true
-
-    const ids = await tokenIdsForPanel(
+    const tokenIds = await tokenIdsForPanel(
       contract,
       defaultTokenId,
       showCollection,
       40,
-      String(row.panel_key),
+      panelKey,
+      supabase,
+    )
+    for (const tokenId of tokenIds) {
+      keys.add(`${contract}:${tokenId}`)
+    }
+  }
+
+  return keys
+}
+
+/** Resolve and persist the current token for every configured gallery panel. */
+export async function syncGalleryPanelTokens(supabase: SupabaseClient) {
+  const { data: rows } = await supabase
+    .from('gallery_config')
+    .select('panel_key, contract_address, default_token_id, show_collection')
+    .not('contract_address', 'is', null)
+
+  if (!rows?.length) {
+    await supabase.from('gallery_panel_tokens').delete().neq('panel_key', '')
+    return { synced: 0 }
+  }
+
+  const panelTokens: PanelTokenRow[] = []
+
+  for (const row of rows) {
+    const panelKey = String(row.panel_key)
+    const contract = String(row.contract_address).toLowerCase()
+    const defaultTokenId = Math.max(1, Number(row.default_token_id) || 1)
+    const showCollection = row.show_collection ?? true
+
+    const tokenIds = await tokenIdsForPanel(
+      contract,
+      defaultTokenId,
+      showCollection,
+      40,
+      panelKey,
       supabase,
     )
 
+    const tokenId = resolvePanelDisplayTokenId(defaultTokenId, showCollection, tokenIds)
+    if (!tokenId) continue
+
+    panelTokens.push({ panel_key: panelKey, contract_address: contract, token_id: tokenId })
+  }
+
+  await supabase.from('gallery_panel_tokens').delete().neq('panel_key', '')
+
+  if (panelTokens.length > 0) {
+    const { error } = await supabase.from('gallery_panel_tokens').upsert(
+      panelTokens.map((row) => ({
+        panel_key: row.panel_key,
+        contract_address: row.contract_address,
+        token_id: row.token_id,
+        updated_at: new Date().toISOString(),
+      })),
+      { onConflict: 'panel_key' },
+    )
+    if (error) throw new Error(error.message)
+  }
+
+  return { synced: panelTokens.length }
+}
+
+/** Remove cached media that is no longer referenced by any gallery panel token.
+ *  Only ever touches the `gallery-cache` bucket and `gallery_media_cache` table —
+ *  launchpad buckets (`collection-images`, `collection-metadata`, `gem-shards`) are never affected. */
+export async function pruneOrphanedGalleryMedia(supabase: SupabaseClient) {
+  const activeKeys = await collectConfiguredGalleryTokenKeys(supabase)
+
+  // Panel index not ready yet — never wipe cache while gallery_config still has panels.
+  if (activeKeys.size === 0) {
+    const { count } = await supabase
+      .from('gallery_config')
+      .select('panel_key', { count: 'exact', head: true })
+      .not('contract_address', 'is', null)
+    if ((count ?? 0) > 0) return { removed: 0, skipped: true }
+  }
+
+  const { data: cachedRows } = await supabase
+    .from('gallery_media_cache')
+    .select('contract_address, token_id, storage_path')
+
+  const orphans = (cachedRows ?? []).filter((row) => {
+    const key = `${String(row.contract_address).toLowerCase()}:${Number(row.token_id)}`
+    return !activeKeys.has(key)
+  })
+
+  let removed = 0
+  for (const row of orphans) {
+    const contract = String(row.contract_address).toLowerCase()
+    const tokenId = Number(row.token_id)
+    const storagePath = String(row.storage_path ?? '')
+
+    if (storagePath) {
+      await supabase.storage.from(BUCKET).remove([storagePath])
+    }
+
+    await supabase
+      .from('gallery_media_cache')
+      .delete()
+      .eq('contract_address', contract)
+      .eq('token_id', tokenId)
+
+    await supabase
+      .from('gallery_cache_queue')
+      .delete()
+      .eq('contract_address', contract)
+      .eq('token_id', tokenId)
+
+    removed++
+  }
+
+  return { removed }
+}
+
+/** Enqueue all configured panel tokens for background media warming. */
+export async function enqueueGalleryPanelsFromConfig(supabase: SupabaseClient) {
+  await syncGalleryPanelTokens(supabase)
+
+  const { data: panelRows } = await supabase
+    .from('gallery_panel_tokens')
+    .select('contract_address, token_id')
+
+  if (!panelRows?.length) return { enqueued: 0 }
+
+  const tokenIdsByContract = new Map<string, Set<number>>()
+  for (const row of panelRows) {
+    const contract = String(row.contract_address).toLowerCase()
+    const tokenId = Number(row.token_id)
     if (!tokenIdsByContract.has(contract)) tokenIdsByContract.set(contract, new Set())
-    const set = tokenIdsByContract.get(contract)!
-    for (const id of ids) set.add(id)
+    tokenIdsByContract.get(contract)!.add(tokenId)
   }
 
   let enqueued = 0
@@ -476,7 +622,15 @@ export async function enqueueGalleryPanelsFromConfig(supabase: SupabaseClient) {
   return { enqueued }
 }
 
-export async function processGalleryCacheBatch(supabase: SupabaseClient) {
+export async function processGalleryCacheBatch(
+  supabase: SupabaseClient,
+  options?: { skipIndex?: boolean },
+) {
+  if (!options?.skipIndex) {
+    await syncGalleryPanelTokens(supabase)
+    await pruneOrphanedGalleryMedia(supabase)
+  }
+
   // Recover jobs left in processing if a prior edge invocation timed out.
   const staleBefore = new Date(Date.now() - 5 * 60_000).toISOString()
   await supabase

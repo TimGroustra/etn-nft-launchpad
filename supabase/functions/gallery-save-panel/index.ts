@@ -3,7 +3,11 @@ import { JsonRpcProvider, Contract } from 'https://esm.sh/ethers@6.15.0'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 import { corsHeaders, normalizeWallet } from '../_shared/utils.ts'
 import {
+  cacheGalleryMedia,
   enqueueGalleryTokens,
+  pruneOrphanedGalleryMedia,
+  resolvePanelDisplayTokenId,
+  syncGalleryPanelTokens,
   tokenIdsForPanel,
   triggerGalleryCacheTick,
 } from '../_shared/gallery-media-cache.ts'
@@ -96,7 +100,14 @@ serve(async (req) => {
       panelKey,
       supabase,
     )
+    const displayTokenId = resolvePanelDisplayTokenId(defaultTokenId, showCollection, tokenIds)
+
     await enqueueGalleryTokens(supabase, contractAddress, tokenIds)
+    if (displayTokenId) {
+      await cacheGalleryMedia(supabase, contractAddress, displayTokenId)
+    }
+    await syncGalleryPanelTokens(supabase)
+    await pruneOrphanedGalleryMedia(supabase)
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { getCachedGalleryMetadata, enqueueGalleryTokens } from '@/lib/gallery-cache';
 import { getCachedNftMetadata } from '@/lib/gallery-fetcher/metadataCache';
 import type { NftAttribute, NftMetadata } from '@/lib/gallery-fetcher/nftFetcher';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -24,6 +25,13 @@ const NftPreviewPane: React.FC<NftPreviewPaneProps> = ({ contractAddress, tokenI
     setMediaLoading(true);
     
     try {
+      const cached = await getCachedGalleryMetadata(address, id);
+      if (cached) {
+        setMetadata(cached);
+        return;
+      }
+
+      enqueueGalleryTokens(address, [id]);
       const result = await getCachedNftMetadata(address, id);
       if (result) {
         setMetadata(result);
