@@ -31,6 +31,13 @@ export const PERSONAL_LAYOUT = {
   spawnX: 0,
   spawnY: 1.6,
   spawnZ: 6,
+  /** Inset corner positions for decorative plants (x, z). */
+  cornerPlants: [
+    { x: 12, z: 7 },
+    { x: -12, z: 7 },
+    { x: 12, z: -7 },
+    { x: -12, z: -7 },
+  ] as const,
 }
 
 export type PersonalPanelPlacement = {

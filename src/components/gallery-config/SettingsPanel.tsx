@@ -12,6 +12,7 @@ interface GalleryConfigRow {
   contract_address: string | null;
   default_token_id: number | null;
   show_collection: boolean | null;
+  allowed_token_ids: string | null;
 }
 
 interface SettingsPanelProps {
@@ -131,6 +132,22 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             checked={currentConfig.show_collection || false} 
             onCheckedChange={v => setCurrentConfig(p => ({...p, show_collection: v}))} 
           />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs">Token IDs (optional)</Label>
+          <Input
+            className="h-11 text-base font-mono sm:h-9 sm:text-sm"
+            value={currentConfig.allowed_token_ids || ''}
+            onChange={(e) => setCurrentConfig((p) => ({ ...p, allowed_token_ids: e.target.value }))}
+            placeholder="1, 5, 12"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+          />
+          <p className="text-[10px] text-muted-foreground">
+            Comma-separated list to limit which minted tokens appear on this panel. Leave empty to use the full collection.
+          </p>
         </div>
 
         <Button 

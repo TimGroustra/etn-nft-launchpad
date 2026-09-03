@@ -85,24 +85,42 @@ export type GalleryPanelTokenResolution = {
   mintedTokenIds: number[]
 }
 
+/** Parse comma-separated token IDs from gallery config (e.g. "1, 5, 12"). */
+export function parseAllowedTokenIds(raw: string | null | undefined): number[] | null {
+  if (!raw?.trim()) return null
+  const ids = raw
+    .split(',')
+    .map((part) => parseInt(part.trim(), 10))
+    .filter((id) => Number.isInteger(id) && id > 0)
+  if (ids.length === 0) return null
+  return [...new Set(ids)].sort((a, b) => a - b)
+}
+
 export function resolveGalleryPanelTokenIds(
   mintedTokenIds: number[],
   defaultTokenId: number,
   showCollection: boolean,
+  allowedTokenIds?: number[] | null,
 ): GalleryPanelTokenResolution {
   const minted = sortMintedTokenIds(mintedTokenIds)
   const pinnedId = Math.max(1, defaultTokenId)
 
-  if (minted.length === 0) {
-    return { tokenIds: [], mintedTokenIds: [] }
+  let pool = minted
+  if (allowedTokenIds && allowedTokenIds.length > 0) {
+    const allowed = new Set(allowedTokenIds)
+    pool = minted.filter((id) => allowed.has(id))
+  }
+
+  if (pool.length === 0) {
+    return { tokenIds: [], mintedTokenIds: minted }
   }
 
   if (showCollection) {
-    return { tokenIds: minted, mintedTokenIds: minted }
+    return { tokenIds: pool, mintedTokenIds: minted }
   }
 
   return {
-    tokenIds: minted.includes(pinnedId) ? [pinnedId] : [],
+    tokenIds: pool.includes(pinnedId) ? [pinnedId] : [],
     mintedTokenIds: minted,
   }
 }

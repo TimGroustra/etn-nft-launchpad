@@ -21,7 +21,7 @@ export default function GalleryConfigHubPage() {
         <div>
           <h1 className="text-2xl font-bold">Configure Gallery</h1>
           <p className="text-sm text-slate-400">
-            Edit the main cooperative gallery or create a personal room for each ElectroGem you own.
+            Edit the main cooperative gallery or set up your personal room with a public view link.
           </p>
         </div>
 
@@ -47,15 +47,15 @@ export default function GalleryConfigHubPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Gem className="h-5 w-5 text-cyan-400" />
-                My Gallery Rooms
+                My Gallery Room
               </CardTitle>
               <CardDescription>
-                One private 10-panel room per ElectroGem, with a shareable public link.
+                One private 10-panel room per wallet, with a public share link anyone can view.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <Button asChild variant="outline" className="w-full">
-                <Link to="/gallery/config/rooms">Manage Rooms</Link>
+                <Link to="/gallery/config/rooms">Manage Room</Link>
               </Button>
             </CardContent>
           </Card>

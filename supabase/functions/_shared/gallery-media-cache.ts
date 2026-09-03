@@ -380,6 +380,16 @@ async function fetchMintedTokenIds(
   return fetchMintedTokenIdsOnChain(contractAddress)
 }
 
+export function parseAllowedTokenIds(raw: string | null | undefined): number[] | null {
+  if (!raw?.trim()) return null
+  const ids = raw
+    .split(',')
+    .map((part) => parseInt(part.trim(), 10))
+    .filter((id) => Number.isInteger(id) && id > 0)
+  if (ids.length === 0) return null
+  return [...new Set(ids)].sort((a, b) => a - b)
+}
+
 export async function tokenIdsForPanel(
   contractAddress: string,
   defaultTokenId: number,
@@ -387,8 +397,14 @@ export async function tokenIdsForPanel(
   maxCollectionTokens = 40,
   _panelKey?: string,
   supabase?: SupabaseClient,
+  allowedTokenIdsRaw?: string | null,
 ): Promise<number[]> {
-  const mintedTokenIds = (await fetchMintedTokenIds(contractAddress, supabase)).slice(0, maxCollectionTokens)
+  let mintedTokenIds = (await fetchMintedTokenIds(contractAddress, supabase)).slice(0, maxCollectionTokens)
+  const allowed = parseAllowedTokenIds(allowedTokenIdsRaw)
+  if (allowed) {
+    const allowedSet = new Set(allowed)
+    mintedTokenIds = mintedTokenIds.filter((id) => allowedSet.has(id))
+  }
   if (mintedTokenIds.length === 0) return []
 
   const pinnedId = Math.max(1, defaultTokenId)
@@ -430,7 +446,7 @@ async function collectConfiguredGalleryTokenKeys(
 
   let configQuery = supabase
     .from('gallery_config')
-    .select('contract_address, default_token_id, show_collection, room_id')
+    .select('contract_address, default_token_id, show_collection, allowed_token_ids, room_id')
     .not('contract_address', 'is', null)
 
   if (scopeRoomId) {
@@ -465,9 +481,14 @@ async function collectConfiguredGalleryTokenKeys(
     const contract = String(row.contract_address).toLowerCase()
     const defaultTokenId = Math.max(1, Number(row.default_token_id) || 1)
     const showCollection = Boolean(row.show_collection)
+    const allowed = parseAllowedTokenIds(row.allowed_token_ids as string | null)
 
     if (showCollection) {
-      const minted = mintedByContract.get(contract) ?? []
+      let minted = mintedByContract.get(contract) ?? []
+      if (allowed) {
+        const allowedSet = new Set(allowed)
+        minted = minted.filter((id) => allowedSet.has(id))
+      }
       for (const tokenId of minted.slice(0, 40)) {
         keys.add(`${contract}:${tokenId}`)
       }

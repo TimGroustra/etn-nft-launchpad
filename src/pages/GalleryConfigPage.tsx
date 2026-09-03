@@ -21,6 +21,7 @@ interface GalleryConfigRow {
   contract_address: string | null
   default_token_id: number | null
   show_collection: boolean | null
+  allowed_token_ids: string | null
   wall_color: string | null
   text_color: string | null
 }
@@ -133,6 +134,7 @@ export default function GalleryConfigPage() {
       contract_address: (data as GalleryConfigRow | null)?.contract_address || '',
       default_token_id: (data as GalleryConfigRow | null)?.default_token_id || 1,
       show_collection: (data as GalleryConfigRow | null)?.show_collection ?? false,
+      allowed_token_ids: (data as GalleryConfigRow | null)?.allowed_token_ids || '',
     })
     setIsLoading(false)
   }, [])
@@ -183,6 +185,7 @@ export default function GalleryConfigPage() {
         contract_address: currentConfig.contract_address.trim(),
         default_token_id: currentConfig.default_token_id || 1,
         show_collection: currentConfig.show_collection ?? false,
+        allowed_token_ids: currentConfig.allowed_token_ids?.trim() || null,
         wall_color: DEFAULT_WALL_COLOR,
         text_color: DEFAULT_TEXT_COLOR,
         lockDurationDays,

@@ -22,23 +22,21 @@ serve(async (req) => {
     const body = await req.json()
     const wallet = normalizeWallet(body.walletAddress ?? '')
     const displayName = String(body.displayName ?? '').trim()
-    const electrogemTokenId = String(body.electrogemTokenId ?? '')
 
     if (!displayName || displayName.length < 2) throw new Error('Room name must be at least 2 characters')
-    if (!electrogemTokenId) throw new Error('ElectroGem token ID is required')
 
     const owned = await getOwnedGemTokens(wallet)
-    if (!owned.includes(String(electrogemTokenId))) {
-      throw new Error('You must own this ElectroGem to create a personal gallery room')
+    if (owned.length < 1) {
+      throw new Error('You must hold at least one ElectroGem to create a personal gallery room')
     }
 
     const { data: existingRoom } = await supabase
       .from('personal_gallery_rooms')
       .select('id')
-      .eq('electrogem_token_id', electrogemTokenId)
+      .eq('owner_address', wallet)
       .maybeSingle()
 
-    if (existingRoom) throw new Error('This ElectroGem already has a personal gallery room')
+    if (existingRoom) throw new Error('Your wallet already has a personal gallery room')
 
     const baseSlug = slugifyRoomName(displayName)
     const slug = await uniqueRoomSlug(supabase, baseSlug)
@@ -49,7 +47,7 @@ serve(async (req) => {
         slug,
         display_name: displayName,
         owner_address: wallet,
-        electrogem_token_id: electrogemTokenId,
+        electrogem_token_id: null,
         updated_at: new Date().toISOString(),
       })
       .select('id, slug, display_name')

@@ -1,6 +1,7 @@
 import {
   fetchAllMintedTokenIdsFromSupabase,
   fetchGalleryMintedTokenIds,
+  parseAllowedTokenIds,
   resolveGalleryPanelTokenIds,
 } from '@/lib/gallery-minted-token-ids'
 import { personalPanelKey, PERSONAL_PANEL_SLOTS } from '@/lib/personal-gallery'
@@ -41,6 +42,7 @@ type GalleryRow = {
   contract_address: string | null
   default_token_id: number | null
   show_collection: boolean | null
+  allowed_token_ids: string | null
   wall_color: string | null
   text_color: string | null
 }
@@ -176,7 +178,13 @@ function applyTokenAssignments(state: GalleryContextState, tokenMap: Record<stri
     const showCollection = configFromDb.show_collection ?? true
     const mintedTokenIds = tokenMap[contractAddress.toLowerCase()] ?? tokenMap[contractAddress] ?? []
 
-    const assigned = resolveGalleryPanelTokenIds(mintedTokenIds, defaultTokenId, showCollection)
+    const allowedTokenIds = parseAllowedTokenIds(configFromDb.allowed_token_ids)
+    const assigned = resolveGalleryPanelTokenIds(
+      mintedTokenIds,
+      defaultTokenId,
+      showCollection,
+      allowedTokenIds,
+    )
     const tokensToUse = assigned.tokenIds
     const panelMintedIds = assigned.mintedTokenIds
     const startIndex = Math.max(0, tokensToUse.indexOf(defaultTokenId))

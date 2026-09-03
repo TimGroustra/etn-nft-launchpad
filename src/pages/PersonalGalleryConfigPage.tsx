@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAccount } from 'wagmi'
-import { ArrowLeft, Copy, Eye, Loader2, Map as MapIcon, Settings } from 'lucide-react'
+import { ArrowLeft, Copy, ExternalLink, Eye, Loader2, Map as MapIcon, Settings } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -22,6 +22,7 @@ interface GalleryConfigRow {
   contract_address: string | null
   default_token_id: number | null
   show_collection: boolean | null
+  allowed_token_ids: string | null
 }
 
 interface PersonalRoom {
@@ -29,7 +30,6 @@ interface PersonalRoom {
   slug: string
   display_name: string
   owner_address: string
-  electrogem_token_id: string
 }
 
 const DEFAULT_WALL_COLOR = '#36454F'
@@ -83,22 +83,14 @@ export default function PersonalGalleryConfigPage() {
         return
       }
 
-      if (!ownedTokens.includes(row.electrogem_token_id) && !isGemsLoading) {
-        toast.error('You must still hold the linked ElectroGem to edit this room.')
-        navigate('/gallery/config/rooms')
-        return
-      }
-
       setRoom(row)
       setLastShareUrl(personalGalleryShareUrl(row.slug))
       const keys = personalPanelKeys(roomId)
       setSelectedPanelKey(keys[0] ?? '')
       setLoadingRoom(false)
     }
-    if (!isGemsLoading) {
-      void loadRoom()
-    }
-  }, [roomId, walletAddress, ownedTokens, isGemsLoading, navigate])
+    void loadRoom()
+  }, [roomId, walletAddress, navigate])
 
   const fetchPanelConfig = useCallback(async (panelKey: string) => {
     if (!panelKey) {
@@ -113,6 +105,7 @@ export default function PersonalGalleryConfigPage() {
       contract_address: (data as GalleryConfigRow | null)?.contract_address || '',
       default_token_id: (data as GalleryConfigRow | null)?.default_token_id || 1,
       show_collection: (data as GalleryConfigRow | null)?.show_collection ?? false,
+      allowed_token_ids: (data as GalleryConfigRow | null)?.allowed_token_ids || '',
     })
     setIsLoading(false)
   }, [])
@@ -148,6 +141,7 @@ export default function PersonalGalleryConfigPage() {
         contract_address: currentConfig.contract_address.trim(),
         default_token_id: currentConfig.default_token_id || 1,
         show_collection: currentConfig.show_collection ?? false,
+        allowed_token_ids: currentConfig.allowed_token_ids?.trim() || null,
         wall_color: DEFAULT_WALL_COLOR,
         text_color: DEFAULT_TEXT_COLOR,
       },
@@ -210,18 +204,29 @@ export default function PersonalGalleryConfigPage() {
             </Link>
           </Button>
           {lastShareUrl && (
-            <Button size="sm" variant="outline" onClick={() => void copyShareLink()}>
-              <Copy className="mr-2 h-4 w-4" />
-              Copy Share Link
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => void copyShareLink()}>
+                <Copy className="mr-2 h-4 w-4" />
+                Copy Public Link
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <a href={lastShareUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Open Public Gallery
+                </a>
+              </Button>
+            </div>
           )}
         </div>
 
         <div>
           <h1 className="text-2xl font-bold">{room.display_name}</h1>
           <p className="text-sm text-slate-400">
-            Personal gallery for ElectroGem #{room.electrogem_token_id} · 10 wall panels
+            Personal gallery · 10 wall panels · public link works without a wallet
           </p>
+          {lastShareUrl && (
+            <p className="mt-1 break-all text-xs text-slate-500">{lastShareUrl}</p>
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.3fr_0.7fr]">

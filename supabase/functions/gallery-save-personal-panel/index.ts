@@ -78,8 +78,8 @@ serve(async (req) => {
     }
 
     const owned = await getOwnedGemTokens(wallet)
-    if (!owned.includes(String(room.electrogem_token_id))) {
-      throw new Error('You must still own the linked ElectroGem to edit this room')
+    if (owned.length < 1) {
+      throw new Error('You must hold at least one ElectroGem to edit this room')
     }
 
     if (!body.contract_address?.trim()) throw new Error('Contract address is required')
@@ -101,6 +101,7 @@ serve(async (req) => {
       40,
       parsed.slot,
       supabase,
+      body.allowed_token_ids ?? null,
     )
     if (tokenIds.length === 0) {
       throw new Error('No gallery tokens could be resolved for this panel')
@@ -129,6 +130,7 @@ serve(async (req) => {
       contract_address: contractAddress,
       default_token_id: defaultTokenId,
       show_collection: showCollection,
+      allowed_token_ids: body.allowed_token_ids?.trim() || null,
       wall_color: body.wall_color ?? '#36454F',
       text_color: body.text_color ?? '#40E0D0',
       updated_at: new Date().toISOString(),

@@ -94,6 +94,7 @@ serve(async (req) => {
       40,
       panelKey,
       supabase,
+      body.allowed_token_ids ?? null,
     )
     if (tokenIds.length === 0) {
       throw new Error('No gallery tokens could be resolved for this panel')
@@ -122,6 +123,7 @@ serve(async (req) => {
       contract_address: String(body.contract_address).trim().toLowerCase(),
       default_token_id: Number(body.default_token_id ?? 1),
       show_collection: Boolean(body.show_collection),
+      allowed_token_ids: body.allowed_token_ids?.trim() || null,
       wall_color: body.wall_color ?? '#4A235A',
       text_color: body.text_color ?? '#F4D03F',
       updated_at: new Date().toISOString(),

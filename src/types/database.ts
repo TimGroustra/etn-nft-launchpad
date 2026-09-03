@@ -87,6 +87,7 @@ export interface Database {
           contract_address: string | null
           default_token_id: number | null
           show_collection: boolean | null
+          allowed_token_ids: string | null
           wall_color: string | null
           text_color: string | null
           updated_at: string | null
@@ -178,7 +179,7 @@ export interface Database {
           slug: string
           display_name: string
           owner_address: string
-          electrogem_token_id: string
+          electrogem_token_id: string | null
           created_at: string
           updated_at: string
         }
@@ -186,7 +187,6 @@ export interface Database {
           slug: string
           display_name: string
           owner_address: string
-          electrogem_token_id: string
         }
         Update: Partial<Database['public']['Tables']['personal_gallery_rooms']['Row']>
       }
