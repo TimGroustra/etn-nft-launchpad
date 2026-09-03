@@ -1,6 +1,16 @@
 import { getGalleryCachePublicUrl } from '@/lib/metadata-public-urls'
 import { supabase } from '@/lib/supabase'
+import type { Database } from '@/types/database'
 import type { NftMetadata } from '@/lib/gallery-fetcher/nftFetcher'
+
+type GalleryConfigPanelRow = Pick<
+  Database['public']['Tables']['gallery_config']['Row'],
+  'panel_key' | 'contract_address' | 'default_token_id'
+>
+type GalleryPanelTokenRow = Pick<
+  Database['public']['Tables']['gallery_panel_tokens']['Row'],
+  'panel_key' | 'contract_address' | 'token_id'
+>
 
 type CacheRow = {
   contract_address: string
@@ -108,16 +118,18 @@ async function fetchConfiguredPanelGalleryMetadata(): Promise<Map<string, NftMet
   const { data: configRows, error } = await supabase
     .from('gallery_config')
     .select('panel_key, contract_address, default_token_id')
-    .not('contract_address', 'is', null)
 
   const byPanel = new Map<string, NftMetadata>()
-  if (error || !configRows?.length) return byPanel
+  const rows = (configRows ?? []) as GalleryConfigPanelRow[]
+  if (error || rows.length === 0) return byPanel
 
-  const pairs = configRows.map((row) => ({
-    panelKey: String(row.panel_key),
-    contractAddress: String(row.contract_address),
-    tokenId: Math.max(1, Number(row.default_token_id) || 1),
-  }))
+  const pairs = rows
+    .filter((row) => row.contract_address)
+    .map((row) => ({
+      panelKey: String(row.panel_key),
+      contractAddress: String(row.contract_address),
+      tokenId: Math.max(1, Number(row.default_token_id) || 1),
+    }))
 
   const cached = await getCachedGalleryMetadataBatch(
     pairs.map((pair) => ({ contractAddress: pair.contractAddress, tokenId: pair.tokenId })),
@@ -156,15 +168,16 @@ export async function fetchIndexedPanelGalleryMetadata(): Promise<Map<string, Nf
     .select('panel_key, contract_address, token_id')
 
   const byPanel = new Map<string, NftMetadata>()
-  if (error || !panelRows?.length) return byPanel
+  const rows = (panelRows ?? []) as GalleryPanelTokenRow[]
+  if (error || rows.length === 0) return byPanel
 
-  const pairs = panelRows.map((row) => ({
+  const pairs = rows.map((row) => ({
     contractAddress: String(row.contract_address),
     tokenId: Number(row.token_id),
   }))
   const cached = await getCachedGalleryMetadataBatch(pairs)
 
-  for (const row of panelRows) {
+  for (const row of rows) {
     const contractAddress = String(row.contract_address)
     const tokenId = Number(row.token_id)
     const metadata = cached.get(cacheKey(contractAddress, tokenId))
@@ -180,15 +193,16 @@ export async function fetchGalleryPanelMediaManifest(): Promise<GalleryPanelMedi
     .from('gallery_panel_tokens')
     .select('panel_key, contract_address, token_id')
 
-  if (panelError || !panelRows?.length) return []
+  const rows = (panelRows ?? []) as GalleryPanelTokenRow[]
+  if (panelError || rows.length === 0) return []
 
-  const pairs = panelRows.map((row) => ({
+  const pairs = rows.map((row) => ({
     contractAddress: String(row.contract_address),
     tokenId: Number(row.token_id),
   }))
   const cached = await getCachedGalleryMetadataBatch(pairs)
 
-  return panelRows.map((row) => {
+  return rows.map((row) => {
     const contractAddress = String(row.contract_address)
     const tokenId = Number(row.token_id)
     const key = cacheKey(contractAddress, tokenId)

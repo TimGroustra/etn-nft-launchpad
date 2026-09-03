@@ -47,7 +47,7 @@ const SPLASH_FALLBACK_MS = 8000;
 
 interface Panel {
   mesh: THREE.Mesh;
-  wallName: keyof PanelConfig;
+  wallName: string;
   metadataUrl: string;
   isVideo: boolean;
   isGif: boolean;
@@ -679,7 +679,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
             nA.rotation.y = rY; nA.position.copy(mesh.position).addScaledVector(rV, aOff);
             scene.add(nA);
 
-            const p: Panel = { mesh, wallName: key, metadataUrl: '', isVideo: false, isGif: false, prevArrow: pA, nextArrow: nA, videoElement: null, gifStopFunction: null };
+            const p: Panel = { mesh, wallName: String(key), metadataUrl: '', isVideo: false, isGif: false, prevArrow: pA, nextArrow: nA, videoElement: null, gifStopFunction: null };
             
             if (tier.s === '-ground') {
               groundPanels.push(p);
@@ -779,7 +779,8 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       let loadedPanels = 0;
 
       const loadPanelFromIndex = async (panel: Panel) => {
-        const metadata = indexedByPanel.get(panel.wallName);
+        const panelKey = String(panel.wallName);
+        const metadata = indexedByPanel.get(panelKey);
         if (!metadata || panel.metadataUrl) return;
         const hadTexture = !!panel.metadataUrl;
         await applyPanelFromMetadata(panel, metadata);
@@ -802,7 +803,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
         await Promise.all(runners);
       };
 
-      const indexedPanels = allPanels.filter((panel) => indexedByPanel.has(panel.wallName));
+      const indexedPanels = allPanels.filter((panel) => indexedByPanel.has(String(panel.wallName)));
       void runConcurrent(sortByProximity(indexedPanels), loadPanelFromIndex);
 
       void (async () => {
