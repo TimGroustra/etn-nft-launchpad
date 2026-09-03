@@ -28,7 +28,7 @@ const WallButton: React.FC<WallButtonProps> = ({
       onClick={() => onClick(panelKey)}
       title={label}
       className={cn(
-        'group relative flex items-center justify-center p-1 transition-all touch-manipulation',
+        'group relative flex min-h-0 items-stretch justify-center p-1 transition-all touch-manipulation',
         orientation === 'horizontal' ? 'flex-col' : 'flex-row',
         className,
       )}
@@ -36,7 +36,7 @@ const WallButton: React.FC<WallButtonProps> = ({
       <div
         className={cn(
           'rounded-full transition-all',
-          orientation === 'horizontal' ? 'h-[3px] w-full' : 'h-full w-[3px]',
+          orientation === 'horizontal' ? 'h-[3px] w-full' : 'w-[3px] self-stretch',
           isSelected
             ? 'scale-y-125 bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]'
             : isLocked && !isLockedByMe

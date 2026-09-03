@@ -71,6 +71,7 @@ const PersonalFloorPlan: React.FC<PersonalFloorPlanProps> = ({
                   label={getFriendlyLabel(key)}
                   onClick={setSelectedPanelKey}
                   className="flex-1"
+                  orientation="vertical"
                 />
               ))}
             </div>
@@ -86,6 +87,7 @@ const PersonalFloorPlan: React.FC<PersonalFloorPlanProps> = ({
                   label={getFriendlyLabel(key)}
                   onClick={setSelectedPanelKey}
                   className="flex-1"
+                  orientation="vertical"
                 />
               ))}
             </div>
