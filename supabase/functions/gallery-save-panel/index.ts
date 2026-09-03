@@ -4,13 +4,15 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 import { corsHeaders, normalizeWallet } from '../_shared/utils.ts'
 import {
   cacheGalleryMedia,
-  enqueueGalleryTokens,
-  processGalleryCacheBatch,
   pruneOrphanedGalleryMedia,
   resolvePanelDisplayTokenId,
   syncGalleryPanelTokens,
   tokenIdsForPanel,
 } from '../_shared/gallery-media-cache.ts'
+import {
+  getMintedTokenIdsForGallery,
+  upsertContractMintedIds,
+} from '../_shared/gallery-minted-ids.ts'
 
 const ELECTRO_GEMS_ADDRESS =
   Deno.env.get('ELECTROGEMS_NFT_ADDRESS') ?? '0xcff0d88Ed5311bAB09178b6ec19A464100880984'
@@ -75,6 +77,44 @@ serve(async (req) => {
       if (lockedByOther) throw new Error('Panel is locked by another curator')
     }
 
+    const contractAddress = String(body.contract_address).trim().toLowerCase()
+    const defaultTokenId = Number(body.default_token_id ?? 1)
+    const showCollection = Boolean(body.show_collection)
+
+    const mintedTokenIds = await getMintedTokenIdsForGallery(supabase, contractAddress)
+    if (mintedTokenIds.length === 0) {
+      throw new Error('No minted tokens found for this collection')
+    }
+    await upsertContractMintedIds(supabase, contractAddress, mintedTokenIds)
+
+    const tokenIds = await tokenIdsForPanel(
+      contractAddress,
+      defaultTokenId,
+      showCollection,
+      40,
+      panelKey,
+      supabase,
+    )
+    if (tokenIds.length === 0) {
+      throw new Error('No gallery tokens could be resolved for this panel')
+    }
+
+    const displayTokenId = resolvePanelDisplayTokenId(defaultTokenId, showCollection, tokenIds)
+    if (!displayTokenId) throw new Error('Could not resolve display token')
+
+    const cacheResults = await Promise.all(
+      tokenIds.map((tokenId) => cacheGalleryMedia(supabase, contractAddress, tokenId)),
+    )
+    const failed = cacheResults
+      .map((result, index) => ({ result, tokenId: tokenIds[index] }))
+      .filter(({ result }) => !result.ok)
+    if (failed.length > 0) {
+      const detail = failed
+        .map(({ tokenId, result }) => `#${tokenId}: ${result.ok === false ? result.error : 'unknown'}`)
+        .join('; ')
+      throw new Error(`Failed to cache gallery images: ${detail}`)
+    }
+
     const { error: cfgErr } = await supabase.from('gallery_config').upsert({
       panel_key: panelKey,
       collection_name: body.collection_name ?? null,
@@ -89,31 +129,17 @@ serve(async (req) => {
 
     if (cfgErr) throw cfgErr
 
-    const contractAddress = String(body.contract_address).trim().toLowerCase()
-    const defaultTokenId = Number(body.default_token_id ?? 1)
-    const showCollection = Boolean(body.show_collection)
-    const tokenIds = await tokenIdsForPanel(
-      contractAddress,
-      defaultTokenId,
-      showCollection,
-      40,
-      panelKey,
-      supabase,
+    await supabase.from('gallery_panel_tokens').upsert(
+      {
+        panel_key: panelKey,
+        contract_address: contractAddress,
+        token_id: displayTokenId,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'panel_key' },
     )
-    const displayTokenId = resolvePanelDisplayTokenId(defaultTokenId, showCollection, tokenIds)
-
-    await enqueueGalleryTokens(supabase, contractAddress, tokenIds)
-    if (displayTokenId) {
-      await cacheGalleryMedia(supabase, contractAddress, displayTokenId)
-    }
     await syncGalleryPanelTokens(supabase)
     await pruneOrphanedGalleryMedia(supabase)
-
-    const waitUntil = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } })
-      .EdgeRuntime?.waitUntil
-    const work = processGalleryCacheBatch(supabase)
-    if (waitUntil) waitUntil(work)
-    else await work
 
     if (lockDurationDays === 0) {
       await supabase.from('panel_locks').delete().eq('panel_id', panelKey)

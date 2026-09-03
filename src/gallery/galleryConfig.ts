@@ -1,7 +1,6 @@
 import {
-  buildGemShardPanelAssignments,
+  fetchAllMintedTokenIdsFromSupabase,
   fetchGalleryMintedTokenIds,
-  isGemShardsGalleryContract,
   resolveGalleryPanelTokenIds,
 } from '@/lib/gallery-minted-token-ids'
 import { supabase } from '@/lib/supabase'
@@ -109,22 +108,6 @@ function notifyConfigReady() {
 }
 
 function applyTokenAssignments(tokenMap: Record<string, number[]>) {
-  const gemShardPanelKeys = Object.keys(galleryConfig)
-    .filter((panelKey) => {
-      const row = dbConfigMap.get(panelKey)
-      return row?.contract_address && isGemShardsGalleryContract(row.contract_address)
-    })
-    .sort()
-
-  const uniqueContracts = Object.keys(tokenMap)
-  const gemShardContract = uniqueContracts.find((address) => isGemShardsGalleryContract(address))
-  const gemShardMintedIds = gemShardContract ? (tokenMap[gemShardContract] ?? []) : []
-  const gemShardAssignments = buildGemShardPanelAssignments(
-    gemShardPanelKeys,
-    gemShardMintedIds,
-    (panelKey) => dbConfigMap.get(panelKey)?.show_collection ?? true,
-  )
-
   for (const panelKey in galleryConfig) {
     const configFromDb = dbConfigMap.get(panelKey)
     if (!configFromDb?.contract_address) continue
@@ -132,17 +115,12 @@ function applyTokenAssignments(tokenMap: Record<string, number[]>) {
     const contractAddress = configFromDb.contract_address
     const defaultTokenId = configFromDb.default_token_id || 1
     const showCollection = configFromDb.show_collection ?? true
-    const mintedTokenIds = tokenMap[contractAddress] ?? []
+    const mintedTokenIds = tokenMap[contractAddress.toLowerCase()] ?? tokenMap[contractAddress] ?? []
 
-    const assigned = isGemShardsGalleryContract(contractAddress)
-      ? gemShardAssignments.get(panelKey)
-      : resolveGalleryPanelTokenIds(mintedTokenIds, defaultTokenId, showCollection)
-
-    const tokensToUse = assigned?.tokenIds ?? []
-    const panelMintedIds = assigned?.mintedTokenIds ?? []
-    const startIndex = isGemShardsGalleryContract(contractAddress)
-      ? 0
-      : Math.max(0, tokensToUse.indexOf(defaultTokenId))
+    const assigned = resolveGalleryPanelTokenIds(mintedTokenIds, defaultTokenId, showCollection)
+    const tokensToUse = assigned.tokenIds
+    const panelMintedIds = assigned.mintedTokenIds
+    const startIndex = Math.max(0, tokensToUse.indexOf(defaultTokenId))
 
     galleryConfig[panelKey] = {
       ...galleryConfig[panelKey],
@@ -151,6 +129,38 @@ function applyTokenAssignments(tokenMap: Record<string, number[]>) {
       currentIndex: tokensToUse.length > 0 ? startIndex : 0,
     }
   }
+}
+
+/** When minted-ID cache is empty, fall back to configured default token (no RPC). */
+function applyPanelTokenFallbacks() {
+  for (const panelKey in galleryConfig) {
+    const configFromDb = dbConfigMap.get(panelKey)
+    const panel = galleryConfig[panelKey]
+    if (!configFromDb?.contract_address || panel.tokenIds.length > 0) continue
+
+    const defaultTokenId = Math.max(1, Number(configFromDb.default_token_id) || 1)
+    galleryConfig[panelKey] = {
+      ...panel,
+      tokenIds: [defaultTokenId],
+      currentIndex: 0,
+    }
+  }
+}
+
+/** Assign panel tokens from Supabase minted-ID cache only (no on-chain RPC). */
+async function loadPanelAssignmentsFromSupabase(): Promise<void> {
+  const uniqueContracts = Array.from(
+    new Set(
+      [...dbConfigMap.values()]
+        .map((c) => c.contract_address?.trim().toLowerCase())
+        .filter((addr): addr is string => !!addr),
+    ),
+  )
+
+  const tokenMap = await fetchAllMintedTokenIdsFromSupabase(uniqueContracts)
+  applyTokenAssignments(tokenMap)
+  applyPanelTokenFallbacks()
+  notifyConfigReady()
 }
 
 /** Fast path: load panel assignments from Supabase (no on-chain mint ID fetch). */
@@ -182,7 +192,7 @@ export async function loadGalleryConfigFromDb(): Promise<void> {
   }
 }
 
-/** Resolve on-chain minted IDs and assign panel tokens (parallel per contract). */
+/** Resolve on-chain minted IDs (RPC) — only for explicit refresh, not gallery init. */
 export async function hydrateMintedTokenIds(): Promise<void> {
   const uniqueContracts = Array.from(
     new Set(
@@ -208,13 +218,14 @@ export async function hydrateMintedTokenIds(): Promise<void> {
   )
 
   applyTokenAssignments(tokenMap)
+  applyPanelTokenFallbacks()
   notifyConfigReady()
 }
 
 export async function initializeGalleryConfig() {
   configHydrated = false
   await loadGalleryConfigFromDb()
-  await hydrateMintedTokenIds()
+  await loadPanelAssignmentsFromSupabase()
 }
 
 export function isGalleryConfigReady(): boolean {

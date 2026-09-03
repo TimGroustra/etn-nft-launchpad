@@ -18,7 +18,6 @@ import {
   getCachedGalleryMetadataBatch,
   getPrewarmedGalleryMetadata,
   waitForGalleryCachedMetadata,
-  enqueueGalleryTokens,
   prewarmGalleryMetadataCache,
 } from '@/lib/gallery-cache';
 import { getGatewayCandidates } from '@/lib/gallery-fetcher/urlUtils';
@@ -388,7 +387,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
     setWebglError(null);
 
     const panelCachePromise = prefetchGalleryPanelCache();
-    const hydratePromise = prefetchGalleryConfig();
+    const configPromise = prefetchGalleryConfig();
 
     // Full detail on desktop; lighter settings on mobile for performance.
     const highQuality = !window.matchMedia('(max-width: 768px)').matches;
@@ -807,7 +806,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       void runConcurrent(sortByProximity(indexedPanels), loadPanelFromIndex);
 
       void (async () => {
-        await hydratePromise;
+        await configPromise;
         for (const panel of panelsRef.current) {
           refreshPanelIfSourceChanged(panel);
         }
@@ -815,20 +814,6 @@ const NftGallery: React.FC<NftGalleryProps> = ({
         const tokenSources = getAllPanelTokenSources();
         const batchCache = await getCachedGalleryMetadataBatch(tokenSources);
         prewarmGalleryMetadataCache(batchCache);
-
-        const uncachedByContract = new Map<string, number[]>();
-        for (const source of tokenSources) {
-          const key = `${source.contractAddress.toLowerCase()}:${source.tokenId}`;
-          if (batchCache.has(key)) continue;
-          const contract = source.contractAddress.toLowerCase();
-          if (!uncachedByContract.has(contract)) uncachedByContract.set(contract, []);
-          uncachedByContract.get(contract)!.push(source.tokenId);
-        }
-        if (uncachedByContract.size > 0) {
-          for (const [contractAddress, tokenIds] of uncachedByContract) {
-            enqueueGalleryTokens(contractAddress, tokenIds);
-          }
-        }
 
         const loadPanelWithProgress = async (panel: Panel) => {
           if (panel.metadataUrl) {

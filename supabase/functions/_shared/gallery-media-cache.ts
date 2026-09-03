@@ -380,54 +380,16 @@ async function fetchMintedTokenIds(
   return fetchMintedTokenIdsOnChain(contractAddress)
 }
 
-async function listGemShardPanelKeys(
-  supabase: SupabaseClient,
-  contractAddress: string,
-): Promise<string[]> {
-  const { data } = await supabase
-    .from('gallery_config')
-    .select('panel_key, contract_address')
-    .not('contract_address', 'is', null)
-
-  return (data ?? [])
-    .filter((row) => sameAddress(String(row.contract_address), contractAddress))
-    .map((row) => String(row.panel_key))
-    .sort()
-}
-
-function resolveGemShardPanelTokenIds(
-  mintedTokenIds: number[],
-  panelIndex: number,
-  showCollection: boolean,
-): number[] {
-  const minted = [...new Set(mintedTokenIds.filter((id) => Number.isInteger(id) && id > 0))].sort(
-    (a, b) => a - b,
-  )
-  if (minted.length === 0) return []
-  if (showCollection) return minted
-  if (panelIndex < 0 || panelIndex >= minted.length) return []
-  return [minted[panelIndex]]
-}
-
 export async function tokenIdsForPanel(
   contractAddress: string,
   defaultTokenId: number,
   showCollection: boolean,
   maxCollectionTokens = 40,
-  panelKey?: string,
+  _panelKey?: string,
   supabase?: SupabaseClient,
 ): Promise<number[]> {
   const mintedTokenIds = (await fetchMintedTokenIds(contractAddress, supabase)).slice(0, maxCollectionTokens)
   if (mintedTokenIds.length === 0) return []
-
-  if (sameAddress(contractAddress, GEM_SHARDS_MAINNET)) {
-    if (showCollection) return mintedTokenIds
-    if (!panelKey || !supabase) return []
-
-    const panelKeys = await listGemShardPanelKeys(supabase, contractAddress)
-    const panelIndex = panelKeys.indexOf(panelKey)
-    return resolveGemShardPanelTokenIds(mintedTokenIds, panelIndex, false)
-  }
 
   const pinnedId = Math.max(1, defaultTokenId)
   if (!showCollection) {
@@ -462,25 +424,57 @@ export function resolvePanelDisplayTokenId(
 
 async function collectConfiguredGalleryTokenKeys(supabase: SupabaseClient): Promise<Set<string>> {
   const keys = new Set<string>()
-  const { data: rows } = await supabase
-    .from('gallery_panel_tokens')
-    .select('contract_address, token_id')
-
-  for (const row of rows ?? []) {
-    keys.add(`${String(row.contract_address).toLowerCase()}:${Number(row.token_id)}`)
-  }
-
-  if (keys.size > 0) return keys
 
   const { data: configRows } = await supabase
     .from('gallery_config')
-    .select('contract_address, default_token_id')
+    .select('contract_address, default_token_id, show_collection')
     .not('contract_address', 'is', null)
+
+  const contracts = [
+    ...new Set(
+      (configRows ?? [])
+        .map((row) => String(row.contract_address).toLowerCase())
+        .filter(Boolean),
+    ),
+  ]
+
+  const mintedByContract = new Map<string, number[]>()
+  if (contracts.length > 0) {
+    const { data: mintedRows } = await supabase
+      .from('gallery_contract_minted_ids')
+      .select('contract_address, minted_token_ids')
+      .in('contract_address', contracts)
+
+    for (const row of mintedRows ?? []) {
+      const contract = String(row.contract_address).toLowerCase()
+      const ids = (row.minted_token_ids ?? []) as number[]
+      if (ids.length > 0) mintedByContract.set(contract, ids)
+    }
+  }
 
   for (const row of configRows ?? []) {
     const contract = String(row.contract_address).toLowerCase()
-    const tokenId = Math.max(1, Number(row.default_token_id) || 1)
-    keys.add(`${contract}:${tokenId}`)
+    const defaultTokenId = Math.max(1, Number(row.default_token_id) || 1)
+    const showCollection = Boolean(row.show_collection)
+
+    if (showCollection) {
+      const minted = mintedByContract.get(contract) ?? []
+      for (const tokenId of minted.slice(0, 40)) {
+        keys.add(`${contract}:${tokenId}`)
+      }
+      if (minted.length === 0) keys.add(`${contract}:${defaultTokenId}`)
+      continue
+    }
+
+    keys.add(`${contract}:${defaultTokenId}`)
+  }
+
+  const { data: panelRows } = await supabase
+    .from('gallery_panel_tokens')
+    .select('contract_address, token_id')
+
+  for (const row of panelRows ?? []) {
+    keys.add(`${String(row.contract_address).toLowerCase()}:${Number(row.token_id)}`)
   }
 
   return keys
