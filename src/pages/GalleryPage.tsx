@@ -3,7 +3,7 @@ import { Footprints, Info } from 'lucide-react'
 import NftGallery from '@/gallery/NftGallery'
 import LoadingSplash from '@/components/gallery/LoadingSplash'
 import { prefetchGalleryConfig } from '@/gallery/galleryConfig'
-import { nudgeGalleryCacheWorker, prefetchGalleryPanelCache, syncGalleryPanelTokenIndex } from '@/lib/gallery-cache'
+import { prefetchGalleryPanelCache } from '@/lib/gallery-cache'
 import { ELECTROGEMS_NFT_ADDRESS } from '@/lib/creator-access'
 import { ELECTROSWAP_EXTERNAL_LINK_PROPS, getElectroSwapCollectionUrl } from '@/lib/marketplace'
 
@@ -30,15 +30,11 @@ export default function GalleryPage() {
   useEffect(() => {
     prefetchGalleryPanelCache()
     prefetchGalleryConfig()
-    syncGalleryPanelTokenIndex()
-    nudgeGalleryCacheWorker()
-    const cacheId = window.setInterval(nudgeGalleryCacheWorker, 45_000)
     const enterFallbackId = window.setTimeout(
       () => setAllowEnterWithoutImage(true),
       ENTER_GALLERY_FALLBACK_MS,
     )
     return () => {
-      window.clearInterval(cacheId)
       window.clearTimeout(enterFallbackId)
     }
   }, [])

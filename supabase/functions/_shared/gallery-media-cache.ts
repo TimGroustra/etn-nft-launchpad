@@ -437,10 +437,8 @@ export async function tokenIdsForPanel(
   return mintedTokenIds
 }
 
-export const GALLERY_CACHE_BATCH_SIZE = 2
-export const GALLERY_CACHE_ITEM_DELAY_MS = 600
-/** Pause between chained batches so warmup stays gentle on RPC/IPFS. */
-export const GALLERY_CACHE_BATCH_DELAY_MS = 3_000
+export const GALLERY_CACHE_BATCH_SIZE = 3
+export const GALLERY_CACHE_ITEM_DELAY_MS = 0
 
 type PanelTokenRow = {
   panel_key: string
@@ -465,36 +463,34 @@ export function resolvePanelDisplayTokenId(
 async function collectConfiguredGalleryTokenKeys(supabase: SupabaseClient): Promise<Set<string>> {
   const keys = new Set<string>()
   const { data: rows } = await supabase
-    .from('gallery_config')
-    .select('panel_key, contract_address, default_token_id, show_collection')
-    .not('contract_address', 'is', null)
+    .from('gallery_panel_tokens')
+    .select('contract_address, token_id')
 
   for (const row of rows ?? []) {
-    const panelKey = String(row.panel_key)
+    keys.add(`${String(row.contract_address).toLowerCase()}:${Number(row.token_id)}`)
+  }
+
+  if (keys.size > 0) return keys
+
+  const { data: configRows } = await supabase
+    .from('gallery_config')
+    .select('contract_address, default_token_id')
+    .not('contract_address', 'is', null)
+
+  for (const row of configRows ?? []) {
     const contract = String(row.contract_address).toLowerCase()
-    const defaultTokenId = Math.max(1, Number(row.default_token_id) || 1)
-    const showCollection = row.show_collection ?? true
-    const tokenIds = await tokenIdsForPanel(
-      contract,
-      defaultTokenId,
-      showCollection,
-      40,
-      panelKey,
-      supabase,
-    )
-    for (const tokenId of tokenIds) {
-      keys.add(`${contract}:${tokenId}`)
-    }
+    const tokenId = Math.max(1, Number(row.default_token_id) || 1)
+    keys.add(`${contract}:${tokenId}`)
   }
 
   return keys
 }
 
-/** Resolve and persist the current token for every configured gallery panel. */
+/** Resolve and persist display tokens from gallery_config (no on-chain lookups). */
 export async function syncGalleryPanelTokens(supabase: SupabaseClient) {
   const { data: rows } = await supabase
     .from('gallery_config')
-    .select('panel_key, contract_address, default_token_id, show_collection')
+    .select('panel_key, contract_address, default_token_id')
     .not('contract_address', 'is', null)
 
   if (!rows?.length) {
@@ -502,28 +498,11 @@ export async function syncGalleryPanelTokens(supabase: SupabaseClient) {
     return { synced: 0 }
   }
 
-  const panelTokens: PanelTokenRow[] = []
-
-  for (const row of rows) {
-    const panelKey = String(row.panel_key)
-    const contract = String(row.contract_address).toLowerCase()
-    const defaultTokenId = Math.max(1, Number(row.default_token_id) || 1)
-    const showCollection = row.show_collection ?? true
-
-    const tokenIds = await tokenIdsForPanel(
-      contract,
-      defaultTokenId,
-      showCollection,
-      40,
-      panelKey,
-      supabase,
-    )
-
-    const tokenId = resolvePanelDisplayTokenId(defaultTokenId, showCollection, tokenIds)
-      ?? defaultTokenId
-
-    panelTokens.push({ panel_key: panelKey, contract_address: contract, token_id: tokenId })
-  }
+  const panelTokens: PanelTokenRow[] = rows.map((row) => ({
+    panel_key: String(row.panel_key),
+    contract_address: String(row.contract_address).toLowerCase(),
+    token_id: Math.max(1, Number(row.default_token_id) || 1),
+  }))
 
   if (panelTokens.length === 0) {
     return { synced: 0, skipped: true }
@@ -624,15 +603,7 @@ export async function enqueueGalleryPanelsFromConfig(supabase: SupabaseClient) {
   return { enqueued }
 }
 
-export async function processGalleryCacheBatch(
-  supabase: SupabaseClient,
-  options?: { skipIndex?: boolean },
-) {
-  if (!options?.skipIndex) {
-    await syncGalleryPanelTokens(supabase)
-    await pruneOrphanedGalleryMedia(supabase)
-  }
-
+export async function processGalleryCacheBatch(supabase: SupabaseClient) {
   // Recover jobs left in processing if a prior edge invocation timed out.
   const staleBefore = new Date(Date.now() - 5 * 60_000).toISOString()
   await supabase

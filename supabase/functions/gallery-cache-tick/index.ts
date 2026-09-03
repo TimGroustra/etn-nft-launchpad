@@ -6,9 +6,7 @@ import {
   enqueueGalleryTokens,
   processGalleryCacheBatch,
   pruneOrphanedGalleryMedia,
-  refreshStaleGalleryContracts,
   syncGalleryPanelTokens,
-  triggerGalleryCacheTick,
 } from '../_shared/gallery-media-cache.ts'
 
 const supabase = createClient(
@@ -37,9 +35,6 @@ serve(async (req) => {
 
     const waitUntil = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } })
       .EdgeRuntime?.waitUntil
-    const mintRefresh = refreshStaleGalleryContracts(supabase)
-    if (waitUntil) waitUntil(mintRefresh)
-    else await mintRefresh
 
     if (body.syncPanels) {
       const synced = await syncGalleryPanelTokens(supabase)
@@ -56,13 +51,10 @@ serve(async (req) => {
         await enqueueGalleryTokens(supabase, item.contractAddress, item.tokenIds)
         enqueued += item.tokenIds.length
       }
-      const kick = triggerGalleryCacheTick(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-        0,
-      )
-      if (waitUntil) waitUntil(kick)
-      else await kick
+      // Process one small batch in the background — never chain HTTP self-calls.
+      const work = processGalleryCacheBatch(supabase)
+      if (waitUntil) waitUntil(work)
+      else await work
       return new Response(JSON.stringify({ success: true, enqueued }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -71,23 +63,16 @@ serve(async (req) => {
 
     if (body.enqueuePanels) {
       const enqueueResult = await enqueueGalleryPanelsFromConfig(supabase)
+      const work = processGalleryCacheBatch(supabase)
+      if (waitUntil) waitUntil(work)
+      else await work
       return new Response(JSON.stringify({ success: true, ...enqueueResult }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    const result = await processGalleryCacheBatch(supabase, {
-      skipIndex: body.warmOnly === true,
-    })
-
-    if (result.remaining > 0) {
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      const next = triggerGalleryCacheTick(supabaseUrl, serviceKey)
-      if (waitUntil) waitUntil(next)
-      else await next
-    }
+    const result = await processGalleryCacheBatch(supabase)
 
     return new Response(JSON.stringify({ success: true, ...result }), {
       status: 200,

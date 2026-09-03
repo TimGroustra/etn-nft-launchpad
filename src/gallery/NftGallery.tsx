@@ -19,7 +19,6 @@ import {
   getPrewarmedGalleryMetadata,
   waitForGalleryCachedMetadata,
   enqueueGalleryTokens,
-  enqueueGalleryPanelTokens,
   prewarmGalleryMetadataCache,
 } from '@/lib/gallery-cache';
 import { getGatewayCandidates } from '@/lib/gallery-fetcher/urlUtils';
@@ -347,7 +346,6 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       getPrewarmedGalleryMetadata(source.contractAddress, source.tokenId) ??
       (await getCachedGalleryMetadata(source.contractAddress, source.tokenId));
     if (!metadata) {
-      enqueueGalleryTokens(source.contractAddress, [source.tokenId]);
       metadata = await waitForGalleryCachedMetadata(source.contractAddress, source.tokenId);
     }
     if (!metadata) return;
@@ -829,7 +827,6 @@ const NftGallery: React.FC<NftGalleryProps> = ({
           for (const [contractAddress, tokenIds] of uncachedByContract) {
             enqueueGalleryTokens(contractAddress, tokenIds);
           }
-          enqueueGalleryPanelTokens();
         }
 
         const loadPanelWithProgress = async (panel: Panel) => {

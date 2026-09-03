@@ -5,11 +5,11 @@ import { corsHeaders, normalizeWallet } from '../_shared/utils.ts'
 import {
   cacheGalleryMedia,
   enqueueGalleryTokens,
+  processGalleryCacheBatch,
   pruneOrphanedGalleryMedia,
   resolvePanelDisplayTokenId,
   syncGalleryPanelTokens,
   tokenIdsForPanel,
-  triggerGalleryCacheTick,
 } from '../_shared/gallery-media-cache.ts'
 
 const ELECTRO_GEMS_ADDRESS =
@@ -109,14 +109,11 @@ serve(async (req) => {
     await syncGalleryPanelTokens(supabase)
     await pruneOrphanedGalleryMedia(supabase)
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    // @ts-ignore EdgeRuntime.waitUntil exists on Supabase edge
     const waitUntil = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } })
       .EdgeRuntime?.waitUntil
-    const kick = triggerGalleryCacheTick(supabaseUrl, serviceKey)
-    if (waitUntil) waitUntil(kick)
-    else await kick
+    const work = processGalleryCacheBatch(supabase)
+    if (waitUntil) waitUntil(work)
+    else await work
 
     if (lockDurationDays === 0) {
       await supabase.from('panel_locks').delete().eq('panel_id', panelKey)

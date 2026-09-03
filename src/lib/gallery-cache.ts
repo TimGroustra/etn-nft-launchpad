@@ -206,32 +206,47 @@ export async function fetchGalleryPanelMediaManifest(): Promise<GalleryPanelMedi
 const GALLERY_CACHE_POLL_MS = 400
 const GALLERY_CACHE_POLL_ATTEMPTS = 15
 
-/** Poll Supabase only — never hits chain RPC. Used when gallery cache is still warming. */
-export async function waitForGalleryCachedMetadata(
-  contractAddress: string,
-  tokenId: number,
-): Promise<NftMetadata | null> {
-  for (let attempt = 0; attempt < GALLERY_CACHE_POLL_ATTEMPTS; attempt++) {
-    const metadata = await getCachedGalleryMetadata(contractAddress, tokenId)
-    if (metadata) return metadata
-    await new Promise((resolve) => setTimeout(resolve, GALLERY_CACHE_POLL_MS))
-  }
-  return null
-}
+const pendingEnqueue = new Map<string, Set<number>>()
+let enqueueFlushTimer: ReturnType<typeof setTimeout> | null = null
+let galleryWorkerInvoked = false
 
-/** Request server-side cache warming for specific tokens (no client RPC). */
-export function enqueueGalleryTokens(contractAddress: string, tokenIds: number[]) {
+function flushPendingGalleryEnqueue() {
+  enqueueFlushTimer = null
+  if (pendingEnqueue.size === 0) return
+
+  const enqueueTokens = [...pendingEnqueue.entries()].map(([contractAddress, ids]) => ({
+    contractAddress,
+    tokenIds: [...ids],
+  }))
+  pendingEnqueue.clear()
+
   void supabase.functions.invoke('gallery-cache-tick', {
     method: 'POST',
-    body: { enqueueTokens: [{ contractAddress, tokenIds }] },
+    body: { enqueueTokens },
   })
 }
 
-/** Gentle background nudge — processes the warming queue only (no re-index or prune). */
+/** Request server-side cache warming for specific tokens (batched, no client RPC). */
+export function enqueueGalleryTokens(contractAddress: string, tokenIds: number[]) {
+  const contract = contractAddress.toLowerCase()
+  const uniqueIds = tokenIds.filter((id) => Number.isInteger(id) && id > 0)
+  if (uniqueIds.length === 0) return
+
+  if (!pendingEnqueue.has(contract)) pendingEnqueue.set(contract, new Set())
+  const bucket = pendingEnqueue.get(contract)!
+  for (const id of uniqueIds) bucket.add(id)
+
+  if (enqueueFlushTimer) clearTimeout(enqueueFlushTimer)
+  enqueueFlushTimer = setTimeout(flushPendingGalleryEnqueue, 2500)
+}
+
+/** One optional queue nudge per gallery session (never poll on an interval). */
 export function nudgeGalleryCacheWorker() {
+  if (galleryWorkerInvoked) return
+  galleryWorkerInvoked = true
   void supabase.functions.invoke('gallery-cache-tick', {
     method: 'POST',
-    body: { warmOnly: true },
+    body: {},
   })
 }
 
@@ -249,4 +264,17 @@ export function syncGalleryPanelTokenIndex() {
     method: 'POST',
     body: { syncPanels: true },
   })
+}
+
+/** Poll Supabase only — never hits chain RPC. Used when gallery cache is still warming. */
+export async function waitForGalleryCachedMetadata(
+  contractAddress: string,
+  tokenId: number,
+): Promise<NftMetadata | null> {
+  for (let attempt = 0; attempt < GALLERY_CACHE_POLL_ATTEMPTS; attempt++) {
+    const metadata = await getCachedGalleryMetadata(contractAddress, tokenId)
+    if (metadata) return metadata
+    await new Promise((resolve) => setTimeout(resolve, GALLERY_CACHE_POLL_MS))
+  }
+  return null
 }

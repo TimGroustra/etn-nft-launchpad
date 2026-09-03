@@ -72,18 +72,33 @@ async function readSupabaseMintedIdsCache(contractAddress: string): Promise<numb
   return ids.length > 0 ? sortMintedTokenIds(ids) : null
 }
 
+const refreshInFlight = new Map<string, Promise<number[] | null>>()
+
 async function invokeMintedIdsRefresh(contractAddress: string): Promise<number[] | null> {
-  try {
-    const { data, error } = await supabase.functions.invoke('gallery-refresh-minted-ids', {
-      method: 'POST',
-      body: { contract_address: contractAddress },
-    })
-    if (error || !data) return null
-    const ids = (data as { minted_token_ids?: number[] }).minted_token_ids
-    return ids?.length ? sortMintedTokenIds(ids) : null
-  } catch {
-    return null
-  }
+  // Gem Shards refresh is slow server-side; use client/session fallback instead.
+  if (isGemShardsGalleryContract(contractAddress)) return null
+
+  const key = contractAddress.toLowerCase()
+  if (refreshInFlight.has(key)) return refreshInFlight.get(key)!
+
+  const promise = (async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('gallery-refresh-minted-ids', {
+        method: 'POST',
+        body: { contract_address: contractAddress },
+      })
+      if (error || !data) return null
+      const ids = (data as { minted_token_ids?: number[] }).minted_token_ids
+      return ids?.length ? sortMintedTokenIds(ids) : null
+    } catch {
+      return null
+    } finally {
+      refreshInFlight.delete(key)
+    }
+  })()
+
+  refreshInFlight.set(key, promise)
+  return promise
 }
 
 async function fetchMintedTokenIdsClientFallback(contractAddress: string): Promise<number[]> {
