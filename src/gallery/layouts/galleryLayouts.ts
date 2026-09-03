@@ -23,7 +23,9 @@ export const PERSONAL_LAYOUT = {
   wallThickness: 0.5,
   pitWidth: 12,
   pitDepth: 8,
-  pitDepthY: 2.5,
+  /** Total drop from main floor to lounge floor (two equal steps). */
+  pitDepthY: 0.32,
+  pitStepHeight: 0.16,
   boundaryX: 14,
   boundaryZ: 9,
   segmentSize: 10,

@@ -526,7 +526,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
     let stopLoad = false;
 
     if (isPersonal) {
-      const { roomWidth, roomDepth, wallHeight, pitWidth, pitDepth, pitDepthY, wallThickness } = PERSONAL_LAYOUT;
+      const { roomWidth, roomDepth, wallHeight, pitWidth, pitDepth, pitDepthY, pitStepHeight, wallThickness } = PERSONAL_LAYOUT;
       const halfW = roomWidth / 2;
       const halfD = roomDepth / 2;
       const halfWall = wallHeight / 2;
@@ -582,18 +582,45 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       scene.add(pitFloor);
 
       const pitWallMat = wallMaterial.clone();
-      const pitWallH = pitDepthY;
-      const pitWallThickness = 0.3;
-      const pitWalls = [
-        { geo: new THREE.BoxGeometry(pitWidth, pitWallH, pitWallThickness), pos: [0, -pitDepthY / 2, -pitHalfD] as const },
-        { geo: new THREE.BoxGeometry(pitWidth, pitWallH, pitWallThickness), pos: [0, -pitDepthY / 2, pitHalfD] as const },
-        { geo: new THREE.BoxGeometry(pitWallThickness, pitWallH, pitDepth), pos: [-pitHalfW, -pitDepthY / 2, 0] as const },
-        { geo: new THREE.BoxGeometry(pitWallThickness, pitWallH, pitDepth), pos: [pitHalfW, -pitDepthY / 2, 0] as const },
+      const pitWallThickness = 0.25;
+      const stepH = pitStepHeight;
+      const northSouthWall = () =>
+        new THREE.Mesh(new THREE.BoxGeometry(pitWidth, stepH, pitWallThickness), pitWallMat);
+      const eastWestWall = () =>
+        new THREE.Mesh(new THREE.BoxGeometry(pitWallThickness, stepH, pitDepth), pitWallMat);
+
+      const upperY = -stepH / 2;
+      const lowerY = -stepH - stepH / 2;
+      for (const z of [-pitHalfD, pitHalfD]) {
+        const upper = northSouthWall();
+        upper.position.set(0, upperY, z);
+        scene.add(upper);
+        const lower = northSouthWall();
+        lower.position.set(0, lowerY, z);
+        scene.add(lower);
+      }
+      for (const x of [-pitHalfW, pitHalfW]) {
+        const upper = eastWestWall();
+        upper.position.set(x, upperY, 0);
+        scene.add(upper);
+        const lower = eastWestWall();
+        lower.position.set(x, lowerY, 0);
+        scene.add(lower);
+      }
+
+      const treadMat = floorMat.clone();
+      const treadDepth = 0.28;
+      const treadY = -stepH + 0.04;
+      const treads = [
+        { geo: new THREE.BoxGeometry(pitWidth + treadDepth, 0.08, treadDepth), pos: [0, treadY, -pitHalfD + pitWallThickness / 2] as const },
+        { geo: new THREE.BoxGeometry(pitWidth + treadDepth, 0.08, treadDepth), pos: [0, treadY, pitHalfD - pitWallThickness / 2] as const },
+        { geo: new THREE.BoxGeometry(treadDepth, 0.08, pitDepth + treadDepth), pos: [-pitHalfW + pitWallThickness / 2, treadY, 0] as const },
+        { geo: new THREE.BoxGeometry(treadDepth, 0.08, pitDepth + treadDepth), pos: [pitHalfW - pitWallThickness / 2, treadY, 0] as const },
       ];
-      pitWalls.forEach(({ geo, pos }) => {
-        const w = new THREE.Mesh(geo, pitWallMat);
-        w.position.set(pos[0], pos[1], pos[2]);
-        scene.add(w);
+      treads.forEach(({ geo, pos }) => {
+        const tread = new THREE.Mesh(geo, treadMat);
+        tread.position.set(pos[0], pos[1], pos[2]);
+        scene.add(tread);
       });
 
       const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomDepth), rainbowMaterial);
@@ -601,8 +628,8 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       ceiling.position.y = wallHeight;
       scene.add(ceiling);
 
-      const pitLight = new THREE.PointLight(0xffeedd, 1.2, 16);
-      pitLight.position.set(0, 1.5, 0);
+      const pitLight = new THREE.PointLight(0xffeedd, 1.0, 14);
+      pitLight.position.set(0, 0.6, 0);
       scene.add(pitLight);
 
       const logoTexture = textureLoader.load('/gallery/electroneum-logo-symbol.svg');
@@ -796,7 +823,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       });
       const rug = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 5.5), rugMat);
       rug.rotation.x = -Math.PI / 2;
-      rug.position.set(0, pitY + 0.03, 0.8);
+      rug.position.set(0, pitY + 0.03, 0);
       scene.add(rug);
 
       gltfLoader.load('/gallery/models/sofa.glb', (gltf) => {
@@ -831,20 +858,15 @@ const NftGallery: React.FC<NftGalleryProps> = ({
           return group;
         };
 
-        const couch = buildSofa(3.6);
-        couch.position.set(0, pitY, 2.4);
-        couch.rotation.y = Math.PI;
-        scene.add(couch);
+        const couchSouth = buildSofa(3.6);
+        couchSouth.position.set(0, pitY, 2.35);
+        couchSouth.rotation.y = Math.PI;
+        scene.add(couchSouth);
 
-        const armchairL = buildSofa(2.2);
-        armchairL.position.set(-2.0, pitY, 0);
-        armchairL.rotation.y = Math.PI / 2;
-        scene.add(armchairL);
-
-        const armchairR = buildSofa(2.2);
-        armchairR.position.set(2.0, pitY, 0);
-        armchairR.rotation.y = -Math.PI / 2;
-        scene.add(armchairR);
+        const couchNorth = buildSofa(3.6);
+        couchNorth.position.set(0, pitY, -2.35);
+        couchNorth.rotation.y = 0;
+        scene.add(couchNorth);
       });
 
       gltfLoader.load('/gallery/models/plant.glb', (gltf) => {
