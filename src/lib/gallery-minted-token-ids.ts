@@ -2,13 +2,18 @@ import { createPublicClient, http } from 'viem'
 import { electroneum } from '@/lib/blockchain'
 import { fetchGemShardMintedTokenIds } from '@/lib/gem-shard-logs'
 import { fetchTotalSupply } from '@/lib/gallery-fetcher/nftFetcher'
+import { supabase } from '@/lib/supabase'
 
 export const GEM_SHARDS_GALLERY_ADDRESS = '0x6cb09b4cb3d2dca90e720565c101500abe131001'
+
+const ETN_VIDEO_NFT_ADDRESS = '0x7F41080A13f5154Bcf9f72991AFEEd645b13B75C'
 
 const galleryPublicClient = createPublicClient({
   chain: electroneum,
   transport: http(),
 })
+
+export const GALLERY_MINTED_IDS_CACHE_TTL_MS = 10 * 60 * 1000
 
 export function isGemShardsGalleryContract(contractAddress: string): boolean {
   return contractAddress.toLowerCase() === GEM_SHARDS_GALLERY_ADDRESS
@@ -21,7 +26,7 @@ function sortMintedTokenIds(mintedTokenIds: number[]): number[] {
 }
 
 const GEM_SHARDS_IDS_CACHE_KEY = 'gallery-gem-shards-minted-ids'
-const GEM_SHARDS_IDS_CACHE_TTL_MS = 3 * 60 * 1000
+const GEM_SHARDS_IDS_CACHE_TTL_MS = 30 * 60 * 1000
 
 function readGemShardsMintedIdsCache(): number[] | null {
   try {
@@ -47,8 +52,43 @@ function writeGemShardsMintedIdsCache(ids: number[]) {
   }
 }
 
-/** On-chain minted token IDs for gallery panels and marketplace links. */
-export async function fetchGalleryMintedTokenIds(contractAddress: string): Promise<number[]> {
+async function readSupabaseMintedIdsCache(contractAddress: string): Promise<number[] | null> {
+  const contract = contractAddress.toLowerCase()
+  const { data, error } = await supabase
+    .from('gallery_contract_minted_ids')
+    .select('minted_token_ids, refreshed_at')
+    .eq('contract_address', contract)
+    .maybeSingle()
+
+  if (error || !data) return null
+
+  const row = data as { minted_token_ids: number[] | null; refreshed_at: string }
+  const refreshedAt = Date.parse(String(row.refreshed_at))
+  if (!Number.isFinite(refreshedAt) || Date.now() - refreshedAt > GALLERY_MINTED_IDS_CACHE_TTL_MS) {
+    return null
+  }
+
+  const ids = row.minted_token_ids ?? []
+  return ids.length > 0 ? sortMintedTokenIds(ids) : null
+}
+
+async function invokeMintedIdsRefresh(contractAddress: string): Promise<number[] | null> {
+  try {
+    const { data, error } = await supabase.functions.invoke('gallery-refresh-minted-ids', {
+      method: 'POST',
+      body: { contract_address: contractAddress },
+    })
+    if (error || !data) return null
+    const ids = (data as { minted_token_ids?: number[] }).minted_token_ids
+    return ids?.length ? sortMintedTokenIds(ids) : null
+  } catch {
+    return null
+  }
+}
+
+async function fetchMintedTokenIdsClientFallback(contractAddress: string): Promise<number[]> {
+  if (contractAddress === ETN_VIDEO_NFT_ADDRESS) return [1]
+
   if (isGemShardsGalleryContract(contractAddress)) {
     const cached = readGemShardsMintedIdsCache()
     if (cached) return cached
@@ -64,6 +104,30 @@ export async function fetchGalleryMintedTokenIds(contractAddress: string): Promi
   const totalMinted = await fetchTotalSupply(contractAddress)
   if (!totalMinted || totalMinted <= 0) return []
   return Array.from({ length: totalMinted }, (_, index) => index + 1)
+}
+
+/** On-chain minted token IDs for gallery panels and marketplace links. */
+export async function fetchGalleryMintedTokenIds(contractAddress: string): Promise<number[]> {
+  if (contractAddress === ETN_VIDEO_NFT_ADDRESS) return [1]
+
+  const fromSupabase = await readSupabaseMintedIdsCache(contractAddress)
+  if (fromSupabase) {
+    if (isGemShardsGalleryContract(contractAddress)) writeGemShardsMintedIdsCache(fromSupabase)
+    return fromSupabase
+  }
+
+  if (isGemShardsGalleryContract(contractAddress)) {
+    const sessionCached = readGemShardsMintedIdsCache()
+    if (sessionCached) return sessionCached
+  }
+
+  const fromEdge = await invokeMintedIdsRefresh(contractAddress)
+  if (fromEdge) {
+    if (isGemShardsGalleryContract(contractAddress)) writeGemShardsMintedIdsCache(fromEdge)
+    return fromEdge
+  }
+
+  return fetchMintedTokenIdsClientFallback(contractAddress)
 }
 
 export type GalleryPanelTokenResolution = {

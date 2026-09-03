@@ -50,7 +50,7 @@ export default function LoadingSplash({
 
       <div className="absolute bottom-10 flex items-center gap-2 text-xs font-medium text-white/30">
         <Loader2 className="h-3 w-3 animate-spin" />
-        <span>Loading Assets & Textures</span>
+        <span>{message === 'Initializing Gallery...' ? 'Loading Assets & Textures' : message}</span>
       </div>
     </div>
   )

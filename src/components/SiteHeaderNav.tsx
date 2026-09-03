@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { Menu, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { prefetchGalleryPageChunk } from '@/lib/gallery-prefetch'
 
 const NAV_LINK_BASE =
   'rounded-md px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap'
@@ -30,6 +31,10 @@ export function SiteHeaderNav() {
   const [collapsed, setCollapsed] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
+
+  const prefetchGallery = useCallback(() => {
+    prefetchGalleryPageChunk()
+  }, [])
 
   const items = useMemo((): NavItem[] => {
     return [
@@ -163,6 +168,8 @@ export function SiteHeaderNav() {
                     end={item.end}
                     className={mobileNavLinkClass}
                     onClick={() => setMenuOpen(false)}
+                    onMouseEnter={item.to === '/gallery' ? prefetchGallery : undefined}
+                    onTouchStart={item.to === '/gallery' ? prefetchGallery : undefined}
                   >
                     {item.label}
                   </NavLink>
@@ -174,7 +181,14 @@ export function SiteHeaderNav() {
       ) : (
         <nav className="flex flex-nowrap items-center gap-1">
           {items.map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.end} className={navLinkClass}>
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              className={navLinkClass}
+              onMouseEnter={item.to === '/gallery' ? prefetchGallery : undefined}
+              onTouchStart={item.to === '/gallery' ? prefetchGallery : undefined}
+            >
               {item.label}
             </NavLink>
           ))}

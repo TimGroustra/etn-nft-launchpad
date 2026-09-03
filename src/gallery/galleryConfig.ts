@@ -31,6 +31,20 @@ const NUM_SEGMENTS_TO_USE = 5
 
 let galleryConfig: PanelConfig = {}
 
+type GalleryRow = {
+  panel_key: string
+  collection_name: string | null
+  contract_address: string | null
+  default_token_id: number | null
+  show_collection: boolean | null
+  wall_color: string | null
+  text_color: string | null
+}
+
+let dbConfigMap = new Map<string, GalleryRow>()
+let configHydrated = false
+const configReadyListeners = new Set<() => void>()
+
 const createBlankPanel = (): NftCollection => ({
   name: 'Loading...',
   contractAddress: '',
@@ -62,20 +76,90 @@ for (const wallNameBase of CENTER_WALL_NAMES) {
   galleryConfig[`${wallNameBase}-0`] = createBlankPanel()
 }
 
-export async function initializeGalleryConfig() {
-  const { data: dbConfigs, error } = await supabase.from('gallery_config').select('*')
-
-  type GalleryRow = {
-    panel_key: string
-    collection_name: string | null
-    contract_address: string | null
-    default_token_id: number | null
-    show_collection: boolean | null
-    wall_color: string | null
-    text_color: string | null
+function applyBasePanelFromRow(panelKey: string, configFromDb: GalleryRow | undefined) {
+  if (configFromDb?.contract_address) {
+    galleryConfig[panelKey] = {
+      name: configFromDb.collection_name || 'Unnamed Collection',
+      contractAddress: configFromDb.contract_address,
+      tokenIds: [],
+      mintedTokenIds: [],
+      currentIndex: 0,
+      show_collection: configFromDb.show_collection ?? true,
+      wall_color: configFromDb.wall_color || DEFAULT_WALL_COLOR,
+      text_color: configFromDb.text_color || DEFAULT_TEXT_COLOR,
+    }
+  } else {
+    galleryConfig[panelKey] = {
+      name: 'Blank Panel',
+      contractAddress: '',
+      tokenIds: [],
+      mintedTokenIds: [],
+      currentIndex: 0,
+      show_collection: true,
+      wall_color: DEFAULT_WALL_COLOR,
+      text_color: DEFAULT_TEXT_COLOR,
+    }
   }
+}
 
+function notifyConfigReady() {
+  configHydrated = true
+  for (const listener of configReadyListeners) listener()
+  configReadyListeners.clear()
+}
+
+function applyTokenAssignments(tokenMap: Record<string, number[]>) {
+  const gemShardPanelKeys = Object.keys(galleryConfig)
+    .filter((panelKey) => {
+      const row = dbConfigMap.get(panelKey)
+      return row?.contract_address && isGemShardsGalleryContract(row.contract_address)
+    })
+    .sort()
+
+  const uniqueContracts = Object.keys(tokenMap)
+  const gemShardContract = uniqueContracts.find((address) => isGemShardsGalleryContract(address))
+  const gemShardMintedIds = gemShardContract ? (tokenMap[gemShardContract] ?? []) : []
+  const gemShardAssignments = buildGemShardPanelAssignments(
+    gemShardPanelKeys,
+    gemShardMintedIds,
+    (panelKey) => dbConfigMap.get(panelKey)?.show_collection ?? true,
+  )
+
+  for (const panelKey in galleryConfig) {
+    const configFromDb = dbConfigMap.get(panelKey)
+    if (!configFromDb?.contract_address) continue
+
+    const contractAddress = configFromDb.contract_address
+    const defaultTokenId = configFromDb.default_token_id || 1
+    const showCollection = configFromDb.show_collection ?? true
+    const mintedTokenIds = tokenMap[contractAddress] ?? []
+
+    const assigned = isGemShardsGalleryContract(contractAddress)
+      ? gemShardAssignments.get(panelKey)
+      : resolveGalleryPanelTokenIds(mintedTokenIds, defaultTokenId, showCollection)
+
+    const tokensToUse = assigned?.tokenIds ?? []
+    const panelMintedIds = assigned?.mintedTokenIds ?? []
+    const startIndex = isGemShardsGalleryContract(contractAddress)
+      ? 0
+      : Math.max(0, tokensToUse.indexOf(defaultTokenId))
+
+    galleryConfig[panelKey] = {
+      ...galleryConfig[panelKey],
+      tokenIds: tokensToUse,
+      mintedTokenIds: panelMintedIds,
+      currentIndex: tokensToUse.length > 0 ? startIndex : 0,
+    }
+  }
+}
+
+/** Fast path: load panel assignments from Supabase (no on-chain mint ID fetch). */
+export async function loadGalleryConfigFromDb(): Promise<void> {
+  const { data: dbConfigs, error } = await supabase.from('gallery_config').select('*')
   const rows = (dbConfigs ?? []) as GalleryRow[]
+
+  dbConfigMap = new Map<string, GalleryRow>()
+  rows.forEach((item) => dbConfigMap.set(item.panel_key, item))
 
   if (error) {
     for (const wallName in galleryConfig) {
@@ -93,87 +177,57 @@ export async function initializeGalleryConfig() {
     return
   }
 
-  const dbConfigMap = new Map<string, GalleryRow>()
-  rows.forEach((item) => dbConfigMap.set(item.panel_key, item))
+  for (const panelKey in galleryConfig) {
+    applyBasePanelFromRow(panelKey, dbConfigMap.get(panelKey))
+  }
+}
 
+/** Resolve on-chain minted IDs and assign panel tokens (parallel per contract). */
+export async function hydrateMintedTokenIds(): Promise<void> {
   const uniqueContracts = Array.from(
     new Set(
-      rows
+      [...dbConfigMap.values()]
         .map((c) => c.contract_address)
         .filter((addr): addr is string => !!addr && addr.trim() !== ''),
     ),
   )
 
   const tokenMap: Record<string, number[]> = {}
-  for (const address of uniqueContracts) {
-    if (address === ETN_VIDEO_NFT_ADDRESS) {
-      tokenMap[address] = [1]
-      continue
-    }
-    try {
-      tokenMap[address] = await fetchGalleryMintedTokenIds(address)
-    } catch {
-      tokenMap[address] = []
-    }
-  }
-
-  const gemShardPanelKeys = Object.keys(galleryConfig)
-    .filter((panelKey) => {
-      const row = dbConfigMap.get(panelKey)
-      return row?.contract_address && isGemShardsGalleryContract(row.contract_address)
-    })
-    .sort()
-
-  const gemShardContract = uniqueContracts.find((address) => isGemShardsGalleryContract(address))
-  const gemShardMintedIds = gemShardContract ? (tokenMap[gemShardContract] ?? []) : []
-  const gemShardAssignments = buildGemShardPanelAssignments(
-    gemShardPanelKeys,
-    gemShardMintedIds,
-    (panelKey) => dbConfigMap.get(panelKey)?.show_collection ?? true,
+  await Promise.all(
+    uniqueContracts.map(async (address) => {
+      if (address === ETN_VIDEO_NFT_ADDRESS) {
+        tokenMap[address] = [1]
+        return
+      }
+      try {
+        tokenMap[address] = await fetchGalleryMintedTokenIds(address)
+      } catch {
+        tokenMap[address] = []
+      }
+    }),
   )
 
-  for (const panelKey in galleryConfig) {
-    const configFromDb = dbConfigMap.get(panelKey)
+  applyTokenAssignments(tokenMap)
+  notifyConfigReady()
+}
 
-    if (configFromDb?.contract_address) {
-      const contractAddress = configFromDb.contract_address
-      const defaultTokenId = configFromDb.default_token_id || 1
-      const showCollection = configFromDb.show_collection ?? true
-      const mintedTokenIds = tokenMap[contractAddress] ?? []
+export async function initializeGalleryConfig() {
+  configHydrated = false
+  await loadGalleryConfigFromDb()
+  await hydrateMintedTokenIds()
+}
 
-      const assigned = isGemShardsGalleryContract(contractAddress)
-        ? gemShardAssignments.get(panelKey)
-        : resolveGalleryPanelTokenIds(mintedTokenIds, defaultTokenId, showCollection)
+export function isGalleryConfigReady(): boolean {
+  return configHydrated
+}
 
-      const tokensToUse = assigned?.tokenIds ?? []
-      const panelMintedIds = assigned?.mintedTokenIds ?? []
-      const startIndex = isGemShardsGalleryContract(contractAddress)
-        ? 0
-        : Math.max(0, tokensToUse.indexOf(defaultTokenId))
-
-      galleryConfig[panelKey] = {
-        name: configFromDb.collection_name || 'Unnamed Collection',
-        contractAddress,
-        tokenIds: tokensToUse,
-        mintedTokenIds: panelMintedIds,
-        currentIndex: tokensToUse.length > 0 ? startIndex : 0,
-        show_collection: showCollection,
-        wall_color: configFromDb.wall_color || DEFAULT_WALL_COLOR,
-        text_color: configFromDb.text_color || DEFAULT_TEXT_COLOR,
-      }
-    } else {
-      galleryConfig[panelKey] = {
-        name: 'Blank Panel',
-        contractAddress: '',
-        tokenIds: [],
-        mintedTokenIds: [],
-        currentIndex: 0,
-        show_collection: true,
-        wall_color: DEFAULT_WALL_COLOR,
-        text_color: DEFAULT_TEXT_COLOR,
-      }
-    }
+export function onGalleryConfigReady(listener: () => void): () => void {
+  if (configHydrated) {
+    listener()
+    return () => {}
   }
+  configReadyListeners.add(listener)
+  return () => configReadyListeners.delete(listener)
 }
 
 let galleryConfigPromise: Promise<void> | null = null
@@ -211,4 +265,21 @@ export const updatePanelIndex = (wallName: keyof PanelConfig, direction: 'next' 
     return true
   }
   return false
+}
+
+/** Collect all resolved panel token pairs for batch metadata prefetch. */
+export function getAllPanelTokenSources(): Array<{ contractAddress: string; tokenId: number }> {
+  const seen = new Set<string>()
+  const sources: Array<{ contractAddress: string; tokenId: number }> = []
+
+  for (const panelKey of Object.keys(galleryConfig)) {
+    const source = getCurrentNftSource(panelKey as keyof PanelConfig)
+    if (!source) continue
+    const key = `${source.contractAddress.toLowerCase()}:${source.tokenId}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    sources.push(source)
+  }
+
+  return sources
 }

@@ -40,7 +40,7 @@ export type NftMetadataResult =
   | { ok: false; reason: string; error?: string }
 
 let activeFetches = 0
-const MAX_CONCURRENT = 4
+const MAX_CONCURRENT = 8
 const waitQueue: Array<() => void> = []
 
 function sameAddress(a: string, b: string): boolean {

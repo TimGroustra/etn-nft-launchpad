@@ -6,7 +6,16 @@ const metadataCache = new Map<NftCacheKey, NftMetadata>()
 const fetchPromises = new Map<NftCacheKey, Promise<NftMetadata | null>>()
 
 function getCacheKey(contractAddress: string, tokenId: number): NftCacheKey {
-  return `${contractAddress}:${tokenId}`
+  return `${contractAddress.toLowerCase()}:${tokenId}`
+}
+
+/** Pre-warm the in-memory metadata cache from a batch Supabase lookup. */
+export function prewarmMetadataCache(
+  entries: Map<string, NftMetadata> | Iterable<[string, NftMetadata]>,
+) {
+  for (const [key, metadata] of entries) {
+    metadataCache.set(key, metadata)
+  }
 }
 
 export async function getCachedNftMetadata(

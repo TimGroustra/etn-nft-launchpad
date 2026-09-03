@@ -3,13 +3,18 @@ import { Footprints, Info } from 'lucide-react'
 import NftGallery from '@/gallery/NftGallery'
 import LoadingSplash from '@/components/gallery/LoadingSplash'
 import { prefetchGalleryConfig } from '@/gallery/galleryConfig'
-import { nudgeGalleryCacheWorker } from '@/lib/gallery-cache'
+import { enqueueGalleryPanelTokens, nudgeGalleryCacheWorker } from '@/lib/gallery-cache'
 import { ELECTROGEMS_NFT_ADDRESS } from '@/lib/creator-access'
 import { ELECTROSWAP_EXTERNAL_LINK_PROPS, getElectroSwapCollectionUrl } from '@/lib/marketplace'
+
+const ENTER_GALLERY_FALLBACK_MS = 5000
 
 export default function GalleryPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [loadingProgress, setLoadingProgress] = useState(0)
+  const [loadingMessage, setLoadingMessage] = useState('Initializing Gallery...')
+  const [hasFirstImage, setHasFirstImage] = useState(false)
+  const [allowEnterWithoutImage, setAllowEnterWithoutImage] = useState(false)
   const [isWalking, setIsWalking] = useState(false)
   const [isStarted, setIsStarted] = useState(false)
 
@@ -17,20 +22,36 @@ export default function GalleryPage() {
     setIsLoading(false)
   }, [])
 
+  const handleFirstImageLoaded = useCallback(() => {
+    setHasFirstImage(true)
+  }, [])
+
   useEffect(() => {
     prefetchGalleryConfig()
     nudgeGalleryCacheWorker()
-    const id = window.setInterval(nudgeGalleryCacheWorker, 45_000)
-    return () => window.clearInterval(id)
+    enqueueGalleryPanelTokens()
+    const cacheId = window.setInterval(nudgeGalleryCacheWorker, 45_000)
+    const enterFallbackId = window.setTimeout(
+      () => setAllowEnterWithoutImage(true),
+      ENTER_GALLERY_FALLBACK_MS,
+    )
+    return () => {
+      window.clearInterval(cacheId)
+      window.clearTimeout(enterFallbackId)
+    }
   }, [])
+
+  const canEnterGallery = hasFirstImage || allowEnterWithoutImage
 
   return (
     <div className="relative h-full min-h-0 w-full overflow-hidden bg-[#050505]">
-      {isLoading && <LoadingSplash progress={loadingProgress} />}
+      {isLoading && <LoadingSplash progress={loadingProgress} message={loadingMessage} />}
 
       <NftGallery
         onLoadingProgress={setLoadingProgress}
+        onLoadingMessage={setLoadingMessage}
         onLoadingComplete={handleLoadingComplete}
+        onFirstImageLoaded={handleFirstImageLoaded}
         isWalking={isWalking}
         setIsWalking={setIsWalking}
       />
@@ -38,7 +59,7 @@ export default function GalleryPage() {
       {!isLoading && !isStarted && (
         <div
           className="absolute inset-0 z-50 flex cursor-pointer items-center justify-center bg-black/80"
-          onClick={() => setIsStarted(true)}
+          onClick={() => canEnterGallery && setIsStarted(true)}
         >
           <div className="mx-4 max-w-sm rounded-2xl border border-white/10 bg-[#0b1220]/90 p-8 text-center shadow-2xl backdrop-blur-md">
             <h2 className="mb-2 text-3xl font-black uppercase italic tracking-tight text-cyan-400">3D Gallery</h2>
@@ -68,9 +89,18 @@ export default function GalleryPage() {
             </div>
             <button
               type="button"
-              className="w-full rounded-full bg-cyan-500 px-8 py-3 font-bold text-black transition-transform hover:scale-105 active:scale-95"
+              disabled={!canEnterGallery}
+              className={`w-full rounded-full px-8 py-3 font-bold transition-transform ${
+                canEnterGallery
+                  ? 'bg-cyan-500 text-black hover:scale-105 active:scale-95'
+                  : 'cursor-wait bg-cyan-500/40 text-black/60'
+              }`}
             >
-              Enter Gallery
+              {canEnterGallery
+                ? allowEnterWithoutImage && !hasFirstImage
+                  ? 'Continue anyway'
+                  : 'Enter Gallery'
+                : 'Loading artwork…'}
             </button>
           </div>
         </div>

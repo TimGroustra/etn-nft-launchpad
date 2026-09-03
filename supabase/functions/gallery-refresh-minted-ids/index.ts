@@ -2,11 +2,10 @@ import { serve } from 'https://deno.land/std@0.190.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 import { corsHeaders } from '../_shared/utils.ts'
 import {
-  enqueueGalleryPanelsFromConfig,
-  processGalleryCacheBatch,
+  listGalleryContractAddresses,
+  refreshContractMintedIds,
   refreshStaleGalleryContracts,
-  triggerGalleryCacheTick,
-} from '../_shared/gallery-media-cache.ts'
+} from '../_shared/gallery-minted-ids.ts'
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -18,7 +17,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
 
   try {
-    let body: { enqueuePanels?: boolean } = {}
+    let body: { contract_address?: string; force?: boolean } = {}
     if (req.method === 'POST') {
       try {
         body = await req.json()
@@ -27,32 +26,34 @@ serve(async (req) => {
       }
     }
 
-    // Refresh stale minted-ID cache before warming media (best-effort, non-blocking).
-    const waitUntil = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } })
-      .EdgeRuntime?.waitUntil
-    const mintRefresh = refreshStaleGalleryContracts(supabase)
-    if (waitUntil) waitUntil(mintRefresh)
-    else await mintRefresh
+    if (body.contract_address) {
+      const ids = await refreshContractMintedIds(supabase, body.contract_address)
+      return new Response(
+        JSON.stringify({
+          success: true,
+          contract_address: body.contract_address.toLowerCase(),
+          minted_token_ids: ids,
+          refreshed_at: new Date().toISOString(),
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
+    }
 
-    if (body.enqueuePanels) {
-      const enqueueResult = await enqueueGalleryPanelsFromConfig(supabase)
-      return new Response(JSON.stringify({ success: true, ...enqueueResult }), {
+    if (body.force) {
+      const contracts = await listGalleryContractAddresses(supabase)
+      const results = await Promise.all(
+        contracts.map(async (contract) => {
+          const ids = await refreshContractMintedIds(supabase, contract)
+          return { contract_address: contract.toLowerCase(), count: ids.length }
+        }),
+      )
+      return new Response(JSON.stringify({ success: true, refreshed: results }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    const result = await processGalleryCacheBatch(supabase)
-
-    // Chain another tick while work remains — slow and steady, one batch at a time.
-    if (result.remaining > 0) {
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      const next = triggerGalleryCacheTick(supabaseUrl, serviceKey)
-      if (waitUntil) waitUntil(next)
-      else await next
-    }
-
+    const result = await refreshStaleGalleryContracts(supabase)
     return new Response(JSON.stringify({ success: true, ...result }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

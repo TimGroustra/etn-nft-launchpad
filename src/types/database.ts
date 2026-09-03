@@ -145,6 +145,17 @@ export interface Database {
         }
         Update: Partial<Database['public']['Tables']['gallery_cache_queue']['Row']>
       }
+      gallery_contract_minted_ids: {
+        Row: {
+          contract_address: string
+          minted_token_ids: number[]
+          refreshed_at: string
+        }
+        Insert: Partial<Database['public']['Tables']['gallery_contract_minted_ids']['Row']> & {
+          contract_address: string
+        }
+        Update: Partial<Database['public']['Tables']['gallery_contract_minted_ids']['Row']>
+      }
     }
   }
 }

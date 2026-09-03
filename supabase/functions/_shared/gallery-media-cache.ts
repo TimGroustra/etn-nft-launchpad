@@ -1,6 +1,10 @@
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 import { Contract, JsonRpcProvider } from 'https://esm.sh/ethers@6.15.0'
 import { getMetadataPublicOrigin } from './metadata-public-urls.ts'
+import {
+  fetchMintedTokenIdsOnChain,
+  refreshStaleGalleryContracts,
+} from './gallery-minted-ids.ts'
 
 const RPC_URL = Deno.env.get('ETN_RPC_URL') ?? 'https://rpc.ankr.com/electroneum'
 const GEM_SHARDS_MAINNET = (
@@ -25,14 +29,6 @@ const IPFS_GATEWAYS = [
 
 const ERC721 = ['function tokenURI(uint256) view returns (string)']
 const ERC1155 = ['function uri(uint256) view returns (string)', 'function supportsInterface(bytes4) view returns (bool)']
-const TS_ABI = ['function totalSupply() view returns (uint256)']
-const GEM_SHARDS_EVENTS_ABI = [
-  'event ShardMinted(uint256 indexed tokenId, address indexed to, bool freeMint)',
-  'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)',
-]
-const GEM_SHARDS_DEPLOY_BLOCK = 15_563_659
-const LOG_CHUNK_SIZE = 500
-
 export type ResolvedGalleryMedia = {
   title: string
   contentType: string
@@ -375,65 +371,8 @@ export async function enqueueGalleryTokens(
   }
 }
 
-export async function fetchTotalSupply(contractAddress: string): Promise<number> {
-  try {
-    const provider = new JsonRpcProvider(RPC_URL)
-    const contract = new Contract(contractAddress, TS_ABI, provider)
-    const value = await contract.totalSupply()
-    return Math.max(0, Number(value))
-  } catch {
-    return 0
-  }
-}
-
-async function fetchGemShardMintedTokenIds(contractAddress: string): Promise<number[]> {
-  const provider = new JsonRpcProvider(RPC_URL)
-  const contract = new Contract(contractAddress, GEM_SHARDS_EVENTS_ABI, provider)
-  const latest = await provider.getBlockNumber()
-  const tokenIds = new Set<number>()
-
-  for (let start = GEM_SHARDS_DEPLOY_BLOCK; start <= latest; start += LOG_CHUNK_SIZE) {
-    const end = Math.min(start + LOG_CHUNK_SIZE - 1, latest)
-    try {
-      const events = await contract.queryFilter(contract.filters.ShardMinted(), start, end)
-      for (const event of events) {
-        const tokenId = Number(event.args?.tokenId)
-        if (Number.isInteger(tokenId) && tokenId > 0) tokenIds.add(tokenId)
-      }
-    } catch {
-      // Skip failed chunks instead of failing the whole request.
-    }
-  }
-
-  if (tokenIds.size > 0) {
-    return [...tokenIds].sort((a, b) => a - b)
-  }
-
-  const zeroAddress = '0x0000000000000000000000000000000000000000'
-  for (let start = GEM_SHARDS_DEPLOY_BLOCK; start <= latest; start += LOG_CHUNK_SIZE) {
-    const end = Math.min(start + LOG_CHUNK_SIZE - 1, latest)
-    try {
-      const events = await contract.queryFilter(contract.filters.Transfer(zeroAddress, null, null), start, end)
-      for (const event of events) {
-        const tokenId = Number(event.args?.tokenId)
-        if (Number.isInteger(tokenId) && tokenId > 0) tokenIds.add(tokenId)
-      }
-    } catch {
-      // Skip failed chunks instead of failing the whole request.
-    }
-  }
-
-  return [...tokenIds].sort((a, b) => a - b)
-}
-
 async function fetchMintedTokenIds(contractAddress: string): Promise<number[]> {
-  if (sameAddress(contractAddress, GEM_SHARDS_MAINNET)) {
-    return fetchGemShardMintedTokenIds(contractAddress)
-  }
-
-  const totalMinted = await fetchTotalSupply(contractAddress)
-  if (totalMinted <= 0) return []
-  return Array.from({ length: totalMinted }, (_, index) => index + 1)
+  return fetchMintedTokenIdsOnChain(contractAddress)
 }
 
 async function listGemShardPanelKeys(
@@ -498,6 +437,45 @@ export const GALLERY_CACHE_ITEM_DELAY_MS = 600
 /** Pause between chained batches so warmup stays gentle on RPC/IPFS. */
 export const GALLERY_CACHE_BATCH_DELAY_MS = 3_000
 
+/** Enqueue all configured panel tokens for background media warming. */
+export async function enqueueGalleryPanelsFromConfig(supabase: SupabaseClient) {
+  const { data: rows } = await supabase
+    .from('gallery_config')
+    .select('panel_key, contract_address, default_token_id, show_collection')
+    .not('contract_address', 'is', null)
+
+  if (!rows?.length) return { enqueued: 0 }
+
+  const tokenIdsByContract = new Map<string, Set<number>>()
+
+  for (const row of rows) {
+    const contract = String(row.contract_address).toLowerCase()
+    const defaultTokenId = Math.max(1, Number(row.default_token_id) || 1)
+    const showCollection = row.show_collection ?? true
+
+    const ids = await tokenIdsForPanel(
+      contract,
+      defaultTokenId,
+      showCollection,
+      40,
+      String(row.panel_key),
+      supabase,
+    )
+
+    if (!tokenIdsByContract.has(contract)) tokenIdsByContract.set(contract, new Set())
+    const set = tokenIdsByContract.get(contract)!
+    for (const id of ids) set.add(id)
+  }
+
+  let enqueued = 0
+  for (const [contract, ids] of tokenIdsByContract) {
+    await enqueueGalleryTokens(supabase, contract, [...ids])
+    enqueued += ids.size
+  }
+
+  return { enqueued }
+}
+
 export async function processGalleryCacheBatch(supabase: SupabaseClient) {
   // Recover jobs left in processing if a prior edge invocation timed out.
   const staleBefore = new Date(Date.now() - 5 * 60_000).toISOString()
@@ -552,6 +530,8 @@ export async function processGalleryCacheBatch(supabase: SupabaseClient) {
 
   return { processed, remaining: count ?? 0 }
 }
+
+export { refreshStaleGalleryContracts }
 
 export async function triggerGalleryCacheTick(
   supabaseUrl: string,

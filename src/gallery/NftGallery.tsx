@@ -7,10 +7,13 @@ import {
   prefetchGalleryConfig,
   GALLERY_PANEL_CONFIG,
   getCurrentNftSource,
+  getAllPanelTokenSources,
+  onGalleryConfigReady,
   updatePanelIndex,
   type PanelConfig,
 } from '@/gallery/galleryConfig';
-import { getCachedNftMetadata } from '@/lib/gallery-fetcher/metadataCache';
+import { getCachedNftMetadata, prewarmMetadataCache } from '@/lib/gallery-fetcher/metadataCache';
+import { getCachedGalleryMetadataBatch, enqueueGalleryPanelTokens } from '@/lib/gallery-cache';
 import { getGatewayCandidates } from '@/lib/gallery-fetcher/urlUtils';
 import type { NftSource } from '@/lib/gallery-fetcher/nftFetcher';
 import { createGifTexture } from '@/lib/gallery-fetcher/gifTexture';
@@ -33,6 +36,7 @@ const UPPER_PANEL_Y = 12.0;
 const WALL_THICKNESS = 0.5;
 const BOUNDARY = ROOM_SIZE / 2 - 1.0;
 const PANEL_LOAD_CONCURRENCY = 8;
+const SPLASH_FALLBACK_MS = 8000;
 
 interface Panel {
   mesh: THREE.Mesh;
@@ -48,7 +52,9 @@ interface Panel {
 
 interface NftGalleryProps {
   onLoadingProgress?: (progress: number) => void;
+  onLoadingMessage?: (message: string) => void;
   onLoadingComplete?: () => void;
+  onFirstImageLoaded?: () => void;
   isWalking: boolean;
   setIsWalking: (walking: boolean) => void;
 }
@@ -188,7 +194,9 @@ function createDiamondTeleporter() {
 
 const NftGallery: React.FC<NftGalleryProps> = ({
   onLoadingProgress,
+  onLoadingMessage,
   onLoadingComplete,
+  onFirstImageLoaded,
   isWalking,
   setIsWalking: _setIsWalking,
 }) => {
@@ -222,8 +230,11 @@ const NftGallery: React.FC<NftGalleryProps> = ({
   // Use a Ref to hold the walk state so that updating it doesn't recreate the 3D scene
   const isWalkingRef = useRef(isWalking);
   const onLoadingProgressRef = useRef(onLoadingProgress);
+  const onLoadingMessageRef = useRef(onLoadingMessage);
   const onLoadingCompleteRef = useRef(onLoadingComplete);
+  const onFirstImageLoadedRef = useRef(onFirstImageLoaded);
   const loadingCompleteCalledRef = useRef(false);
+  const firstImageReportedRef = useRef(false);
 
   // Keep refs in sync with props without re-initializing the 3D scene.
   useEffect(() => {
@@ -235,8 +246,16 @@ const NftGallery: React.FC<NftGalleryProps> = ({
   }, [onLoadingProgress]);
 
   useEffect(() => {
+    onLoadingMessageRef.current = onLoadingMessage;
+  }, [onLoadingMessage]);
+
+  useEffect(() => {
     onLoadingCompleteRef.current = onLoadingComplete;
   }, [onLoadingComplete]);
+
+  useEffect(() => {
+    onFirstImageLoadedRef.current = onFirstImageLoaded;
+  }, [onFirstImageLoaded]);
 
   // Keyboard movement keys states
   const keysPressed = useRef({
@@ -683,48 +702,103 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       // Populate reference panels array for interaction raycaster
       panelsRef.current = [...groundPanels, ...innerPanels, ...firstPanels];
 
-      if (!loadingCompleteCalledRef.current) {
-        loadingCompleteCalledRef.current = true;
-        onLoadingProgressRef.current?.(100);
-        onLoadingCompleteRef.current?.();
-      }
+      onLoadingProgressRef.current?.(30);
+      onLoadingMessageRef.current?.('Resolving collections…');
+
+      const maybeDismissSplash = () => {
+        if (!loadingCompleteCalledRef.current) {
+          loadingCompleteCalledRef.current = true;
+          onLoadingCompleteRef.current?.();
+        }
+      };
+
+      const reportFirstTexture = () => {
+        if (!firstImageReportedRef.current) {
+          firstImageReportedRef.current = true;
+          onFirstImageLoadedRef.current?.();
+          maybeDismissSplash();
+        }
+      };
+
+      const splashFallbackTimer = window.setTimeout(maybeDismissSplash, SPLASH_FALLBACK_MS);
+
+      const panelSourceKeys = new Map<Panel, string>();
+
+      const refreshPanelIfSourceChanged = (panel: Panel) => {
+        const source = getCurrentNftSource(panel.wallName);
+        const nextKey = source ? `${source.contractAddress.toLowerCase()}:${source.tokenId}` : '';
+        const prevKey = panelSourceKeys.get(panel) ?? '';
+        if (nextKey !== prevKey) {
+          panelSourceKeys.set(panel, nextKey);
+          void updatePanelContent(panel, source);
+        }
+      };
+
+      const unsubscribeConfig = onGalleryConfigReady(() => {
+        for (const panel of panelsRef.current) {
+          refreshPanelIfSourceChanged(panel);
+        }
+      });
 
       await prefetchGalleryConfig();
 
-      // Progressive stream loading order: Ground outer -> Inner walls -> Upper level outer
+      onLoadingProgressRef.current?.(50);
+      onLoadingMessageRef.current?.('Loading artwork…');
+
+      const tokenSources = getAllPanelTokenSources();
+      const batchCache = await getCachedGalleryMetadataBatch(tokenSources);
+      prewarmMetadataCache(batchCache);
+      enqueueGalleryPanelTokens();
+
       const sortByProximity = (list: Panel[]) =>
         [...list].sort((a, b) => {
-          const da = a.mesh.position.distanceToSquared(camera.position)
-          const db = b.mesh.position.distanceToSquared(camera.position)
-          return da - db
-        })
+          const da = a.mesh.position.distanceToSquared(camera.position);
+          const db = b.mesh.position.distanceToSquared(camera.position);
+          return da - db;
+        });
 
-      const streamGroups = [
-        { name: 'ground outer', list: sortByProximity(groundPanels) },
-        { name: 'inner', list: sortByProximity(innerPanels) },
-        { name: 'upper outer', list: sortByProximity(firstPanels) },
-      ]
+      const allPanels = sortByProximity([...groundPanels, ...innerPanels, ...firstPanels]);
+      const totalPanels = allPanels.length;
+      let loadedPanels = 0;
+
+      const loadPanelWithProgress = async (panel: Panel) => {
+        const source = getCurrentNftSource(panel.wallName);
+        const sourceKey = source ? `${source.contractAddress.toLowerCase()}:${source.tokenId}` : '';
+        panelSourceKeys.set(panel, sourceKey);
+
+        const hadTexture = !!panel.metadataUrl;
+        await updatePanelContent(panel, source);
+
+        if (!hadTexture && panel.metadataUrl) {
+          reportFirstTexture();
+        }
+
+        loadedPanels += 1;
+        onLoadingProgressRef.current?.(50 + Math.round((50 * loadedPanels) / Math.max(totalPanels, 1)));
+      };
 
       const loadPanelBatch = async (items: Panel[]) => {
         for (let i = 0; i < items.length; i += PANEL_LOAD_CONCURRENCY) {
           if (stopLoad) break;
           const batch = items.slice(i, i + PANEL_LOAD_CONCURRENCY);
-          await Promise.all(
-            batch.map((panel) =>
-              updatePanelContent(panel, getCurrentNftSource(panel.wallName)),
-            ),
-          );
+          await Promise.all(batch.map((panel) => loadPanelWithProgress(panel)));
         }
       };
 
-      for (const group of streamGroups) {
-        await loadPanelBatch(group.list);
-        if (stopLoad) break;
-      }
+      await loadPanelBatch(allPanels);
+
+      window.clearTimeout(splashFallbackTimer);
+      maybeDismissSplash();
+      unsubscribeConfig();
 
       // 3. After all art loaded, load decorative furniture and vegetation on upper level
       if (!stopLoad) {
-        loadDecorativeItems();
+        const scheduleDecor = () => loadDecorativeItems();
+        if ('requestIdleCallback' in window) {
+          requestIdleCallback(scheduleDecor);
+        } else {
+          scheduleDecor();
+        }
       }
     };
     createPanels();
