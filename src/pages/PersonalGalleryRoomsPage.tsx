@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAccount } from 'wagmi'
 import { ArrowLeft, Copy, Gem, Loader2, Pencil } from 'lucide-react'
 import { toast } from 'sonner'
+import type { FunctionsError } from '@supabase/supabase-js'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -17,6 +18,24 @@ interface PersonalRoom {
   slug: string
   display_name: string
   electrogem_token_id: string
+}
+
+interface CreateRoomResponse {
+  success?: boolean
+  roomId?: string
+  slug?: string
+  displayName?: string
+  shareUrl?: string
+  error?: string
+}
+
+function extractInvokeError(data: unknown, error: FunctionsError | null): string {
+  if (data && typeof data === 'object' && 'error' in data) {
+    const message = (data as { error?: unknown }).error
+    if (typeof message === 'string' && message.trim()) return message
+  }
+  if (error?.message) return error.message
+  return 'Failed to create room.'
 }
 
 export default function PersonalGalleryRoomsPage() {
@@ -41,15 +60,28 @@ export default function PersonalGalleryRoomsPage() {
     }
   }, [isConnected, walletAddress, isGemsLoading, canEdit, navigate])
 
-  const loadRooms = useCallback(async () => {
-    if (!walletAddress) return
-    setLoadingRooms(true)
-    const { data } = await supabase
+  const loadRooms = useCallback(async (options?: { silent?: boolean }) => {
+    if (!walletAddress) return []
+    if (!options?.silent) setLoadingRooms(true)
+
+    const { data, error } = await supabase
       .from('personal_gallery_rooms')
       .select('id, slug, display_name, electrogem_token_id')
       .eq('owner_address', walletAddress.toLowerCase())
-    setRooms((data as PersonalRoom[] | null) ?? [])
-    setLoadingRooms(false)
+
+    if (error) {
+      console.error('[PersonalGalleryRoomsPage] Failed to load rooms:', error)
+      if (!options?.silent) {
+        toast.error('Could not load your gallery rooms. Refresh and try again.')
+      }
+      if (!options?.silent) setLoadingRooms(false)
+      return []
+    }
+
+    const rows = (data as PersonalRoom[] | null) ?? []
+    setRooms(rows)
+    if (!options?.silent) setLoadingRooms(false)
+    return rows
   }, [walletAddress])
 
   useEffect(() => {
@@ -61,7 +93,7 @@ export default function PersonalGalleryRoomsPage() {
   const roomByGem = useMemo(() => {
     const map = new Map<string, PersonalRoom>()
     for (const room of rooms) {
-      map.set(room.electrogem_token_id, room)
+      map.set(String(room.electrogem_token_id), room)
     }
     return map
   }, [rooms])
@@ -85,24 +117,44 @@ export default function PersonalGalleryRoomsPage() {
     }
 
     setCreatingFor(gemTokenId)
-    const { data, error } = await supabase.functions.invoke('gallery-create-room', {
-      method: 'POST',
-      body: {
-        walletAddress,
-        displayName,
-        electrogemTokenId: gemTokenId,
-      },
-    })
+    try {
+      const { data, error } = await supabase.functions.invoke('gallery-create-room', {
+        body: {
+          walletAddress,
+          displayName,
+          electrogemTokenId: String(gemTokenId),
+        },
+      })
 
-    if (error || (data as { error?: string })?.error) {
-      toast.error((data as { error?: string })?.error || error?.message || 'Failed to create room.')
+      const payload = (data ?? {}) as CreateRoomResponse
+      if (error || payload.error) {
+        const message = extractInvokeError(data, error)
+        toast.error(message)
+        if (message.toLowerCase().includes('already has a personal gallery room')) {
+          await loadRooms({ silent: true })
+        }
+        return
+      }
+
+      toast.success('Personal gallery room created.')
+      await loadRooms({ silent: true })
+
+      if (payload.roomId) {
+        navigate(`/gallery/config/room/${payload.roomId}`)
+        return
+      }
+
+      const refreshed = await loadRooms({ silent: true })
+      const created = refreshed.find((room) => String(room.electrogem_token_id) === String(gemTokenId))
+      if (created) {
+        navigate(`/gallery/config/room/${created.id}`)
+      }
+    } catch (e) {
+      console.error('[PersonalGalleryRoomsPage] Create room failed:', e)
+      toast.error(e instanceof Error ? e.message : 'Failed to create room.')
+    } finally {
       setCreatingFor(null)
-      return
     }
-
-    toast.success('Personal gallery room created.')
-    await loadRooms()
-    setCreatingFor(null)
   }
 
   return (
@@ -136,7 +188,7 @@ export default function PersonalGalleryRoomsPage() {
         ) : (
           <div className="space-y-4">
             {ownedTokens.map((tokenId) => {
-              const room = roomByGem.get(tokenId)
+              const room = roomByGem.get(String(tokenId))
               return (
                 <Card key={tokenId} className="border-slate-800 bg-slate-900/80">
                   <CardHeader className="pb-3">
