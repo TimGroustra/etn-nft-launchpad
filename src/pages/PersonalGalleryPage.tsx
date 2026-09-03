@@ -64,7 +64,6 @@ export default function PersonalGalleryPage() {
 
   const handleLoadingComplete = useCallback(() => {
     setIsLoading(false)
-    setIsStarted(true)
   }, [])
 
   const handleFirstImageLoaded = useCallback(() => {

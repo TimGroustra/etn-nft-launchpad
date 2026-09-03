@@ -426,7 +426,11 @@ const NftGallery: React.FC<NftGalleryProps> = ({
     const { width: initialWidth, height: initialHeight } = getViewportSize();
     const camera = new THREE.PerspectiveCamera(75, initialWidth / initialHeight, 0.1, 1000);
     cameraRef.current = camera;
-    camera.position.set(0, 1.6, isPersonal ? 14 : 20);
+    if (isPersonal) {
+      camera.position.set(PERSONAL_LAYOUT.spawnX, PERSONAL_LAYOUT.spawnY, PERSONAL_LAYOUT.spawnZ);
+    } else {
+      camera.position.set(0, 1.6, 20);
+    }
     camera.rotation.order = 'YXZ';
 
     let renderer: THREE.WebGLRenderer;

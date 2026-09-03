@@ -27,6 +27,10 @@ export const PERSONAL_LAYOUT = {
   boundaryX: 14,
   boundaryZ: 9,
   segmentSize: 10,
+  /** Eye height spawn inside the south half of the room, facing north. */
+  spawnX: 0,
+  spawnY: 1.6,
+  spawnZ: 6,
 }
 
 export type PersonalPanelPlacement = {
