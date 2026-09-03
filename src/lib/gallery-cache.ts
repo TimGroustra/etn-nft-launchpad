@@ -103,6 +103,31 @@ export async function getCachedGalleryMetadataBatch(
   return result
 }
 
+/** Fast path: panel_key → cached metadata from the indexed panel-token table. */
+export async function fetchIndexedPanelGalleryMetadata(): Promise<Map<string, NftMetadata>> {
+  const { data: panelRows, error } = await supabase
+    .from('gallery_panel_tokens')
+    .select('panel_key, contract_address, token_id')
+
+  const byPanel = new Map<string, NftMetadata>()
+  if (error || !panelRows?.length) return byPanel
+
+  const pairs = panelRows.map((row) => ({
+    contractAddress: String(row.contract_address),
+    tokenId: Number(row.token_id),
+  }))
+  const cached = await getCachedGalleryMetadataBatch(pairs)
+
+  for (const row of panelRows) {
+    const contractAddress = String(row.contract_address)
+    const tokenId = Number(row.token_id)
+    const metadata = cached.get(cacheKey(contractAddress, tokenId))
+    if (metadata) byPanel.set(String(row.panel_key), metadata)
+  }
+
+  return byPanel
+}
+
 /** Indexed manifest: which configured panels have Supabase-cached media vs still warming. */
 export async function fetchGalleryPanelMediaManifest(): Promise<GalleryPanelMediaStatus[]> {
   const { data: panelRows, error: panelError } = await supabase

@@ -13,6 +13,7 @@ import {
   type PanelConfig,
 } from '@/gallery/galleryConfig';
 import {
+  fetchIndexedPanelGalleryMetadata,
   getCachedGalleryMetadata,
   getCachedGalleryMetadataBatch,
   getPrewarmedGalleryMetadata,
@@ -20,7 +21,6 @@ import {
   enqueueGalleryTokens,
   enqueueGalleryPanelTokens,
   prewarmGalleryMetadataCache,
-  syncGalleryPanelTokenIndex,
 } from '@/lib/gallery-cache';
 import { getGatewayCandidates } from '@/lib/gallery-fetcher/urlUtils';
 import type { NftSource, NftMetadata } from '@/lib/gallery-fetcher/nftFetcher';
@@ -43,7 +43,7 @@ const INNER_LOWER_PANEL_Y = 4.0;
 const UPPER_PANEL_Y = 12.0;
 const WALL_THICKNESS = 0.5;
 const BOUNDARY = ROOM_SIZE / 2 - 1.0;
-const PANEL_LOAD_CONCURRENCY = 8;
+const PANEL_LOAD_CONCURRENCY = 12;
 const SPLASH_FALLBACK_MS = 8000;
 
 interface Panel {
@@ -320,6 +320,23 @@ const NftGallery: React.FC<NftGalleryProps> = ({
     });
   }, []);
 
+  const applyPanelFromMetadata = useCallback(async (panel: Panel, metadata: NftMetadata) => {
+    if (panel.metadataUrl) return;
+    try {
+      const texture = await loadTexture(metadata.contentUrl, panel, metadata.contentType || '');
+      panel.mesh.material = new THREE.MeshBasicMaterial({ map: texture });
+      panel.metadataUrl = metadata.source;
+      panel.isVideo = isVideoContent(metadata.contentType || '', metadata.contentUrl);
+      panel.isGif = isGifContent(metadata.contentType || '', metadata.contentUrl);
+      const config = GALLERY_PANEL_CONFIG[panel.wallName];
+      const showArrows = config && config.tokenIds.length > 1;
+      panel.prevArrow.visible = showArrows;
+      panel.nextArrow.visible = showArrows;
+    } catch (e) {
+      console.error(e);
+    }
+  }, [loadTexture]);
+
   const updatePanelContent = useCallback(async (panel: Panel, source: NftSource | null) => {
     disposeTextureSafely(panel.mesh);
     panel.mesh.material = new THREE.MeshBasicMaterial({ color: 0x222222 });
@@ -335,20 +352,8 @@ const NftGallery: React.FC<NftGalleryProps> = ({
     }
     if (!metadata) return;
 
-    try {
-      const texture = await loadTexture(metadata.contentUrl, panel, metadata.contentType || '');
-      panel.mesh.material = new THREE.MeshBasicMaterial({ map: texture });
-      panel.metadataUrl = metadata.source;
-      panel.isVideo = isVideoContent(metadata.contentType || '', metadata.contentUrl);
-      panel.isGif = isGifContent(metadata.contentType || '', metadata.contentUrl);
-      const config = GALLERY_PANEL_CONFIG[panel.wallName];
-      const showArrows = config && config.tokenIds.length > 1;
-      panel.prevArrow.visible = showArrows;
-      panel.nextArrow.visible = showArrows;
-    } catch (e) {
-      console.error(e);
-    }
-  }, [loadTexture]);
+    await applyPanelFromMetadata(panel, metadata);
+  }, [applyPanelFromMetadata]);
 
   const performTeleport = (targetY: number) => {
     if (isTeleportingRef.current) return;
@@ -635,6 +640,9 @@ const NftGallery: React.FC<NftGalleryProps> = ({
 
     let stopLoad = false;
     const createPanels = async () => {
+      const indexedMetadataPromise = fetchIndexedPanelGalleryMetadata();
+      const hydratePromise = prefetchGalleryConfig();
+
       const pGeo = new THREE.PlaneGeometry(PANEL_WIDTH, PANEL_HEIGHT);
       const aShape = new THREE.Shape();
       aShape.moveTo(0, 0.15); aShape.lineTo(0.3, 0); aShape.lineTo(0, -0.15);
@@ -756,12 +764,53 @@ const NftGallery: React.FC<NftGalleryProps> = ({
         }
       });
 
-      await prefetchGalleryConfig();
-
-      onLoadingProgressRef.current?.(50);
+      onLoadingProgressRef.current?.(40);
       onLoadingMessageRef.current?.('Loading artwork…');
 
-      syncGalleryPanelTokenIndex();
+      const indexedByPanel = await indexedMetadataPromise;
+
+      const sortByProximity = (list: Panel[]) =>
+        [...list].sort((a, b) => {
+          const da = a.mesh.position.distanceToSquared(camera.position);
+          const db = b.mesh.position.distanceToSquared(camera.position);
+          return da - db;
+        });
+
+      const allPanels = sortByProximity([...groundPanels, ...innerPanels, ...firstPanels]);
+      const totalPanels = allPanels.length;
+      let loadedPanels = 0;
+
+      const loadPanelFromIndex = async (panel: Panel) => {
+        const metadata = indexedByPanel.get(panel.wallName);
+        if (!metadata || panel.metadataUrl) return;
+        const hadTexture = !!panel.metadataUrl;
+        await applyPanelFromMetadata(panel, metadata);
+        if (!hadTexture && panel.metadataUrl) {
+          reportFirstTexture();
+        }
+        loadedPanels += 1;
+        onLoadingProgressRef.current?.(40 + Math.round((50 * loadedPanels) / Math.max(totalPanels, 1)));
+      };
+
+      const runConcurrent = async (items: Panel[], worker: (panel: Panel) => Promise<void>) => {
+        let cursor = 0;
+        const runners = Array.from({ length: Math.min(PANEL_LOAD_CONCURRENCY, items.length) }, async () => {
+          while (cursor < items.length) {
+            if (stopLoad) return;
+            const panel = items[cursor++];
+            await worker(panel);
+          }
+        });
+        await Promise.all(runners);
+      };
+
+      const indexedPanels = allPanels.filter((panel) => indexedByPanel.has(panel.wallName));
+      void runConcurrent(sortByProximity(indexedPanels), loadPanelFromIndex);
+
+      await hydratePromise;
+      for (const panel of panelsRef.current) {
+        refreshPanelIfSourceChanged(panel);
+      }
 
       const tokenSources = getAllPanelTokenSources();
       const batchCache = await getCachedGalleryMetadataBatch(tokenSources);
@@ -782,18 +831,11 @@ const NftGallery: React.FC<NftGalleryProps> = ({
         enqueueGalleryPanelTokens();
       }
 
-      const sortByProximity = (list: Panel[]) =>
-        [...list].sort((a, b) => {
-          const da = a.mesh.position.distanceToSquared(camera.position);
-          const db = b.mesh.position.distanceToSquared(camera.position);
-          return da - db;
-        });
-
-      const allPanels = sortByProximity([...groundPanels, ...innerPanels, ...firstPanels]);
-      const totalPanels = allPanels.length;
-      let loadedPanels = 0;
-
       const loadPanelWithProgress = async (panel: Panel) => {
+        if (panel.metadataUrl) {
+          loadedPanels += 1;
+          return;
+        }
         const source = getCurrentNftSource(panel.wallName);
         const sourceKey = source ? `${source.contractAddress.toLowerCase()}:${source.tokenId}` : '';
         panelSourceKeys.set(panel, sourceKey);
@@ -806,18 +848,11 @@ const NftGallery: React.FC<NftGalleryProps> = ({
         }
 
         loadedPanels += 1;
-        onLoadingProgressRef.current?.(50 + Math.round((50 * loadedPanels) / Math.max(totalPanels, 1)));
+        onLoadingProgressRef.current?.(40 + Math.round((60 * loadedPanels) / Math.max(totalPanels, 1)));
       };
 
-      const loadPanelBatch = async (items: Panel[]) => {
-        for (let i = 0; i < items.length; i += PANEL_LOAD_CONCURRENCY) {
-          if (stopLoad) break;
-          const batch = items.slice(i, i + PANEL_LOAD_CONCURRENCY);
-          await Promise.all(batch.map((panel) => loadPanelWithProgress(panel)));
-        }
-      };
-
-      await loadPanelBatch(allPanels);
+      const remainingPanels = allPanels.filter((panel) => !panel.metadataUrl);
+      await runConcurrent(remainingPanels, loadPanelWithProgress);
 
       window.clearTimeout(splashFallbackTimer);
       maybeDismissSplash();
