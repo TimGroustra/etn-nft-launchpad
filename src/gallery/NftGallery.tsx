@@ -13,7 +13,7 @@ import {
   type PanelConfig,
 } from '@/gallery/galleryConfig';
 import {
-  fetchIndexedPanelGalleryMetadata,
+  prefetchGalleryPanelCache,
   getCachedGalleryMetadata,
   getCachedGalleryMetadataBatch,
   getPrewarmedGalleryMetadata,
@@ -389,6 +389,9 @@ const NftGallery: React.FC<NftGalleryProps> = ({
     loadingCompleteCalledRef.current = false;
     setWebglError(null);
 
+    const panelCachePromise = prefetchGalleryPanelCache();
+    const hydratePromise = prefetchGalleryConfig();
+
     // Full detail on desktop; lighter settings on mobile for performance.
     const highQuality = !window.matchMedia('(max-width: 768px)').matches;
 
@@ -640,9 +643,6 @@ const NftGallery: React.FC<NftGalleryProps> = ({
 
     let stopLoad = false;
     const createPanels = async () => {
-      const indexedMetadataPromise = fetchIndexedPanelGalleryMetadata();
-      const hydratePromise = prefetchGalleryConfig();
-
       const pGeo = new THREE.PlaneGeometry(PANEL_WIDTH, PANEL_HEIGHT);
       const aShape = new THREE.Shape();
       aShape.moveTo(0, 0.15); aShape.lineTo(0.3, 0); aShape.lineTo(0, -0.15);
@@ -767,7 +767,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       onLoadingProgressRef.current?.(40);
       onLoadingMessageRef.current?.('Loading artwork…');
 
-      const indexedByPanel = await indexedMetadataPromise;
+      const indexedByPanel = await panelCachePromise;
 
       const sortByProximity = (list: Panel[]) =>
         [...list].sort((a, b) => {
@@ -807,66 +807,67 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       const indexedPanels = allPanels.filter((panel) => indexedByPanel.has(panel.wallName));
       void runConcurrent(sortByProximity(indexedPanels), loadPanelFromIndex);
 
-      await hydratePromise;
-      for (const panel of panelsRef.current) {
-        refreshPanelIfSourceChanged(panel);
-      }
-
-      const tokenSources = getAllPanelTokenSources();
-      const batchCache = await getCachedGalleryMetadataBatch(tokenSources);
-      prewarmGalleryMetadataCache(batchCache);
-
-      const uncachedByContract = new Map<string, number[]>();
-      for (const source of tokenSources) {
-        const key = `${source.contractAddress.toLowerCase()}:${source.tokenId}`;
-        if (batchCache.has(key)) continue;
-        const contract = source.contractAddress.toLowerCase();
-        if (!uncachedByContract.has(contract)) uncachedByContract.set(contract, []);
-        uncachedByContract.get(contract)!.push(source.tokenId);
-      }
-      if (uncachedByContract.size > 0) {
-        for (const [contractAddress, tokenIds] of uncachedByContract) {
-          enqueueGalleryTokens(contractAddress, tokenIds);
+      void (async () => {
+        await hydratePromise;
+        for (const panel of panelsRef.current) {
+          refreshPanelIfSourceChanged(panel);
         }
-        enqueueGalleryPanelTokens();
-      }
 
-      const loadPanelWithProgress = async (panel: Panel) => {
-        if (panel.metadataUrl) {
+        const tokenSources = getAllPanelTokenSources();
+        const batchCache = await getCachedGalleryMetadataBatch(tokenSources);
+        prewarmGalleryMetadataCache(batchCache);
+
+        const uncachedByContract = new Map<string, number[]>();
+        for (const source of tokenSources) {
+          const key = `${source.contractAddress.toLowerCase()}:${source.tokenId}`;
+          if (batchCache.has(key)) continue;
+          const contract = source.contractAddress.toLowerCase();
+          if (!uncachedByContract.has(contract)) uncachedByContract.set(contract, []);
+          uncachedByContract.get(contract)!.push(source.tokenId);
+        }
+        if (uncachedByContract.size > 0) {
+          for (const [contractAddress, tokenIds] of uncachedByContract) {
+            enqueueGalleryTokens(contractAddress, tokenIds);
+          }
+          enqueueGalleryPanelTokens();
+        }
+
+        const loadPanelWithProgress = async (panel: Panel) => {
+          if (panel.metadataUrl) {
+            loadedPanels += 1;
+            return;
+          }
+          const source = getCurrentNftSource(panel.wallName);
+          const sourceKey = source ? `${source.contractAddress.toLowerCase()}:${source.tokenId}` : '';
+          panelSourceKeys.set(panel, sourceKey);
+
+          const hadTexture = !!panel.metadataUrl;
+          await updatePanelContent(panel, source);
+
+          if (!hadTexture && panel.metadataUrl) {
+            reportFirstTexture();
+          }
+
           loadedPanels += 1;
-          return;
+          onLoadingProgressRef.current?.(40 + Math.round((60 * loadedPanels) / Math.max(totalPanels, 1)));
+        };
+
+        const remainingPanels = allPanels.filter((panel) => !panel.metadataUrl);
+        await runConcurrent(remainingPanels, loadPanelWithProgress);
+
+        window.clearTimeout(splashFallbackTimer);
+        maybeDismissSplash();
+        unsubscribeConfig();
+
+        if (!stopLoad) {
+          const scheduleDecor = () => loadDecorativeItems();
+          if ('requestIdleCallback' in window) {
+            requestIdleCallback(scheduleDecor);
+          } else {
+            scheduleDecor();
+          }
         }
-        const source = getCurrentNftSource(panel.wallName);
-        const sourceKey = source ? `${source.contractAddress.toLowerCase()}:${source.tokenId}` : '';
-        panelSourceKeys.set(panel, sourceKey);
-
-        const hadTexture = !!panel.metadataUrl;
-        await updatePanelContent(panel, source);
-
-        if (!hadTexture && panel.metadataUrl) {
-          reportFirstTexture();
-        }
-
-        loadedPanels += 1;
-        onLoadingProgressRef.current?.(40 + Math.round((60 * loadedPanels) / Math.max(totalPanels, 1)));
-      };
-
-      const remainingPanels = allPanels.filter((panel) => !panel.metadataUrl);
-      await runConcurrent(remainingPanels, loadPanelWithProgress);
-
-      window.clearTimeout(splashFallbackTimer);
-      maybeDismissSplash();
-      unsubscribeConfig();
-
-      // 3. After all art loaded, load decorative furniture and vegetation on upper level
-      if (!stopLoad) {
-        const scheduleDecor = () => loadDecorativeItems();
-        if ('requestIdleCallback' in window) {
-          requestIdleCallback(scheduleDecor);
-        } else {
-          scheduleDecor();
-        }
-      }
+      })();
     };
     createPanels();
 

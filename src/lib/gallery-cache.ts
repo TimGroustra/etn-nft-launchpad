@@ -103,7 +103,53 @@ export async function getCachedGalleryMetadataBatch(
   return result
 }
 
-/** Fast path: panel_key → cached metadata from the indexed panel-token table. */
+/** Fast path: panel_key → cached metadata (indexed table, then gallery_config fallback). */
+async function fetchConfiguredPanelGalleryMetadata(): Promise<Map<string, NftMetadata>> {
+  const { data: configRows, error } = await supabase
+    .from('gallery_config')
+    .select('panel_key, contract_address, default_token_id')
+    .not('contract_address', 'is', null)
+
+  const byPanel = new Map<string, NftMetadata>()
+  if (error || !configRows?.length) return byPanel
+
+  const pairs = configRows.map((row) => ({
+    panelKey: String(row.panel_key),
+    contractAddress: String(row.contract_address),
+    tokenId: Math.max(1, Number(row.default_token_id) || 1),
+  }))
+
+  const cached = await getCachedGalleryMetadataBatch(
+    pairs.map((pair) => ({ contractAddress: pair.contractAddress, tokenId: pair.tokenId })),
+  )
+
+  for (const pair of pairs) {
+    const metadata = cached.get(cacheKey(pair.contractAddress, pair.tokenId))
+    if (metadata) byPanel.set(pair.panelKey, metadata)
+  }
+
+  return byPanel
+}
+
+export async function fetchGalleryPanelCacheMetadata(): Promise<Map<string, NftMetadata>> {
+  const indexed = await fetchIndexedPanelGalleryMetadata()
+  if (indexed.size > 0) return indexed
+  return fetchConfiguredPanelGalleryMetadata()
+}
+
+let panelCachePrefetch: Promise<Map<string, NftMetadata>> | null = null
+
+/** Start loading panel artwork metadata as early as possible (e.g. on GalleryPage mount). */
+export function prefetchGalleryPanelCache(): Promise<Map<string, NftMetadata>> {
+  if (!panelCachePrefetch) {
+    panelCachePrefetch = fetchGalleryPanelCacheMetadata().catch((error) => {
+      panelCachePrefetch = null
+      throw error
+    })
+  }
+  return panelCachePrefetch
+}
+
 export async function fetchIndexedPanelGalleryMetadata(): Promise<Map<string, NftMetadata>> {
   const { data: panelRows, error } = await supabase
     .from('gallery_panel_tokens')
@@ -157,8 +203,8 @@ export async function fetchGalleryPanelMediaManifest(): Promise<GalleryPanelMedi
   })
 }
 
-const GALLERY_CACHE_POLL_MS = 1500
-const GALLERY_CACHE_POLL_ATTEMPTS = 20
+const GALLERY_CACHE_POLL_MS = 400
+const GALLERY_CACHE_POLL_ATTEMPTS = 15
 
 /** Poll Supabase only — never hits chain RPC. Used when gallery cache is still warming. */
 export async function waitForGalleryCachedMetadata(

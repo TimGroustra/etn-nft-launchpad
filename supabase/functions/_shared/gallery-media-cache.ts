@@ -520,25 +520,27 @@ export async function syncGalleryPanelTokens(supabase: SupabaseClient) {
     )
 
     const tokenId = resolvePanelDisplayTokenId(defaultTokenId, showCollection, tokenIds)
-    if (!tokenId) continue
+      ?? defaultTokenId
 
     panelTokens.push({ panel_key: panelKey, contract_address: contract, token_id: tokenId })
   }
 
+  if (panelTokens.length === 0) {
+    return { synced: 0, skipped: true }
+  }
+
   await supabase.from('gallery_panel_tokens').delete().neq('panel_key', '')
 
-  if (panelTokens.length > 0) {
-    const { error } = await supabase.from('gallery_panel_tokens').upsert(
-      panelTokens.map((row) => ({
-        panel_key: row.panel_key,
-        contract_address: row.contract_address,
-        token_id: row.token_id,
-        updated_at: new Date().toISOString(),
-      })),
-      { onConflict: 'panel_key' },
-    )
-    if (error) throw new Error(error.message)
-  }
+  const { error } = await supabase.from('gallery_panel_tokens').upsert(
+    panelTokens.map((row) => ({
+      panel_key: row.panel_key,
+      contract_address: row.contract_address,
+      token_id: row.token_id,
+      updated_at: new Date().toISOString(),
+    })),
+    { onConflict: 'panel_key' },
+  )
+  if (error) throw new Error(error.message)
 
   return { synced: panelTokens.length }
 }
