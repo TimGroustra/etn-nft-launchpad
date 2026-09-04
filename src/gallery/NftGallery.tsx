@@ -858,20 +858,22 @@ const NftGallery: React.FC<NftGalleryProps> = ({
           return group;
         };
 
-        // Table top is 2.4 × 1.4 (x × z). Seat L-corners face inward; chaises run past the short sides.
-        const loungeShiftX = 0.5;
-        const loungeSeatZ = 1.68;
-        const seatPullIn = 0.28;
-        const chaiseAlongTable = 0.78;
+        // Bracket the 2.4 × 1.4 table with mirrored L-couches and ~0.24m padding.
+        const tableHalfZ = 0.7;
+        const bracketPad = 0.24;
+        const loungeShiftX = 0.06;
+        const loungeSeatZ = tableHalfZ + bracketPad + 0.35;
+        const seatPullIn = 0.58;
+        const chaiseAlongTable = 0.5;
 
-        const couchSouth = buildSofa(3.75);
+        const couchSouth = buildSofa(3.8);
         couchSouth.position.set(loungeShiftX, pitY, loungeSeatZ);
         couchSouth.rotation.y = Math.PI;
         couchSouth.translateZ(seatPullIn);
         couchSouth.translateX(chaiseAlongTable);
         scene.add(couchSouth);
 
-        const couchNorth = buildSofa(3.75);
+        const couchNorth = buildSofa(3.8);
         couchNorth.position.set(loungeShiftX, pitY, -loungeSeatZ);
         couchNorth.rotation.y = 0;
         couchNorth.translateZ(-seatPullIn);
