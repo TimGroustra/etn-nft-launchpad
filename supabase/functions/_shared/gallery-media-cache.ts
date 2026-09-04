@@ -338,7 +338,9 @@ export async function enqueueGalleryTokens(
       .eq('token_id', tokenId)
       .maybeSingle()
 
-    if (queued?.status === 'failed') {
+    if (queued?.status === 'processing') continue
+
+    if (queued) {
       await supabase
         .from('gallery_cache_queue')
         .update({
@@ -348,14 +350,6 @@ export async function enqueueGalleryTokens(
         })
         .eq('contract_address', contract)
         .eq('token_id', tokenId)
-      continue
-    }
-
-    if (
-      queued?.status === 'done' ||
-      queued?.status === 'pending' ||
-      queued?.status === 'processing'
-    ) {
       continue
     }
 
