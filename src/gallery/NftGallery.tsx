@@ -122,6 +122,64 @@ const disposeTextureSafely = (mesh: THREE.Mesh) => {
 
 /** Coffee-table top footprint (matches createProceduralTable). */
 const PERSONAL_COFFEE_TABLE_TOP = { width: 2.4, depth: 1.4 } as const;
+/** Inner seating edges sit on a rectangle 1.6× the table top (e.g. 10×15 → 16×24). */
+const PERSONAL_LOUNGE_COUCH_PADDING_RATIO = 0.3;
+
+function getPersonalCouchBracketHalfExtents() {
+  const paddingX = PERSONAL_COFFEE_TABLE_TOP.width * PERSONAL_LOUNGE_COUCH_PADDING_RATIO;
+  const paddingZ = PERSONAL_COFFEE_TABLE_TOP.depth * PERSONAL_LOUNGE_COUCH_PADDING_RATIO;
+  return {
+    x: PERSONAL_COFFEE_TABLE_TOP.width / 2 + paddingX,
+    z: PERSONAL_COFFEE_TABLE_TOP.depth / 2 + paddingZ,
+  };
+}
+
+function measureSofaInnerCornerAtOrigin(couch: THREE.Group): THREE.Vector2 {
+  couch.position.set(0, couch.position.y, 0);
+  couch.updateMatrixWorld(true);
+
+  let best: THREE.Vector3 | null = null;
+  let bestDist = Infinity;
+  couch.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    const position = child.geometry.attributes.position as THREE.BufferAttribute;
+    const vertex = new THREE.Vector3();
+    for (let i = 0; i < position.count; i++) {
+      vertex.fromBufferAttribute(position, i);
+      vertex.applyMatrix4(child.matrixWorld);
+      if (vertex.y > 0.2) continue;
+      const dist = vertex.x * vertex.x + vertex.z * vertex.z;
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = vertex.clone();
+      }
+    }
+  });
+
+  if (!best) return new THREE.Vector2(0, 0);
+  return new THREE.Vector2(best.x, best.z);
+}
+
+/**
+ * Place an L-couch so its inner L vertex sits on a bracket corner and the inner
+ * edges run parallel to the table long/short sides (30% padding per axis).
+ */
+function placeCornerBracketCouch(
+  couch: THREE.Group,
+  floorY: number,
+  bracketCornerX: number,
+  bracketCornerZ: number,
+) {
+  couch.rotation.y = Math.PI;
+  couch.position.set(0, floorY, 0);
+  couch.updateMatrixWorld(true);
+  const innerCorner = measureSofaInnerCornerAtOrigin(couch);
+  couch.position.set(
+    bracketCornerX - innerCorner.x,
+    floorY,
+    bracketCornerZ - innerCorner.y,
+  );
+}
 
 function createProceduralTable() {
   const group = new THREE.Group();
@@ -152,56 +210,6 @@ function createProceduralTable() {
   group.add(base);
 
   return group;
-}
-
-function alignCouchInnerCorner(
-  couch: THREE.Group,
-  floorY: number,
-  targetInnerX: number,
-  targetInnerZ: number,
-  signX: number,
-  signZ: number,
-) {
-  couch.position.set(0, floorY, 0);
-  couch.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(couch);
-  const innerX = signX > 0 ? box.min.x : box.max.x;
-  const innerZ = signZ > 0 ? box.min.z : box.max.z;
-  couch.position.set(targetInnerX - innerX, floorY, targetInnerZ - innerZ);
-}
-
-function couchFacesTable(couch: THREE.Group): boolean {
-  couch.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(couch);
-  const cx = (box.min.x + box.max.x) / 2;
-  const cz = (box.min.z + box.max.z) / 2;
-  const toTableX = -cx;
-  const toTableZ = -cz;
-  const len = Math.hypot(toTableX, toTableZ) || 1;
-  const fwdX = Math.sin(couch.rotation.y);
-  const fwdZ = Math.cos(couch.rotation.y);
-  return (fwdX * toTableX + fwdZ * toTableZ) / len > 0.15;
-}
-
-/** Place an L-couch at a table corner with even padding; seating opens toward the table. */
-function placeCornerBracketCouch(
-  couch: THREE.Group,
-  floorY: number,
-  tableCornerX: number,
-  tableCornerZ: number,
-  padding: number,
-) {
-  const signX = Math.sign(tableCornerX) || 1;
-  const signZ = Math.sign(tableCornerZ) || 1;
-  const targetInnerX = tableCornerX + signX * padding;
-  const targetInnerZ = tableCornerZ + signZ * padding;
-
-  couch.rotation.y = Math.atan2(-tableCornerX, -tableCornerZ);
-  alignCouchInnerCorner(couch, floorY, targetInnerX, targetInnerZ, signX, signZ);
-  if (!couchFacesTable(couch)) {
-    couch.rotation.y += Math.PI;
-    alignCouchInnerCorner(couch, floorY, targetInnerX, targetInnerZ, signX, signZ);
-  }
 }
 
 function createDiamondTeleporter() {
@@ -911,16 +919,14 @@ const NftGallery: React.FC<NftGalleryProps> = ({
           return group;
         };
 
-        const tableHalfX = PERSONAL_COFFEE_TABLE_TOP.width / 2;
-        const tableHalfZ = PERSONAL_COFFEE_TABLE_TOP.depth / 2;
-        const couchTablePadding = 0.28;
+        const bracket = getPersonalCouchBracketHalfExtents();
 
         const couchSW = buildSofa(3.8);
-        placeCornerBracketCouch(couchSW, pitY, -tableHalfX, tableHalfZ, couchTablePadding);
+        placeCornerBracketCouch(couchSW, pitY, -bracket.x, bracket.z);
         scene.add(couchSW);
 
         const couchNE = buildSofa(3.8);
-        placeCornerBracketCouch(couchNE, pitY, tableHalfX, -tableHalfZ, couchTablePadding);
+        placeCornerBracketCouch(couchNE, pitY, bracket.x, -bracket.z);
         scene.add(couchNE);
       });
 
