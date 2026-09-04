@@ -61,6 +61,16 @@ function contextKey(options: GalleryInitOptions): GalleryContextKey {
   return options.roomId ? `room:${options.roomId}` : 'main'
 }
 
+function contextOptionsFromKey(key: GalleryContextKey): GalleryInitOptions {
+  return key.startsWith('room:')
+    ? { layout: 'personal', roomId: key.slice(5) }
+    : { layout: 'main', roomId: null }
+}
+
+function stateForContext(contextKey: GalleryContextKey = activeContextKey): GalleryContextState {
+  return getOrCreateContext(contextKey, contextOptionsFromKey(contextKey))
+}
+
 const contexts = new Map<GalleryContextKey, GalleryContextState>()
 let activeContextKey: GalleryContextKey = 'main'
 
@@ -126,10 +136,7 @@ function getOrCreateContext(key: GalleryContextKey, options: GalleryInitOptions)
 }
 
 function activeState(): GalleryContextState {
-  return getOrCreateContext(activeContextKey, {
-    layout: activeContextKey.startsWith('room:') ? 'personal' : 'main',
-    roomId: activeContextKey.startsWith('room:') ? activeContextKey.slice(5) : null,
-  })
+  return stateForContext(activeContextKey)
 }
 
 function notifyConfigReady(state: GalleryContextState) {
@@ -272,12 +279,18 @@ async function initializeGalleryConfig(options: GalleryInitOptions = {}): Promis
   await loadPanelAssignmentsFromSupabase(state)
 }
 
+export type { GalleryContextKey }
+export { contextKey as getGalleryContextKey }
+
 export function isGalleryConfigReady(): boolean {
   return activeState().configHydrated
 }
 
-export function onGalleryConfigReady(listener: () => void): () => void {
-  const state = activeState()
+export function onGalleryConfigReady(
+  listener: () => void,
+  contextKey: GalleryContextKey = activeContextKey,
+): () => void {
+  const state = stateForContext(contextKey)
   if (state.configHydrated) {
     listener()
     return () => {}
@@ -299,8 +312,8 @@ export function prefetchGalleryConfig(options: GalleryInitOptions = {}): Promise
   return state.initPromise
 }
 
-export function getGalleryPanelConfig(): PanelConfig {
-  return activeState().galleryConfig
+export function getGalleryPanelConfig(contextKey: GalleryContextKey = activeContextKey): PanelConfig {
+  return stateForContext(contextKey).galleryConfig
 }
 
 /** @deprecated Use getGalleryPanelConfig() — kept for gradual migration */
@@ -314,8 +327,11 @@ export const GALLERY_PANEL_CONFIG: PanelConfig = new Proxy({} as PanelConfig, {
   },
 })
 
-export const getCurrentNftSource = (wallName: string) => {
-  const config = activeState().galleryConfig[wallName]
+export const getCurrentNftSource = (
+  wallName: string,
+  contextKey: GalleryContextKey = activeContextKey,
+) => {
+  const config = stateForContext(contextKey).galleryConfig[wallName]
   if (!config?.contractAddress || config.tokenIds.length === 0) return null
   return {
     contractAddress: config.contractAddress,
@@ -323,8 +339,12 @@ export const getCurrentNftSource = (wallName: string) => {
   }
 }
 
-export const updatePanelIndex = (wallName: string, direction: 'next' | 'prev') => {
-  const config = activeState().galleryConfig[wallName]
+export const updatePanelIndex = (
+  wallName: string,
+  direction: 'next' | 'prev',
+  contextKey: GalleryContextKey = activeContextKey,
+) => {
+  const config = stateForContext(contextKey).galleryConfig[wallName]
   if (!config || config.tokenIds.length === 0) return false
 
   const delta = direction === 'next' ? 1 : -1
@@ -336,13 +356,15 @@ export const updatePanelIndex = (wallName: string, direction: 'next' | 'prev') =
   return false
 }
 
-export function getAllPanelTokenSources(): Array<{ contractAddress: string; tokenId: number }> {
-  const galleryConfig = activeState().galleryConfig
+export function getAllPanelTokenSources(
+  contextKey: GalleryContextKey = activeContextKey,
+): Array<{ contractAddress: string; tokenId: number }> {
+  const galleryConfig = stateForContext(contextKey).galleryConfig
   const seen = new Set<string>()
   const sources: Array<{ contractAddress: string; tokenId: number }> = []
 
   for (const panelKey of Object.keys(galleryConfig)) {
-    const source = getCurrentNftSource(panelKey)
+    const source = getCurrentNftSource(panelKey, contextKey)
     if (!source) continue
     const key = `${source.contractAddress.toLowerCase()}:${source.tokenId}`
     if (seen.has(key)) continue

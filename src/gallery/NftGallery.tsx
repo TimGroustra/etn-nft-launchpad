@@ -5,7 +5,8 @@ import * as THREE from 'three';
 import { RectAreaLightUniformsLib, GLTFLoader } from 'three-stdlib';
 import {
   prefetchGalleryConfig,
-  GALLERY_PANEL_CONFIG,
+  getGalleryContextKey,
+  type GalleryContextKey,
   getGalleryPanelConfig,
   getCurrentNftSource,
   getAllPanelTokenSources,
@@ -58,8 +59,8 @@ interface Panel {
   gifStopFunction: (() => void) | null;
 }
 
-function syncPanelArrowVisibility(panel: Panel) {
-  const config = GALLERY_PANEL_CONFIG[panel.wallName];
+function syncPanelArrowVisibility(panel: Panel, galleryContextKey: GalleryContextKey) {
+  const config = getGalleryPanelConfig(galleryContextKey)[panel.wallName];
   const showArrows = Boolean(config?.tokenIds?.length && config.tokenIds.length > 1);
   panel.prevArrow.visible = showArrows;
   panel.nextArrow.visible = showArrows;
@@ -269,6 +270,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const panelsRef = useRef<Panel[]>([]);
+  const galleryContextKeyRef = useRef<GalleryContextKey>('main');
   const teleportButtonsRef = useRef<THREE.Group[]>([]);
   const fadeMaterialRef = useRef<THREE.MeshBasicMaterial | null>(null);
   const fadeScreenRef = useRef<THREE.Mesh | null>(null);
@@ -387,7 +389,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       panel.metadataUrl = metadata.source;
       panel.isVideo = isVideoContent(metadata.contentType || '', metadata.contentUrl);
       panel.isGif = isGifContent(metadata.contentType || '', metadata.contentUrl);
-      syncPanelArrowVisibility(panel);
+      syncPanelArrowVisibility(panel, galleryContextKeyRef.current);
     } catch (e) {
       console.error(e);
     }
@@ -456,6 +458,8 @@ const NftGallery: React.FC<NftGalleryProps> = ({
     setWebglError(null);
 
     const galleryInit = { layout, roomId: roomId ?? null } as const;
+    const galleryContextKey = getGalleryContextKey(galleryInit);
+    galleryContextKeyRef.current = galleryContextKey;
     const panelCachePromise = prefetchGalleryPanelCache(
       layout === 'personal' && roomId ? { roomId } : {},
     );
@@ -1037,7 +1041,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       const panelSourceKeys = new Map<Panel, string>();
 
       const refreshPanelIfSourceChanged = (panel: Panel) => {
-        const source = getCurrentNftSource(panel.wallName);
+        const source = getCurrentNftSource(panel.wallName, galleryContextKey);
         const nextKey = source ? `${source.contractAddress.toLowerCase()}:${source.tokenId}` : '';
         const prevKey = panelSourceKeys.get(panel) ?? '';
         if (nextKey !== prevKey) {
@@ -1049,9 +1053,9 @@ const NftGallery: React.FC<NftGalleryProps> = ({
       const unsubscribeConfig = onGalleryConfigReady(() => {
         for (const panel of panelsRef.current) {
           refreshPanelIfSourceChanged(panel);
-          syncPanelArrowVisibility(panel);
+          syncPanelArrowVisibility(panel, galleryContextKey);
         }
-      });
+      }, galleryContextKey);
 
       onLoadingProgressRef.current?.(40);
       onLoadingMessageRef.current?.('Loading artwork…');
@@ -1101,10 +1105,10 @@ const NftGallery: React.FC<NftGalleryProps> = ({
         await configPromise;
         for (const panel of panelsRef.current) {
           refreshPanelIfSourceChanged(panel);
-          syncPanelArrowVisibility(panel);
+          syncPanelArrowVisibility(panel, galleryContextKeyRef.current);
         }
 
-        const tokenSources = getAllPanelTokenSources();
+        const tokenSources = getAllPanelTokenSources(galleryContextKey);
         const batchCache = await getCachedGalleryMetadataBatch(tokenSources);
         prewarmGalleryMetadataCache(batchCache);
 
@@ -1113,7 +1117,7 @@ const NftGallery: React.FC<NftGalleryProps> = ({
             loadedPanels += 1;
             return;
           }
-          const source = getCurrentNftSource(panel.wallName);
+          const source = getCurrentNftSource(panel.wallName, galleryContextKey);
           const sourceKey = source ? `${source.contractAddress.toLowerCase()}:${source.tokenId}` : '';
           panelSourceKeys.set(panel, sourceKey);
 
@@ -1197,12 +1201,12 @@ const NftGallery: React.FC<NftGalleryProps> = ({
             const p = panelsRef.current.find(p => p.mesh === hit || p.prevArrow === hit || p.nextArrow === hit);
             if (p) {
               if (hit === p.prevArrow || hit === p.nextArrow) {
-                if (updatePanelIndex(p.wallName, hit === p.nextArrow ? 'next' : 'prev')) {
-                  syncPanelArrowVisibility(p);
-                  updatePanelContent(p, getCurrentNftSource(p.wallName));
+                if (updatePanelIndex(p.wallName, hit === p.nextArrow ? 'next' : 'prev', galleryContextKey)) {
+                  syncPanelArrowVisibility(p, galleryContextKey);
+                  updatePanelContent(p, getCurrentNftSource(p.wallName, galleryContextKey));
                 }
               } else if (p.metadataUrl) {
-                const panelConfig = getGalleryPanelConfig();
+                const panelConfig = getGalleryPanelConfig(galleryContextKey);
                 const cfg = panelConfig[p.wallName];
                 if (!cfg) return;
                 const tokenId = cfg.tokenIds[cfg.currentIndex];

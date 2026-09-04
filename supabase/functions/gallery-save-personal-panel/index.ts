@@ -151,7 +151,7 @@ serve(async (req) => {
     )
 
     await syncGalleryPanelTokens(supabase, roomId)
-    await pruneOrphanedGalleryMedia(supabase, roomId)
+    await pruneOrphanedGalleryMedia(supabase)
 
     const origin =
       Deno.env.get('METADATA_PUBLIC_ORIGIN')?.trim() ||

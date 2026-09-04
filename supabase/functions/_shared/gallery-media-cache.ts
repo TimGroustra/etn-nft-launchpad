@@ -442,22 +442,13 @@ export function resolvePanelDisplayTokenId(
   return tokenIds[0]
 }
 
-async function collectConfiguredGalleryTokenKeys(
-  supabase: SupabaseClient,
-  scopeRoomId?: string | null,
-): Promise<Set<string>> {
+async function collectConfiguredGalleryTokenKeys(supabase: SupabaseClient): Promise<Set<string>> {
   const keys = new Set<string>()
 
-  let configQuery = supabase
+  const { data: configRows } = await supabase
     .from('gallery_config')
     .select('contract_address, default_token_id, show_collection, allowed_token_ids, room_id')
     .not('contract_address', 'is', null)
-
-  if (scopeRoomId) {
-    configQuery = configQuery.eq('room_id', scopeRoomId)
-  }
-
-  const { data: configRows } = await configQuery
 
   const contracts = [
     ...new Set(
@@ -510,12 +501,9 @@ async function collectConfiguredGalleryTokenKeys(
     keys.add(`${contract}:${defaultTokenId}`)
   }
 
-  let panelQuery = supabase.from('gallery_panel_tokens').select('contract_address, token_id, room_id')
-  if (scopeRoomId) {
-    panelQuery = panelQuery.eq('room_id', scopeRoomId)
-  }
-
-  const { data: panelRows } = await panelQuery
+  const { data: panelRows } = await supabase
+    .from('gallery_panel_tokens')
+    .select('contract_address, token_id, room_id')
 
   for (const row of panelRows ?? []) {
     keys.add(`${String(row.contract_address).toLowerCase()}:${Number(row.token_id)}`)
@@ -580,11 +568,9 @@ export async function syncGalleryPanelTokens(supabase: SupabaseClient, roomId?: 
 }
 
 /** Remove cached media that is no longer referenced by any gallery panel token. */
-export async function pruneOrphanedGalleryMedia(
-  supabase: SupabaseClient,
-  scopeRoomId?: string | null,
-) {
-  const activeKeys = await collectConfiguredGalleryTokenKeys(supabase, scopeRoomId)
+export async function pruneOrphanedGalleryMedia(supabase: SupabaseClient) {
+  // gallery_media_cache is shared across main + personal rooms — always use global keys.
+  const activeKeys = await collectConfiguredGalleryTokenKeys(supabase)
 
   // Panel index not ready yet — never wipe cache while gallery_config still has panels.
   if (activeKeys.size === 0) {

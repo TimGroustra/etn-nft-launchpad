@@ -143,7 +143,7 @@ serve(async (req) => {
       { onConflict: 'panel_key' },
     )
     await syncGalleryPanelTokens(supabase, null)
-    await pruneOrphanedGalleryMedia(supabase, null)
+    await pruneOrphanedGalleryMedia(supabase)
 
     if (lockDurationDays === 0) {
       await supabase.from('panel_locks').delete().eq('panel_id', panelKey)
