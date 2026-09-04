@@ -104,18 +104,19 @@ export function resolveGalleryPanelTokenIds(
 ): GalleryPanelTokenResolution {
   const minted = sortMintedTokenIds(mintedTokenIds)
   const pinnedId = Math.max(1, defaultTokenId)
+  const allowed = allowedTokenIds?.length ? sortMintedTokenIds(allowedTokenIds) : null
 
   let pool = minted
-  if (allowedTokenIds && allowedTokenIds.length > 0) {
-    const allowed = new Set(allowedTokenIds)
-    pool = minted.filter((id) => allowed.has(id))
+  if (allowed) {
+    const fromMinted = minted.filter((id) => allowed.includes(id))
+    pool = fromMinted.length > 0 ? fromMinted : allowed
   }
 
   if (pool.length === 0) {
     return { tokenIds: [], mintedTokenIds: minted }
   }
 
-  if (showCollection) {
+  if (allowed || showCollection) {
     return { tokenIds: pool, mintedTokenIds: minted }
   }
 

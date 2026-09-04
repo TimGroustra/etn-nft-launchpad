@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { Footprints, Info } from 'lucide-react'
 import NftGallery from '@/gallery/NftGallery'
 import LoadingSplash from '@/components/gallery/LoadingSplash'
+import { personalGalleryRoomTitle } from '@/lib/personal-gallery'
 import { prefetchGalleryConfig } from '@/gallery/galleryConfig'
 import { prefetchGalleryPanelCache } from '@/lib/gallery-cache'
 import { supabase } from '@/lib/supabase'
@@ -111,7 +112,7 @@ export default function PersonalGalleryPage() {
         >
           <div className="mx-4 max-w-sm rounded-2xl border border-white/10 bg-[#0b1220]/90 p-8 text-center shadow-2xl backdrop-blur-md">
             <h2 className="mb-2 text-3xl font-black uppercase italic tracking-tight text-cyan-400">
-              {room.display_name}
+              {personalGalleryRoomTitle(room.display_name)}
             </h2>
             <p className="mb-6 text-sm text-white/70">A personal ElectroGem gallery room.</p>
             <div className="mb-6 space-y-3 border-t border-white/5 pt-4 text-left">
@@ -147,7 +148,7 @@ export default function PersonalGalleryPage() {
       {isStarted && (
         <>
           <div className="pointer-events-none fixed bottom-4 left-4 right-4 z-20 mx-auto max-w-xs rounded border border-white/5 bg-black/40 p-2 text-center text-[10px] text-white backdrop-blur-sm sm:text-xs">
-            {room.display_name} · Drag to look · Click panels for marketplaces
+            {personalGalleryRoomTitle(room.display_name)} · Drag to look · Click panels for marketplaces
           </div>
           <div className="fixed bottom-16 right-6 z-30">
             <button

@@ -33,6 +33,12 @@ export function personalGalleryShareUrl(slug: string): string {
   return `${origin}/gallery/room/${slug}`
 }
 
+export function personalGalleryRoomTitle(displayName: string): string {
+  const trimmed = displayName.trim()
+  if (!trimmed) return 'Gallery Room'
+  return `${trimmed} Gallery Room`
+}
+
 export function slugifyRoomName(name: string): string {
   return name
     .toLowerCase()

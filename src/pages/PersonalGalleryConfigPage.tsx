@@ -12,7 +12,7 @@ import SettingsPanel from '@/components/gallery-config/SettingsPanel'
 import { personalFriendlyLabel, personalPanelKeys } from '@/components/gallery-config/personalPanelKeys'
 import { useAvailableGems } from '@/hooks/use-available-gems'
 import { canEditGallery } from '@/lib/gallery-access'
-import { personalGalleryShareUrl } from '@/lib/personal-gallery'
+import { personalGalleryShareUrl, personalGalleryRoomTitle } from '@/lib/personal-gallery'
 import { enqueueGalleryTokens, syncGalleryPanelTokenIndex } from '@/lib/gallery-cache'
 import { supabase } from '@/lib/supabase'
 
@@ -207,12 +207,12 @@ export default function PersonalGalleryConfigPage() {
             <div className="flex flex-wrap gap-2">
               <Button size="sm" variant="outline" onClick={() => void copyShareLink()}>
                 <Copy className="mr-2 h-4 w-4" />
-                Copy Public Link
+                Copy room link
               </Button>
               <Button asChild size="sm" variant="outline">
                 <a href={lastShareUrl} target="_blank" rel="noopener noreferrer">
                   <ExternalLink className="mr-2 h-4 w-4" />
-                  Open Public Gallery
+                  Open room
                 </a>
               </Button>
             </div>
@@ -220,7 +220,7 @@ export default function PersonalGalleryConfigPage() {
         </div>
 
         <div>
-          <h1 className="text-2xl font-bold">{room.display_name}</h1>
+          <h1 className="text-2xl font-bold">{personalGalleryRoomTitle(room.display_name)}</h1>
           <p className="text-sm text-slate-400">
             Personal gallery · 10 wall panels · public link works without a wallet
           </p>

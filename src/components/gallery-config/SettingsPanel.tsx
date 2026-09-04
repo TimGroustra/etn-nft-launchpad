@@ -146,7 +146,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             spellCheck={false}
           />
           <p className="text-[10px] text-muted-foreground">
-            Comma-separated list to limit which minted tokens appear on this panel. Leave empty to use the full collection.
+            Comma-separated list to limit which tokens visitors can cycle on this panel. Leave empty to use the full collection.
           </p>
         </div>
 

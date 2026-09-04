@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAvailableGems } from '@/hooks/use-available-gems'
 import { canEditGallery } from '@/lib/gallery-access'
-import { personalGalleryShareUrl } from '@/lib/personal-gallery'
+import { personalGalleryShareUrl, personalGalleryRoomTitle } from '@/lib/personal-gallery'
 import { supabase } from '@/lib/supabase'
 
 interface PersonalRoom {
@@ -180,7 +180,7 @@ export default function PersonalGalleryRoomsPage() {
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <Gem className="h-4 w-4 text-cyan-400" />
-                {room.display_name}
+                {personalGalleryRoomTitle(room.display_name)}
               </CardTitle>
               <CardDescription>
                 Edit your panels, then share the public gallery link below.
@@ -196,13 +196,13 @@ export default function PersonalGalleryRoomsPage() {
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => void copyShareLink(room.slug)}>
                   <Copy className="mr-2 h-4 w-4" />
-                  Copy Public Link
+                  Copy room link
                 </Button>
                 {publicUrl && (
                   <Button asChild size="sm" variant="outline">
                     <a href={publicUrl} target="_blank" rel="noopener noreferrer">
                       <ExternalLink className="mr-2 h-4 w-4" />
-                      Open Public Gallery
+                      Open room
                     </a>
                   </Button>
                 )}
