@@ -858,14 +858,24 @@ const NftGallery: React.FC<NftGalleryProps> = ({
           return group;
         };
 
-        const couchSouth = buildSofa(3.6);
-        couchSouth.position.set(0, pitY, 2.35);
+        // Table top is 2.4 × 1.4 (x × z). Seat L-corners face inward; chaises run past the short sides.
+        const loungeShiftX = 0.5;
+        const loungeSeatZ = 1.68;
+        const seatPullIn = 0.28;
+        const chaiseAlongTable = 0.78;
+
+        const couchSouth = buildSofa(3.75);
+        couchSouth.position.set(loungeShiftX, pitY, loungeSeatZ);
         couchSouth.rotation.y = Math.PI;
+        couchSouth.translateZ(seatPullIn);
+        couchSouth.translateX(chaiseAlongTable);
         scene.add(couchSouth);
 
-        const couchNorth = buildSofa(3.6);
-        couchNorth.position.set(0, pitY, -2.35);
+        const couchNorth = buildSofa(3.75);
+        couchNorth.position.set(loungeShiftX, pitY, -loungeSeatZ);
         couchNorth.rotation.y = 0;
+        couchNorth.translateZ(-seatPullIn);
+        couchNorth.translateX(-chaiseAlongTable);
         scene.add(couchNorth);
       });
 
