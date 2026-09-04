@@ -122,66 +122,8 @@ const disposeTextureSafely = (mesh: THREE.Mesh) => {
 
 /** Coffee-table top footprint (matches createProceduralTable). */
 const PERSONAL_COFFEE_TABLE_TOP = { width: 2.4, depth: 1.4 } as const;
-/** Inner seating edges sit on a rectangle 1.6× the table top (e.g. 10×15 → 16×24). */
-const PERSONAL_LOUNGE_COUCH_PADDING_RATIO = 0.3;
-
-function getPersonalCouchBracketHalfExtents() {
-  const paddingX = PERSONAL_COFFEE_TABLE_TOP.width * PERSONAL_LOUNGE_COUCH_PADDING_RATIO;
-  const paddingZ = PERSONAL_COFFEE_TABLE_TOP.depth * PERSONAL_LOUNGE_COUCH_PADDING_RATIO;
-  return {
-    x: PERSONAL_COFFEE_TABLE_TOP.width / 2 + paddingX,
-    z: PERSONAL_COFFEE_TABLE_TOP.depth / 2 + paddingZ,
-  };
-}
-
-function measureSofaInnerCornerAtOrigin(couch: THREE.Group): THREE.Vector2 {
-  couch.position.set(0, couch.position.y, 0);
-  couch.updateMatrixWorld(true);
-
-  const innerCorner = new THREE.Vector3();
-  let found = false;
-  let bestDist = Infinity;
-  couch.traverse((child) => {
-    if (!(child instanceof THREE.Mesh)) return;
-    const position = child.geometry.attributes.position as THREE.BufferAttribute;
-    const vertex = new THREE.Vector3();
-    for (let i = 0; i < position.count; i++) {
-      vertex.fromBufferAttribute(position, i);
-      vertex.applyMatrix4(child.matrixWorld);
-      if (vertex.y > 0.2) continue;
-      const dist = vertex.x * vertex.x + vertex.z * vertex.z;
-      if (dist < bestDist) {
-        bestDist = dist;
-        innerCorner.copy(vertex);
-        found = true;
-      }
-    }
-  });
-
-  if (!found) return new THREE.Vector2(0, 0);
-  return new THREE.Vector2(innerCorner.x, innerCorner.z);
-}
-
-/**
- * Place an L-couch so its inner L vertex sits on a bracket corner and the inner
- * edges run parallel to the table long/short sides (30% padding per axis).
- */
-function placeCornerBracketCouch(
-  couch: THREE.Group,
-  floorY: number,
-  bracketCornerX: number,
-  bracketCornerZ: number,
-) {
-  couch.rotation.y = Math.PI;
-  couch.position.set(0, floorY, 0);
-  couch.updateMatrixWorld(true);
-  const innerCorner = measureSofaInnerCornerAtOrigin(couch);
-  couch.position.set(
-    bracketCornerX - innerCorner.x,
-    floorY,
-    bracketCornerZ - innerCorner.y,
-  );
-}
+/** Main gallery south table/sofa Z offset (11 - 9.8). */
+const MAIN_GALLERY_TABLE_SOFA_Z_OFFSET = 1.2;
 
 function createProceduralTable() {
   const group = new THREE.Group();
@@ -874,6 +816,8 @@ const NftGallery: React.FC<NftGalleryProps> = ({
 
       const table = createProceduralTable();
       table.position.set(0, pitY, 0);
+      table.rotation.y = Math.PI;
+      table.translateX(0.9);
       scene.add(table);
 
       const rugTexture = textureLoader.load('/gallery/textures/starry_night_sky_background_1409-2.jpg');
@@ -902,34 +846,24 @@ const NftGallery: React.FC<NftGalleryProps> = ({
         });
         if (!sofaMesh) return;
 
-        const buildSofa = (targetWidth: number) => {
-          const mesh = (sofaMesh as THREE.Mesh).clone();
-          mesh.geometry = (sofaMesh as THREE.Mesh).geometry.clone();
-          mesh.geometry.computeBoundingBox();
-          const box = mesh.geometry.boundingBox!;
-          const size = new THREE.Vector3();
-          box.getSize(size);
-          const scale = targetWidth / size.x;
-          const group = new THREE.Group();
-          group.add(mesh);
-          mesh.scale.set(scale, scale * 2, scale);
-          mesh.position.set(
-            -(box.min.x + size.x / 2) * scale,
-            -box.min.y * (scale * 2),
-            -(box.min.z + size.z / 2) * scale,
-          );
-          return group;
-        };
-
-        const bracket = getPersonalCouchBracketHalfExtents();
-
-        const couchSW = buildSofa(3.8);
-        placeCornerBracketCouch(couchSW, pitY, -bracket.x, bracket.z);
-        scene.add(couchSW);
-
-        const couchNE = buildSofa(3.8);
-        placeCornerBracketCouch(couchNE, pitY, bracket.x, -bracket.z);
-        scene.add(couchNE);
+        const mesh = sofaMesh as THREE.Mesh;
+        mesh.geometry.computeBoundingBox();
+        const box = mesh.geometry.boundingBox!;
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        const targetWidth = 4.5;
+        const scale = targetWidth / size.x;
+        const sofa = new THREE.Group();
+        sofa.add(mesh);
+        mesh.scale.set(scale, scale * 2, scale);
+        mesh.position.set(
+          -(box.min.x + size.x / 2) * scale,
+          -box.min.y * (scale * 2),
+          -(box.min.z + size.z / 2) * scale,
+        );
+        sofa.position.set(0, pitY, MAIN_GALLERY_TABLE_SOFA_Z_OFFSET);
+        sofa.rotation.y = Math.PI;
+        scene.add(sofa);
       });
 
       gltfLoader.load('/gallery/models/plant.glb', (gltf) => {
