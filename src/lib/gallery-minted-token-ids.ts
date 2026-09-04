@@ -126,6 +126,17 @@ export function resolveGalleryPanelTokenIds(
   }
 }
 
+/** Token IDs to warm in gallery_media_cache after a panel save (client-side enqueue). */
+export function tokenIdsToWarmForPanelConfig(
+  defaultTokenId: number,
+  showCollection: boolean,
+  allowedTokenIdsRaw?: string | null,
+  mintedTokenIds: number[] = [],
+): number[] {
+  const allowed = parseAllowedTokenIds(allowedTokenIdsRaw)
+  return resolveGalleryPanelTokenIds(mintedTokenIds, defaultTokenId, showCollection, allowed).tokenIds
+}
+
 export function isGalleryTokenMinted(mintedTokenIds: number[], tokenId: number): boolean {
   if (mintedTokenIds.length === 0) return true
   return mintedTokenIds.includes(tokenId)

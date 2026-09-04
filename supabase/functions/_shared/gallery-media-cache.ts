@@ -399,20 +399,24 @@ export async function tokenIdsForPanel(
   supabase?: SupabaseClient,
   allowedTokenIdsRaw?: string | null,
 ): Promise<number[]> {
-  let mintedTokenIds = (await fetchMintedTokenIds(contractAddress, supabase)).slice(0, maxCollectionTokens)
+  const minted = await fetchMintedTokenIds(contractAddress, supabase)
   const allowed = parseAllowedTokenIds(allowedTokenIdsRaw)
+  const pinnedId = Math.max(1, defaultTokenId)
+
+  let pool = minted.slice(0, maxCollectionTokens)
   if (allowed) {
     const allowedSet = new Set(allowed)
-    mintedTokenIds = mintedTokenIds.filter((id) => allowedSet.has(id))
-  }
-  if (mintedTokenIds.length === 0) return []
-
-  const pinnedId = Math.max(1, defaultTokenId)
-  if (!showCollection) {
-    return mintedTokenIds.includes(pinnedId) ? [pinnedId] : []
+    const fromMinted = pool.filter((id) => allowedSet.has(id))
+    pool = fromMinted.length > 0 ? fromMinted : allowed.slice(0, maxCollectionTokens)
   }
 
-  return mintedTokenIds
+  if (pool.length === 0) return []
+
+  if (allowed || showCollection) {
+    return pool
+  }
+
+  return pool.includes(pinnedId) ? [pinnedId] : []
 }
 
 export const GALLERY_CACHE_BATCH_SIZE = 3
@@ -432,7 +436,7 @@ export function resolvePanelDisplayTokenId(
 ): number | null {
   if (tokenIds.length === 0) return null
   const pinnedId = Math.max(1, defaultTokenId)
-  if (showCollection) {
+  if (showCollection || tokenIds.length > 1) {
     return tokenIds.includes(pinnedId) ? pinnedId : tokenIds[0]
   }
   return tokenIds[0]
@@ -483,12 +487,19 @@ async function collectConfiguredGalleryTokenKeys(
     const showCollection = Boolean(row.show_collection)
     const allowed = parseAllowedTokenIds(row.allowed_token_ids as string | null)
 
-    if (showCollection) {
+    if (allowed && allowed.length > 0) {
       let minted = mintedByContract.get(contract) ?? []
-      if (allowed) {
-        const allowedSet = new Set(allowed)
-        minted = minted.filter((id) => allowedSet.has(id))
+      const allowedSet = new Set(allowed)
+      const fromMinted = minted.filter((id) => allowedSet.has(id))
+      const tokens = fromMinted.length > 0 ? fromMinted : allowed
+      for (const tokenId of tokens.slice(0, 40)) {
+        keys.add(`${contract}:${tokenId}`)
       }
+      continue
+    }
+
+    if (showCollection) {
+      const minted = mintedByContract.get(contract) ?? []
       for (const tokenId of minted.slice(0, 40)) {
         keys.add(`${contract}:${tokenId}`)
       }
@@ -625,18 +636,28 @@ export async function pruneOrphanedGalleryMedia(
 export async function enqueueGalleryPanelsFromConfig(supabase: SupabaseClient) {
   await syncGalleryPanelTokens(supabase)
 
-  const { data: panelRows } = await supabase
-    .from('gallery_panel_tokens')
-    .select('contract_address, token_id')
+  const { data: configRows } = await supabase
+    .from('gallery_config')
+    .select('contract_address, default_token_id, show_collection, allowed_token_ids')
+    .not('contract_address', 'is', null)
 
-  if (!panelRows?.length) return { enqueued: 0 }
+  if (!configRows?.length) return { enqueued: 0 }
 
   const tokenIdsByContract = new Map<string, Set<number>>()
-  for (const row of panelRows) {
+  for (const row of configRows) {
     const contract = String(row.contract_address).toLowerCase()
-    const tokenId = Number(row.token_id)
+    const tokenIds = await tokenIdsForPanel(
+      contract,
+      Math.max(1, Number(row.default_token_id) || 1),
+      Boolean(row.show_collection),
+      40,
+      undefined,
+      supabase,
+      row.allowed_token_ids as string | null,
+    )
     if (!tokenIdsByContract.has(contract)) tokenIdsByContract.set(contract, new Set())
-    tokenIdsByContract.get(contract)!.add(tokenId)
+    const bucket = tokenIdsByContract.get(contract)!
+    for (const tokenId of tokenIds) bucket.add(tokenId)
   }
 
   let enqueued = 0

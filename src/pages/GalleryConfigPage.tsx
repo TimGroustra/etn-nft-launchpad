@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAccount } from 'wagmi'
 import { enqueueGalleryTokens, syncGalleryPanelTokenIndex } from '@/lib/gallery-cache'
+import { tokenIdsToWarmForPanelConfig } from '@/lib/gallery-minted-token-ids'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -202,7 +203,12 @@ export default function GalleryConfigPage() {
     const savedContract = currentConfig.contract_address?.trim().toLowerCase()
     const savedTokenId = currentConfig.default_token_id || 1
     if (savedContract) {
-      enqueueGalleryTokens(savedContract, [savedTokenId])
+      const tokenIds = tokenIdsToWarmForPanelConfig(
+        savedTokenId,
+        currentConfig.show_collection ?? false,
+        currentConfig.allowed_token_ids,
+      )
+      if (tokenIds.length > 0) enqueueGalleryTokens(savedContract, tokenIds)
       syncGalleryPanelTokenIndex()
     }
 

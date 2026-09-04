@@ -5,6 +5,8 @@ import { ArrowLeft, Copy, ExternalLink, Eye, Loader2, Map as MapIcon, Settings }
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import NftPreviewPane from '@/components/gallery/NftPreviewPane'
 import PersonalFloorPlan from '@/components/gallery-config/PersonalFloorPlan'
@@ -14,6 +16,7 @@ import { useAvailableGems } from '@/hooks/use-available-gems'
 import { canEditGallery } from '@/lib/gallery-access'
 import { personalGalleryShareUrl, personalGalleryRoomTitle } from '@/lib/personal-gallery'
 import { enqueueGalleryTokens, syncGalleryPanelTokenIndex } from '@/lib/gallery-cache'
+import { tokenIdsToWarmForPanelConfig } from '@/lib/gallery-minted-token-ids'
 import { supabase } from '@/lib/supabase'
 
 interface GalleryConfigRow {
@@ -49,6 +52,8 @@ export default function PersonalGalleryConfigPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState('map')
   const [lastShareUrl, setLastShareUrl] = useState<string | null>(null)
+  const [roomNameDraft, setRoomNameDraft] = useState('')
+  const [savingRoomName, setSavingRoomName] = useState(false)
 
   useEffect(() => {
     if (!isConnected || !walletAddress) {
@@ -84,6 +89,7 @@ export default function PersonalGalleryConfigPage() {
       }
 
       setRoom(row)
+      setRoomNameDraft(row.display_name)
       setLastShareUrl(personalGalleryShareUrl(row.slug))
       const keys = personalPanelKeys(roomId)
       setSelectedPanelKey(keys[0] ?? '')
@@ -155,13 +161,52 @@ export default function PersonalGalleryConfigPage() {
 
     const savedContract = currentConfig.contract_address.trim().toLowerCase()
     const savedTokenId = currentConfig.default_token_id || 1
-    enqueueGalleryTokens(savedContract, [savedTokenId])
+    const tokenIds = tokenIdsToWarmForPanelConfig(
+      savedTokenId,
+      currentConfig.show_collection ?? false,
+      currentConfig.allowed_token_ids,
+    )
+    if (tokenIds.length > 0) enqueueGalleryTokens(savedContract, tokenIds)
     syncGalleryPanelTokenIndex()
 
     const shareUrl = (data as { shareUrl?: string })?.shareUrl ?? personalGalleryShareUrl(room.slug)
     setLastShareUrl(shareUrl)
     toast.success('Panel saved. Share link is ready to copy.')
     setIsLoading(false)
+  }
+
+  const handleSaveRoomName = async () => {
+    if (!roomId || !walletAddress || !room) return
+    const displayName = roomNameDraft.trim()
+    if (displayName.length < 2) {
+      toast.error('Room name must be at least 2 characters.')
+      return
+    }
+    if (displayName === room.display_name.trim()) return
+
+    setSavingRoomName(true)
+    const { data, error } = await supabase.functions.invoke('gallery-update-room', {
+      method: 'POST',
+      body: {
+        walletAddress,
+        roomId,
+        displayName,
+      },
+    })
+
+    if (error || (data as { error?: string })?.error) {
+      toast.error((data as { error?: string })?.error || error?.message || 'Could not save room name.')
+      setSavingRoomName(false)
+      return
+    }
+
+    const payload = data as { displayName?: string; shareUrl?: string }
+    const nextName = payload.displayName ?? displayName
+    setRoom((prev) => (prev ? { ...prev, display_name: nextName } : prev))
+    setRoomNameDraft(nextName)
+    if (payload.shareUrl) setLastShareUrl(payload.shareUrl)
+    toast.success('Room name updated.')
+    setSavingRoomName(false)
   }
 
   const copyShareLink = async () => {
@@ -219,13 +264,49 @@ export default function PersonalGalleryConfigPage() {
           )}
         </div>
 
-        <div>
-          <h1 className="text-2xl font-bold">{personalGalleryRoomTitle(room.display_name)}</h1>
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="room-name" className="text-xs text-slate-400">
+              Room name
+            </Label>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Input
+                id="room-name"
+                value={roomNameDraft}
+                onChange={(e) => setRoomNameDraft(e.target.value)}
+                className="h-11 max-w-md border-slate-700 bg-slate-900 text-base sm:text-sm"
+                placeholder="My gallery room"
+                maxLength={64}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-11 sm:h-9"
+                disabled={
+                  savingRoomName || roomNameDraft.trim() === room.display_name.trim()
+                }
+                onClick={() => void handleSaveRoomName()}
+              >
+                {savingRoomName ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  'Save name'
+                )}
+              </Button>
+            </div>
+            <p className="text-sm font-semibold text-white">
+              {personalGalleryRoomTitle(roomNameDraft.trim() || room.display_name)}
+            </p>
+          </div>
           <p className="text-sm text-slate-400">
             Personal gallery · 10 wall panels · public link works without a wallet
           </p>
           {lastShareUrl && (
-            <p className="mt-1 break-all text-xs text-slate-500">{lastShareUrl}</p>
+            <p className="break-all text-xs text-slate-500">{lastShareUrl}</p>
           )}
         </div>
 
