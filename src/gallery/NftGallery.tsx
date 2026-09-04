@@ -138,7 +138,8 @@ function measureSofaInnerCornerAtOrigin(couch: THREE.Group): THREE.Vector2 {
   couch.position.set(0, couch.position.y, 0);
   couch.updateMatrixWorld(true);
 
-  let best: THREE.Vector3 | null = null;
+  const innerCorner = new THREE.Vector3();
+  let found = false;
   let bestDist = Infinity;
   couch.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return;
@@ -151,13 +152,14 @@ function measureSofaInnerCornerAtOrigin(couch: THREE.Group): THREE.Vector2 {
       const dist = vertex.x * vertex.x + vertex.z * vertex.z;
       if (dist < bestDist) {
         bestDist = dist;
-        best = vertex.clone();
+        innerCorner.copy(vertex);
+        found = true;
       }
     }
   });
 
-  if (!best) return new THREE.Vector2(0, 0);
-  return new THREE.Vector2(best.x, best.z);
+  if (!found) return new THREE.Vector2(0, 0);
+  return new THREE.Vector2(innerCorner.x, innerCorner.z);
 }
 
 /**
