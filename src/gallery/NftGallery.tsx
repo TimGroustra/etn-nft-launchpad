@@ -120,6 +120,9 @@ const disposeTextureSafely = (mesh: THREE.Mesh) => {
   }
 };
 
+/** Coffee-table top footprint (matches createProceduralTable). */
+const PERSONAL_COFFEE_TABLE_TOP = { width: 2.4, depth: 1.4 } as const;
+
 function createProceduralTable() {
   const group = new THREE.Group();
   const mahoganyMat = new THREE.MeshStandardMaterial({ 
@@ -133,7 +136,7 @@ function createProceduralTable() {
     roughness: 0.1 
   });
   
-  const topGeo = new THREE.BoxGeometry(2.4, 0.08, 1.4);
+  const topGeo = new THREE.BoxGeometry(PERSONAL_COFFEE_TABLE_TOP.width, 0.08, PERSONAL_COFFEE_TABLE_TOP.depth);
   const top = new THREE.Mesh(topGeo, mahoganyMat);
   top.position.y = 0.8;
   group.add(top);
@@ -149,6 +152,60 @@ function createProceduralTable() {
   group.add(base);
 
   return group;
+}
+
+/** Place an L-couch at a table corner with even padding to the table-top footprint. */
+function placeCornerBracketCouch(
+  couch: THREE.Group,
+  floorY: number,
+  tableCornerX: number,
+  tableCornerZ: number,
+  padding: number,
+) {
+  const tableHalfX = PERSONAL_COFFEE_TABLE_TOP.width / 2;
+  const tableHalfZ = PERSONAL_COFFEE_TABLE_TOP.depth / 2;
+  const signX = Math.sign(tableCornerX) || 1;
+  const signZ = Math.sign(tableCornerZ) || 1;
+  const targetInnerX = tableCornerX + signX * padding;
+  const targetInnerZ = tableCornerZ + signZ * padding;
+
+  const rotations = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
+  let bestRotation: number | null = null;
+  let bestScore = Infinity;
+
+  for (const rotY of rotations) {
+    couch.rotation.y = rotY;
+    couch.position.set(0, floorY, 0);
+    couch.updateMatrixWorld(true);
+    let box = new THREE.Box3().setFromObject(couch);
+
+    const innerX = signX > 0 ? box.min.x : box.max.x;
+    const innerZ = signZ > 0 ? box.min.z : box.max.z;
+    couch.position.set(targetInnerX - innerX, floorY, targetInnerZ - innerZ);
+    couch.updateMatrixWorld(true);
+    box = new THREE.Box3().setFromObject(couch);
+
+    const outsideX = signX > 0 ? box.min.x >= tableHalfX : box.max.x <= -tableHalfX;
+    const outsideZ = signZ > 0 ? box.min.z >= tableHalfZ : box.max.z <= -tableHalfZ;
+    if (!outsideX || !outsideZ) continue;
+
+    const gapX = signX > 0 ? box.min.x - tableHalfX : -tableHalfX - box.max.x;
+    const gapZ = signZ > 0 ? box.min.z - tableHalfZ : -tableHalfZ - box.max.z;
+    const score = Math.abs(gapX - padding) + Math.abs(gapZ - padding);
+    if (score < bestScore) {
+      bestScore = score;
+      bestRotation = rotY;
+    }
+  }
+
+  const rotY = bestRotation ?? Math.PI;
+  couch.rotation.y = rotY;
+  couch.position.set(0, floorY, 0);
+  couch.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(couch);
+  const innerX = signX > 0 ? box.min.x : box.max.x;
+  const innerZ = signZ > 0 ? box.min.z : box.max.z;
+  couch.position.set(targetInnerX - innerX, floorY, targetInnerZ - innerZ);
 }
 
 function createDiamondTeleporter() {
@@ -858,27 +915,17 @@ const NftGallery: React.FC<NftGalleryProps> = ({
           return group;
         };
 
-        // Bracket the 2.4 × 1.4 table with mirrored L-couches and ~0.24m padding.
-        const tableHalfZ = 0.7;
-        const bracketPad = 0.24;
-        const loungeShiftX = 0.06;
-        const loungeSeatZ = tableHalfZ + bracketPad + 0.35;
-        const seatPullIn = 0.58;
-        const chaiseAlongTable = 0.5;
+        const tableHalfX = PERSONAL_COFFEE_TABLE_TOP.width / 2;
+        const tableHalfZ = PERSONAL_COFFEE_TABLE_TOP.depth / 2;
+        const couchTablePadding = 0.28;
 
-        const couchSouth = buildSofa(3.8);
-        couchSouth.position.set(loungeShiftX, pitY, loungeSeatZ);
-        couchSouth.rotation.y = Math.PI;
-        couchSouth.translateZ(seatPullIn);
-        couchSouth.translateX(chaiseAlongTable);
-        scene.add(couchSouth);
+        const couchSE = buildSofa(3.8);
+        placeCornerBracketCouch(couchSE, pitY, tableHalfX, tableHalfZ, couchTablePadding);
+        scene.add(couchSE);
 
-        const couchNorth = buildSofa(3.8);
-        couchNorth.position.set(loungeShiftX, pitY, -loungeSeatZ);
-        couchNorth.rotation.y = 0;
-        couchNorth.translateZ(-seatPullIn);
-        couchNorth.translateX(-chaiseAlongTable);
-        scene.add(couchNorth);
+        const couchNW = buildSofa(3.8);
+        placeCornerBracketCouch(couchNW, pitY, -tableHalfX, -tableHalfZ, couchTablePadding);
+        scene.add(couchNW);
       });
 
       gltfLoader.load('/gallery/models/plant.glb', (gltf) => {
